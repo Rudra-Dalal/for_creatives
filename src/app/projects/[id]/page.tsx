@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Bookmark, LayoutGrid, Compass, ArrowLeft } from 'lucide-react';
 
+import { ReferenceLibrary } from '@/features/references/components/ReferenceLibrary';
+
 export default function ProjectWorkspacePage() {
   const params = useParams();
   const router = useRouter();
@@ -58,7 +60,7 @@ export default function ProjectWorkspacePage() {
 
       {/* Project Metadata Banner */}
       <div className="border-b border-border bg-surface-subtle px-6 py-4">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
           <div>
             <h2 className="font-display text-xl font-medium tracking-tight text-foreground">
               {project.name}
@@ -113,16 +115,16 @@ export default function ProjectWorkspacePage() {
         </div>
       </div>
 
-      {/* Tab Shell Content (Placeholders for Steps 3–5) */}
+      {/* Tab Content */}
       <main className="flex-1 flex flex-col">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'references' | 'moodboard' | 'direction')} className="flex-1 flex flex-col">
-          {/* References Tab Placeholder */}
-          <TabsContent value="references" className="flex-1 flex items-center justify-center p-8 mt-0">
-            <EmptyState
-              icon={<Bookmark className="h-10 w-10 stroke-[1.25]" />}
-              title="References Library"
-              description="Reference capture, URL scraping, tag filtering, and grid view will be implemented in Step 3."
-            />
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as 'references' | 'moodboard' | 'direction')}
+          className="flex-1 flex flex-col"
+        >
+          {/* References Tab: Fully Functional Library */}
+          <TabsContent value="references" className="flex-1 flex flex-col mt-0">
+            <ReferenceLibrary projectId={project.id} />
           </TabsContent>
 
           {/* Moodboard Tab Placeholder */}
