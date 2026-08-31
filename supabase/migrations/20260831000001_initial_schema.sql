@@ -15,7 +15,7 @@ create table public.projects (
 );
 
 -- 2. References Table
-create table public.references (
+create table public."references" (
   id uuid primary key default gen_random_uuid(),
   project_id uuid references public.projects(id) on delete cascade not null,
   url text not null,
@@ -31,7 +31,7 @@ create table public.references (
 create table public.moodboard_items (
   id uuid primary key default gen_random_uuid(),
   project_id uuid references public.projects(id) on delete cascade not null,
-  reference_id uuid references public.references(id) on delete set null,
+  reference_id uuid references public."references"(id) on delete set null,
   type text not null check (type in ('reference', 'text')),
   content jsonb default '{}'::jsonb not null,
   x double precision default 0 not null,
@@ -57,15 +57,15 @@ create table public.direction_notes (
 create table public.direction_reference_links (
   id uuid primary key default gen_random_uuid(),
   direction_note_id uuid references public.direction_notes(id) on delete cascade not null,
-  reference_id uuid references public.references(id) on delete cascade not null,
+  reference_id uuid references public."references"(id) on delete cascade not null,
   created_at timestamptz default now() not null,
   constraint unique_direction_reference unique (direction_note_id, reference_id)
 );
 
 -- Performance Indexes
 create index idx_projects_user_id on public.projects(user_id);
-create index idx_references_project_id on public.references(project_id);
-create index idx_references_tags on public.references using gin(tags);
+create index idx_references_project_id on public."references"(project_id);
+create index idx_references_tags on public."references" using gin(tags);
 create index idx_moodboard_items_project_id on public.moodboard_items(project_id);
 create index idx_moodboard_items_reference_id on public.moodboard_items(reference_id);
 create index idx_direction_notes_project_id on public.direction_notes(project_id);

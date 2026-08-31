@@ -16,9 +16,9 @@ create policy "Users can insert moodboard items into their projects"
     and (
       moodboard_items.reference_id is null
       or exists (
-        select 1 from public.references
-        where references.id = moodboard_items.reference_id
-        and references.project_id = moodboard_items.project_id
+        select 1 from public."references"
+        where "references".id = moodboard_items.reference_id
+        and "references".project_id = moodboard_items.project_id
       )
     )
   );
@@ -41,9 +41,9 @@ create policy "Users can update moodboard items of their projects"
     and (
       moodboard_items.reference_id is null
       or exists (
-        select 1 from public.references
-        where references.id = moodboard_items.reference_id
-        and references.project_id = moodboard_items.project_id
+        select 1 from public."references"
+        where "references".id = moodboard_items.reference_id
+        and "references".project_id = moodboard_items.project_id
       )
     )
   );
@@ -56,7 +56,7 @@ create policy "Users can insert direction reference links into their projects"
   with check (
     exists (
       select 1 from public.direction_notes dn
-      join public.references r on r.id = direction_reference_links.reference_id
+      join public."references" r on r.id = direction_reference_links.reference_id
       join public.projects p on p.id = dn.project_id
       where dn.id = direction_reference_links.direction_note_id
       and r.project_id = dn.project_id

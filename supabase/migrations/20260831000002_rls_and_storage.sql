@@ -3,7 +3,7 @@
 
 -- Enable Row Level Security on all tables
 alter table public.projects enable row level security;
-alter table public.references enable row level security;
+alter table public."references" enable row level security;
 alter table public.moodboard_items enable row level security;
 alter table public.direction_notes enable row level security;
 alter table public.direction_reference_links enable row level security;
@@ -28,48 +28,48 @@ create policy "Users can delete their own projects"
 
 -- 2. References RLS Policies
 create policy "Users can view references of their projects"
-  on public.references for select
+  on public."references" for select
   using (
     exists (
       select 1 from public.projects
-      where projects.id = references.project_id
+      where projects.id = "references".project_id
       and projects.user_id = auth.uid()
     )
   );
 
 create policy "Users can insert references into their projects"
-  on public.references for insert
+  on public."references" for insert
   with check (
     exists (
       select 1 from public.projects
-      where projects.id = references.project_id
+      where projects.id = "references".project_id
       and projects.user_id = auth.uid()
     )
   );
 
 create policy "Users can update references of their projects"
-  on public.references for update
+  on public."references" for update
   using (
     exists (
       select 1 from public.projects
-      where projects.id = references.project_id
+      where projects.id = "references".project_id
       and projects.user_id = auth.uid()
     )
   )
   with check (
     exists (
       select 1 from public.projects
-      where projects.id = references.project_id
+      where projects.id = "references".project_id
       and projects.user_id = auth.uid()
     )
   );
 
 create policy "Users can delete references of their projects"
-  on public.references for delete
+  on public."references" for delete
   using (
     exists (
       select 1 from public.projects
-      where projects.id = references.project_id
+      where projects.id = "references".project_id
       and projects.user_id = auth.uid()
     )
   );
