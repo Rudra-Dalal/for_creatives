@@ -207,9 +207,18 @@ export async function safeFetchHtml(
 
     // Create custom agent with pinned DNS lookup to prevent DNS rebinding
     const agent = new clientModule.Agent({
-      lookup: (_hostname, _options, callback) => {
-        // Always return the pre-validated IP and family
-        callback(null, ip, family);
+      lookup: (_hostname, options, callback) => {
+        const cb = (typeof options === 'function' ? options : callback) as (
+          err: Error | null,
+          address: string | Array<{ address: string; family: number }>,
+          family?: number
+        ) => void;
+        const opts = (typeof options === 'object' ? options : {}) as { all?: boolean };
+        if (opts?.all) {
+          cb(null, [{ address: ip, family }]);
+        } else {
+          cb(null, ip, family);
+        }
       },
     });
 
