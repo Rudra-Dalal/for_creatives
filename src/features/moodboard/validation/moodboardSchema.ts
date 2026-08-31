@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const createMoodboardItemSchema = z.object({
   projectId: z.string().uuid('Invalid project ID'),
   referenceId: z.string().uuid('Invalid reference ID').nullable().optional(),
-  type: z.enum(['reference', 'text']),
+  type: z.enum(['reference', 'image', 'text', 'color', 'idea']),
   content: z.record(z.any()).default({}),
   x: z.number().default(0),
   y: z.number().default(0),

@@ -27,6 +27,7 @@ interface AddReferenceDialogProps {
   onOpenChange: (open: boolean) => void;
   onReferenceCreated?: (reference: Reference) => void;
   onSubmit: (input: CreateReferenceInput) => Promise<Reference>;
+  initialUrl?: string;
 }
 
 type DialogStep = 'input' | 'preview' | 'manual';
@@ -37,12 +38,19 @@ export function AddReferenceDialog({
   onOpenChange,
   onReferenceCreated,
   onSubmit,
+  initialUrl,
 }: AddReferenceDialogProps) {
   const [step, setStep] = useState<DialogStep>('input');
-  const [urlInput, setUrlInput] = useState('');
+  const [urlInput, setUrlInput] = useState(initialUrl || '');
   const [isScraping, setIsScraping] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (open && initialUrl) {
+      setUrlInput(initialUrl);
+    }
+  }, [open, initialUrl]);
 
   // Scraped preview state
   const [scrapedData, setScrapedData] = useState<ScrapedMetadata | null>(null);

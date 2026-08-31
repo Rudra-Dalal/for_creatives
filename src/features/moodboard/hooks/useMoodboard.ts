@@ -2,7 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { moodboardService } from '../services/moodboardService';
-import type { MoodboardItem, CanvasViewport, TextItemContent } from '../types';
+import type {
+  MoodboardItem,
+  CanvasViewport,
+  TextItemContent,
+  ImageItemContent,
+  ColorItemContent,
+  IdeaItemContent,
+} from '../types';
 import type { Json } from '@/types/database.types';
 import type { Reference } from '@/features/references/types';
 
@@ -130,6 +137,149 @@ export function useMoodboard(projectId: string) {
     return created;
   };
 
+  // Add playground image item to canvas
+  const addImageItem = async (
+    imageUrl: string,
+    naturalWidth: number,
+    naturalHeight: number,
+    fileName = 'Image',
+    canvasPosition?: { x: number; y: number }
+  ): Promise<MoodboardItem> => {
+    const nextZ = getMaxZIndex() + 1;
+
+    // Calculate display dimensions constrained to ~340px width while preserving aspect ratio
+    const targetWidth = Math.min(360, Math.max(160, naturalWidth));
+    const aspectRatio = naturalHeight > 0 && naturalWidth > 0 ? naturalHeight / naturalWidth : 0.75;
+    const targetHeight = Math.round(targetWidth * aspectRatio);
+
+    const x = canvasPosition ? canvasPosition.x : -viewport.x / viewport.scale + 200 + (items.length % 5) * 30;
+    const y = canvasPosition ? canvasPosition.y : -viewport.y / viewport.scale + 140 + (items.length % 5) * 30;
+
+    const content: ImageItemContent = {
+      imageUrl,
+      fileName,
+      originalWidth: naturalWidth,
+      originalHeight: naturalHeight,
+    };
+
+    const created = await moodboardService.createItem({
+      projectId,
+      referenceId: null,
+      type: 'image',
+      content: content as unknown as Json,
+      x,
+      y,
+      width: targetWidth,
+      height: targetHeight,
+      zIndex: nextZ,
+    });
+
+    setItems((prev) => [...prev, created]);
+    setSelectedId(created.id);
+    return created;
+  };
+
+  // Add color swatch item to canvas
+  const addColorItem = async (
+    hex = '#D97706',
+    label?: string,
+    canvasPosition?: { x: number; y: number }
+  ): Promise<MoodboardItem> => {
+    const nextZ = getMaxZIndex() + 1;
+    const defaultWidth = 180;
+    const defaultHeight = 180;
+
+    const x = canvasPosition ? canvasPosition.x : -viewport.x / viewport.scale + 220 + (items.length % 5) * 30;
+    const y = canvasPosition ? canvasPosition.y : -viewport.y / viewport.scale + 160 + (items.length % 5) * 30;
+
+    const content: ColorItemContent = {
+      hex: hex.toUpperCase(),
+      label: label || hex.toUpperCase(),
+    };
+
+    const created = await moodboardService.createItem({
+      projectId,
+      referenceId: null,
+      type: 'color',
+      content: content as unknown as Json,
+      x,
+      y,
+      width: defaultWidth,
+      height: defaultHeight,
+      zIndex: nextZ,
+    });
+
+    setItems((prev) => [...prev, created]);
+    setSelectedId(created.id);
+    return created;
+  };
+
+  // Add creative idea item to canvas
+  const addIdeaItem = async (
+    title = 'Creative Idea',
+    notes = '',
+    canvasPosition?: { x: number; y: number }
+  ): Promise<MoodboardItem> => {
+    const nextZ = getMaxZIndex() + 1;
+    const defaultWidth = 280;
+    const defaultHeight = 180;
+
+    const x = canvasPosition ? canvasPosition.x : -viewport.x / viewport.scale + 200 + (items.length % 5) * 30;
+    const y = canvasPosition ? canvasPosition.y : -viewport.y / viewport.scale + 140 + (items.length % 5) * 30;
+
+    const content: IdeaItemContent = {
+      title,
+      notes,
+    };
+
+    const created = await moodboardService.createItem({
+      projectId,
+      referenceId: null,
+      type: 'idea',
+      content: content as unknown as Json,
+      x,
+      y,
+      width: defaultWidth,
+      height: defaultHeight,
+      zIndex: nextZ,
+    });
+
+    setItems((prev) => [...prev, created]);
+    setSelectedId(created.id);
+    return created;
+  };
+
+  // Duplicate an existing item on canvas
+  const duplicateItem = async (id: string): Promise<MoodboardItem | null> => {
+    const source = items.find((i) => i.id === id);
+    if (!source) return null;
+
+    const nextZ = getMaxZIndex() + 1;
+    const offsetX = source.x + 30;
+    const offsetY = source.y + 30;
+
+    const created = await moodboardService.createItem({
+      projectId,
+      referenceId: source.reference_id,
+      type: source.type,
+      content: source.content as unknown as Json,
+      x: offsetX,
+      y: offsetY,
+      width: source.width,
+      height: source.height,
+      zIndex: nextZ,
+    });
+
+    const itemWithRef: MoodboardItem = {
+      ...created,
+      reference: source.reference,
+    };
+
+    setItems((prev) => [...prev, itemWithRef]);
+    setSelectedId(created.id);
+    return itemWithRef;
+  };
+
   // Update item local position/size instantly for smooth drag/transform
   const updateItemLocal = useCallback(
     (id: string, updates: Partial<Pick<MoodboardItem, 'x' | 'y' | 'width' | 'height' | 'z_index' | 'content'>>) => {
@@ -180,6 +330,48 @@ export function useMoodboard(projectId: string) {
     const updatedContent: TextItemContent = {
       ...existingContent,
       text,
+    };
+
+    updateItemLocal(id, { content: updatedContent });
+
+    try {
+      await moodboardService.updateItem(id, {
+        content: updatedContent as unknown as Json,
+      });
+    } catch {
+      // Handled
+    }
+  };
+
+  // Update color swatch content
+  const updateColorContent = async (id: string, hex: string, label?: string) => {
+    const item = items.find((i) => i.id === id);
+    if (!item || item.type !== 'color') return;
+
+    const updatedContent: ColorItemContent = {
+      hex: hex.toUpperCase(),
+      label: label || hex.toUpperCase(),
+    };
+
+    updateItemLocal(id, { content: updatedContent });
+
+    try {
+      await moodboardService.updateItem(id, {
+        content: updatedContent as unknown as Json,
+      });
+    } catch {
+      // Handled
+    }
+  };
+
+  // Update creative idea content
+  const updateIdeaContent = async (id: string, title: string, notes?: string) => {
+    const item = items.find((i) => i.id === id);
+    if (!item || item.type !== 'idea') return;
+
+    const updatedContent: IdeaItemContent = {
+      title,
+      notes: notes !== undefined ? notes : (item.content as IdeaItemContent).notes,
     };
 
     updateItemLocal(id, { content: updatedContent });
@@ -244,10 +436,16 @@ export function useMoodboard(projectId: string) {
     error,
     refetch: fetchItems,
     addReferenceItem,
+    addImageItem,
     addTextNote,
+    addColorItem,
+    addIdeaItem,
+    duplicateItem,
     updateItemLocal,
     persistItemGeometry,
     updateTextContent,
+    updateColorContent,
+    updateIdeaContent,
     bringToFront,
     deleteItem,
     zoomIn,

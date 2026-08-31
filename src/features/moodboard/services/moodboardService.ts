@@ -29,7 +29,7 @@ export const moodboardService = {
         id: item.id,
         project_id: item.project_id,
         reference_id: item.reference_id,
-        type: item.type as 'reference' | 'text',
+        type: item.type as MoodboardItem['type'],
         content: (item.content as unknown as MoodboardItem['content']) || {},
         x: item.x,
         y: item.y,
@@ -49,7 +49,7 @@ export const moodboardService = {
   async createItem(input: {
     projectId: string;
     referenceId?: string | null;
-    type: 'reference' | 'text';
+    type: MoodboardItem['type'];
     content?: Json;
     x?: number;
     y?: number;
@@ -59,6 +59,22 @@ export const moodboardService = {
   }): Promise<MoodboardItem> {
     const supabase = createClient();
 
+    let defaultWidth = 300;
+    let defaultHeight = 220;
+    if (input.type === 'text') {
+      defaultWidth = 240;
+      defaultHeight = 160;
+    } else if (input.type === 'color') {
+      defaultWidth = 180;
+      defaultHeight = 180;
+    } else if (input.type === 'idea') {
+      defaultWidth = 280;
+      defaultHeight = 180;
+    } else if (input.type === 'image') {
+      defaultWidth = 320;
+      defaultHeight = 240;
+    }
+
     const payload: MoodboardItemInsert = {
       project_id: input.projectId,
       reference_id: input.referenceId || null,
@@ -66,8 +82,8 @@ export const moodboardService = {
       content: input.content || {},
       x: input.x ?? 0,
       y: input.y ?? 0,
-      width: input.width ?? (input.type === 'reference' ? 280 : 220),
-      height: input.height ?? (input.type === 'reference' ? 210 : 160),
+      width: input.width ?? defaultWidth,
+      height: input.height ?? defaultHeight,
       z_index: input.zIndex ?? 1,
     };
 
@@ -87,7 +103,7 @@ export const moodboardService = {
       id: item.id,
       project_id: item.project_id,
       reference_id: item.reference_id,
-      type: item.type as 'reference' | 'text',
+      type: item.type as MoodboardItem['type'],
       content: (item.content as unknown as MoodboardItem['content']) || {},
       x: item.x,
       y: item.y,

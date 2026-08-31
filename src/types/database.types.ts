@@ -75,7 +75,7 @@ export interface Database {
           id: string;
           project_id: string;
           reference_id: string | null;
-          type: 'reference' | 'text';
+          type: 'reference' | 'image' | 'text' | 'color' | 'idea';
           content: Json;
           x: number;
           y: number;
@@ -89,7 +89,7 @@ export interface Database {
           id?: string;
           project_id: string;
           reference_id?: string | null;
-          type: 'reference' | 'text';
+          type: 'reference' | 'image' | 'text' | 'color' | 'idea';
           content?: Json;
           x?: number;
           y?: number;
@@ -103,7 +103,7 @@ export interface Database {
           id?: string;
           project_id?: string;
           reference_id?: string | null;
-          type?: 'reference' | 'text';
+          type?: 'reference' | 'image' | 'text' | 'color' | 'idea';
           content?: Json;
           x?: number;
           y?: number;
