@@ -11,6 +11,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Bookmark, LayoutGrid, Compass, ArrowLeft } from 'lucide-react';
 
 import { ReferenceLibrary } from '@/features/references/components/ReferenceLibrary';
+import { DirectionNotesView } from '@/features/creative-direction/components/DirectionNotesView';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -136,13 +137,9 @@ export default function ProjectWorkspacePage() {
             />
           </TabsContent>
 
-          {/* Creative Direction Tab Placeholder */}
-          <TabsContent value="direction" className="flex-1 flex items-center justify-center p-8 mt-0">
-            <EmptyState
-              icon={<Compass className="h-10 w-10 stroke-[1.25]" />}
-              title="Creative Direction"
-              description="Creative direction notes and bidirectional reference linking will be implemented in Step 4."
-            />
+          {/* Creative Direction Tab: Fully Functional Statements & Bidirectional Links */}
+          <TabsContent value="direction" className="flex-1 flex flex-col mt-0">
+            <DirectionNotesView projectId={project.id} />
           </TabsContent>
         </Tabs>
       </main>

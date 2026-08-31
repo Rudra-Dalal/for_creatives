@@ -5,11 +5,16 @@ import type { Reference } from '../types';
 import type { UpdateReferenceInput } from '../validation/referenceSchema';
 import { updateReferenceSchema } from '../validation/referenceSchema';
 import { thumbnailService } from '../services/thumbnailService';
+import { useReferenceDirections } from '@/features/creative-direction/hooks/useReferenceDirections';
+import { directionService } from '@/features/creative-direction/services/directionService';
+import { CreateDirectionDialog } from '@/features/creative-direction/components/CreateDirectionDialog';
+import type { DirectionNoteWithReferences } from '@/features/creative-direction/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import {
   X,
   ExternalLink,
@@ -22,6 +27,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Globe,
+  Plus,
+  Sparkles,
 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -31,6 +38,7 @@ interface ReferenceDetailPanelProps {
   onClose: () => void;
   onUpdate: (id: string, input: UpdateReferenceInput) => Promise<Reference>;
   onDelete: (id: string) => Promise<void>;
+  onNavigateToDirection?: (directionNoteId: string) => void;
 }
 
 export function ReferenceDetailPanel({
@@ -54,7 +62,28 @@ export function ReferenceDetailPanel({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
 
+  // Creative direction linking state
+  const {
+    linkedDirections,
+    isLoading: isLoadingDirections,
+    linkToDirection,
+    unlinkFromDirection,
+    refetch: refetchDirections,
+  } = useReferenceDirections(reference?.id || null);
+
+  const [availableDirections, setAvailableDirections] = useState<DirectionNoteWithReferences[]>([]);
+  const [isLinking, setIsLinking] = useState(false);
+  const [isCreateDirectionOpen, setIsCreateDirectionOpen] = useState(false);
+  const [selectedDirectionToLink, setSelectedDirectionToLink] = useState('');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch available directions for linking picker
+  useEffect(() => {
+    if (projectId) {
+      directionService.getDirectionNotes(projectId).then(setAvailableDirections).catch(() => {});
+    }
+  }, [projectId, reference]);
 
   // Sync state with selected reference
   useEffect(() => {
@@ -67,19 +96,20 @@ export function ReferenceDetailPanel({
       setError(null);
       setSuccessMessage(null);
       setImageError(false);
+      setSelectedDirectionToLink('');
     }
   }, [reference]);
 
   // Handle Escape key to close panel
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && reference && !showDeleteConfirm) {
+      if (e.key === 'Escape' && reference && !showDeleteConfirm && !isCreateDirectionOpen) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [reference, showDeleteConfirm, onClose]);
+  }, [reference, showDeleteConfirm, isCreateDirectionOpen, onClose]);
 
   if (!reference) return null;
 
@@ -176,6 +206,25 @@ export function ReferenceDetailPanel({
     }
   };
 
+  const handleQuickLinkDirection = async () => {
+    if (!selectedDirectionToLink) return;
+    setIsLinking(true);
+    try {
+      await linkToDirection(selectedDirectionToLink);
+      setSelectedDirectionToLink('');
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      }
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
+  const unlinkedAvailableDirections = availableDirections.filter(
+    (d) => !linkedDirections.some((ld) => ld.id === d.id)
+  );
+
   const hasThumbnail = thumbnailUrl && !imageError;
 
   return (
@@ -188,7 +237,7 @@ export function ReferenceDetailPanel({
 
       {/* Drawer Container */}
       <aside
-        className="fixed right-0 top-0 bottom-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-floating transition-transform duration-300 ease-in-out sm:w-[420px]"
+        className="fixed right-0 top-0 bottom-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-floating transition-transform duration-300 ease-in-out sm:w-[440px]"
         aria-label="Reference details"
       >
         {/* Header */}
@@ -366,19 +415,105 @@ export function ReferenceDetailPanel({
               onChange={(e) => setNote(e.target.value)}
               placeholder="Add thoughts, observations, or aesthetic intentions..."
               disabled={isSaving}
-              rows={4}
+              rows={3}
             />
           </div>
 
-          {/* Linked Creative Direction Placeholder (Step 4 preview) */}
-          <div className="rounded-lg border border-border-subtle bg-surface-subtle p-3.5 space-y-1.5">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Compass className="h-3.5 w-3.5 text-accent" />
-              <span>Creative Direction</span>
+          {/* FEATURE 4 & 5: Creative Direction Bidirectional Integration */}
+          <div className="rounded-lg border border-border bg-surface-subtle p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Compass className="h-4 w-4 text-accent" />
+                <span className="text-xs font-medium text-foreground">
+                  Creative Direction
+                </span>
+                <Badge variant="secondary" className="text-[10px] font-mono py-0 px-1.5">
+                  {linkedDirections.length}
+                </Badge>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsCreateDirectionOpen(true)}
+                className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline font-medium"
+              >
+                <Plus className="h-3 w-3" />
+                <span>New statement</span>
+              </button>
             </div>
-            <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
-              Direction notes linked to this reference will appear here in Step 4.
-            </p>
+
+            {/* List of Connected Direction Notes */}
+            {isLoadingDirections ? (
+              <div className="py-4 flex items-center justify-center">
+                <LoadingSpinner size="sm" label="Loading linked directions..." />
+              </div>
+            ) : linkedDirections.length === 0 ? (
+              <p className="text-xs text-muted-foreground/70 leading-relaxed py-1">
+                This reference hasn&apos;t been linked to any creative direction statements yet.
+              </p>
+            ) : (
+              <div className="space-y-2 pt-1">
+                {linkedDirections.map((dir) => (
+                  <div
+                    key={dir.id}
+                    className="group/dir flex items-start justify-between gap-2 p-2.5 rounded-md border border-border bg-surface hover:border-border-strong transition-colors"
+                  >
+                    <div className="space-y-0.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="h-3 w-3 text-accent shrink-0" />
+                        <h5 className="font-display text-xs font-medium text-foreground truncate">
+                          {dir.title}
+                        </h5>
+                      </div>
+                      {dir.description && (
+                        <p className="text-[11px] text-muted-foreground/80 line-clamp-1 pl-4">
+                          {dir.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => unlinkFromDirection(dir.id)}
+                      className="text-muted-foreground hover:text-red-400 p-1 rounded hover:bg-surface-hover transition-colors"
+                      title="Unlink from this direction"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Quick Link Selector */}
+            {unlinkedAvailableDirections.length > 0 && (
+              <div className="pt-2 border-t border-border-subtle flex items-center gap-2">
+                <select
+                  value={selectedDirectionToLink}
+                  onChange={(e) => setSelectedDirectionToLink(e.target.value)}
+                  className="flex-1 h-8 rounded border border-border bg-surface px-2 text-xs text-foreground focus:outline-none focus:border-accent"
+                  disabled={isLinking}
+                >
+                  <option value="">+ Connect to existing direction...</option>
+                  {unlinkedAvailableDirections.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.title}
+                    </option>
+                  ))}
+                </select>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleQuickLinkDirection}
+                  disabled={!selectedDirectionToLink || isLinking}
+                  className="h-8 px-2.5 text-xs shrink-0"
+                >
+                  {isLinking ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Connect'}
+                </Button>
+              </div>
+            )}
           </div>
         </form>
 
@@ -429,11 +564,26 @@ export function ReferenceDetailPanel({
         open={showDeleteConfirm}
         onOpenChange={setShowDeleteConfirm}
         title="Delete Reference"
-        description={`Are you sure you want to delete "${reference.title}"? Any future moodboard items or direction note links associated with this reference will be unlinked.`}
+        description={`Are you sure you want to delete "${reference.title}"? Any direction note links or moodboard items associated with this reference will be unlinked.`}
         confirmLabel="Delete Reference"
         variant="danger"
         isLoading={isDeleting}
         onConfirm={handleDelete}
+      />
+
+      {/* Create New Direction Statement Modal */}
+      <CreateDirectionDialog
+        projectId={projectId}
+        open={isCreateDirectionOpen}
+        onOpenChange={setIsCreateDirectionOpen}
+        initialReferenceId={reference.id}
+        onSubmit={async (input) => {
+          const created = await directionService.createDirectionNote(input);
+          await refetchDirections();
+          const notes = await directionService.getDirectionNotes(projectId);
+          setAvailableDirections(notes);
+          return created;
+        }}
       />
     </>
   );
