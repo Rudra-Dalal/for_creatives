@@ -249,8 +249,8 @@ export function AddReferenceDialog({
 
         {/* STEP 2: Preview Card with live metadata */}
         {step === 'preview' && scrapedData && (
-          <div className="space-y-4 py-2">
-            <div className="flex gap-4 p-3 rounded-lg border border-border bg-surface-subtle">
+          <div className="space-y-4 py-2 w-full min-w-0 overflow-hidden">
+            <div className="flex gap-3.5 p-3 rounded-lg border border-border bg-surface-subtle w-full min-w-0 overflow-hidden">
               {scrapedData.thumbnail_url && (
                 <div className="relative h-20 w-20 shrink-0 rounded overflow-hidden border border-border bg-surface">
                   <Image
@@ -263,18 +263,18 @@ export function AddReferenceDialog({
                 </div>
               )}
 
-              <div className="flex-1 min-w-0 flex flex-col justify-center">
-                <span className="text-[11px] font-mono text-accent">
+              <div className="flex-1 min-w-0 overflow-hidden flex flex-col justify-center">
+                <span className="text-[11px] font-mono text-accent truncate block">
                   {scrapedData.source_domain}
                 </span>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="mt-0.5 w-full bg-transparent font-display text-sm font-medium text-foreground focus:outline-none border-b border-transparent focus:border-accent"
+                  className="mt-0.5 w-full min-w-0 bg-transparent font-display text-sm font-medium text-foreground focus:outline-none border-b border-transparent focus:border-accent truncate"
                   placeholder="Reference title"
                 />
-                <span className="text-[11px] text-muted-foreground truncate mt-0.5">
+                <span className="text-[11px] text-muted-foreground truncate mt-0.5 block w-full" title={scrapedData.url}>
                   {scrapedData.url}
                 </span>
               </div>
