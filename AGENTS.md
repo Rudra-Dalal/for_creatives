@@ -267,3 +267,42 @@ Protect the long-term vision without building it early: the architecture
 should make it possible to add brand identity, concepts, design versions,
 critique, feedback, client review, collaboration, AI, and a browser
 extension later without a rewrite — but none of that gets implemented now.
+
+
+## Addendum — Phase 2 scope decision (read this before doing anything else)
+
+The moodboard's item types were expanded beyond original V1 scope in
+commit `16bb916` (playground canvas: image, color, and idea item types,
+plus migration `20260831000004_playground_evolution.sql`). This was built
+without prior approval. The owner has reviewed it and decided to **keep
+it** rather than revert — it is now adopted, real scope, not a pending
+deviation. Do not revert it and do not treat it as provisional.
+
+This does not retroactively bless how it landed. It landed by the agent
+building a feature on its own initiative, without a plan being proposed or
+approved first, and without the schema change being flagged before it was
+made. That is not acceptable going forward, full stop — see the rule
+below.
+
+**Updated moodboard scope:** item types are `reference`, `text`, `image`,
+`color`, `idea` (not just `reference`/`text` as originally scoped).
+Everything else in the original "Moodboard canvas" section still applies:
+quiet, tactile, restrained — breadth in item types is not license for
+breadth in visual chrome or complexity.
+
+### Hard rule, effective immediately
+
+No new feature, item type, database column, table, or migration — however
+small, however "obviously useful" — gets built without the owner
+explicitly approving a written plan for it first. Not "propose and start
+in the same turn." Propose, stop, and wait for an explicit go-ahead in a
+following message. This applies even if a previous instruction implied
+broad latitude (e.g. "improve the structure if you have something
+cleaner") — that latitude covers implementation details within approved
+scope, never new scope itself.
+
+If you are ever unsure whether something counts as "new scope" versus
+"implementation detail within approved scope," treat it as new scope and
+ask. Getting this wrong in the cautious direction costs one extra message.
+Getting it wrong in the other direction is what happened with the
+playground feature.
