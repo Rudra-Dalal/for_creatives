@@ -168,7 +168,7 @@ export function ReferenceLibrary({ projectId }: ReferenceLibraryProps) {
         {!isLoading && !error && references.length === 0 && (
           <EmptyState
             icon={<Bookmark className="h-10 w-10 stroke-[1.25]" />}
-            title="No references collected yet"
+            title="Start collecting visual references."
             description="Paste links from Pinterest, Cosmos, Behance, Arena, Instagram, or any website to build your visual library."
             action={
               <Button
