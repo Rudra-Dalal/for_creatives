@@ -12,6 +12,7 @@ import { Bookmark, LayoutGrid, Compass, ArrowLeft } from 'lucide-react';
 
 import { ReferenceLibrary } from '@/features/references/components/ReferenceLibrary';
 import { DirectionNotesView } from '@/features/creative-direction/components/DirectionNotesView';
+import { MoodboardCanvas } from '@/features/moodboard/components/MoodboardCanvas';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -128,13 +129,9 @@ export default function ProjectWorkspacePage() {
             <ReferenceLibrary projectId={project.id} />
           </TabsContent>
 
-          {/* Moodboard Tab Placeholder */}
-          <TabsContent value="moodboard" className="flex-1 flex items-center justify-center p-8 mt-0">
-            <EmptyState
-              icon={<LayoutGrid className="h-10 w-10 stroke-[1.25]" />}
-              title="Moodboard Canvas"
-              description="React-Konva spatial canvas, pan/zoom, drag-and-drop, and layout persistence will be implemented in Step 5."
-            />
+          {/* Moodboard Tab: Full Spatial Konva Canvas */}
+          <TabsContent value="moodboard" className="flex-1 flex flex-col mt-0">
+            <MoodboardCanvas projectId={project.id} />
           </TabsContent>
 
           {/* Creative Direction Tab: Fully Functional Statements & Bidirectional Links */}
