@@ -177,7 +177,7 @@ export function ReferenceDetailPanel({
     try {
       await onUpdate(reference.id, validation.data);
       setSuccessMessage('Changes saved');
-      setTimeout(() => setSuccessMessage(null), 3000);
+      onClose();
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);
