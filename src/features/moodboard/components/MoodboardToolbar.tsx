@@ -22,6 +22,7 @@ import {
   Copy,
   Trash2,
   RotateCcw,
+  Download,
 } from 'lucide-react';
 
 interface MoodboardToolbarProps {
@@ -41,6 +42,7 @@ interface MoodboardToolbarProps {
   onZoomOut: () => void;
   onResetZoom: () => void;
   onZoomToFit?: () => void;
+  onExportImage?: () => void;
 }
 
 export function MoodboardToolbar({
@@ -60,6 +62,7 @@ export function MoodboardToolbar({
   onZoomOut,
   onResetZoom,
   onZoomToFit,
+  onExportImage,
 }: MoodboardToolbarProps) {
   const percentage = Math.round(scale * 100);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -194,6 +197,22 @@ export function MoodboardToolbar({
           <Maximize2 className="h-3.5 w-3.5" />
         </button>
       </div>
+
+      {/* Export PNG Button */}
+      {onExportImage && (
+        <>
+          <div className="h-4 w-px bg-border-subtle mx-1" />
+          <button
+            type="button"
+            onClick={onExportImage}
+            className="flex h-7 items-center gap-1 px-2 rounded-full text-xs text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors"
+            title="Export Moodboard as PNG"
+          >
+            <Download className="h-3 w-3" />
+            <span className="hidden sm:inline">Export</span>
+          </button>
+        </>
+      )}
 
       {/* Contextual Item Actions (Duplicate / Delete) */}
       {selectedId && (

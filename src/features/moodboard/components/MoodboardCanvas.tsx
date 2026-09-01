@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useMoodboard } from '../hooks/useMoodboard';
 import { MoodboardToolbar } from './MoodboardToolbar';
@@ -29,9 +29,10 @@ const DynamicMoodboardStage = dynamic(
 
 interface MoodboardCanvasProps {
   projectId: string;
+  projectName?: string;
 }
 
-export function MoodboardCanvas({ projectId }: MoodboardCanvasProps) {
+export function MoodboardCanvas({ projectId, projectName }: MoodboardCanvasProps) {
   const {
     items,
     selectedId,
@@ -66,6 +67,9 @@ export function MoodboardCanvas({ projectId }: MoodboardCanvasProps) {
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+
+  // Exporter reference
+  const exportFnRef = useRef<((name?: string) => Promise<boolean>) | null>(null);
 
   // URL reference capture modal on canvas paste
   const [isAddRefOpen, setIsAddRefOpen] = useState(false);
@@ -244,6 +248,9 @@ export function MoodboardCanvas({ projectId }: MoodboardCanvasProps) {
         onNudge={nudgeItem}
         onZoomToFit={zoomToFit}
         onRecordUndoAction={recordUndoAction}
+        onRegisterExport={(exporter) => {
+          exportFnRef.current = exporter;
+        }}
       />
 
       {/* Empty State Overlay when canvas is pristine */}
@@ -317,6 +324,7 @@ export function MoodboardCanvas({ projectId }: MoodboardCanvasProps) {
         onZoomOut={zoomOut}
         onResetZoom={resetViewport}
         onZoomToFit={() => zoomToFit()}
+        onExportImage={() => exportFnRef.current?.(projectName || 'moodboard')}
       />
 
       {/* Reference Library Drawer */}

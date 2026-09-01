@@ -44,6 +44,7 @@ interface MoodboardStageProps {
   onNudge?: (id: string, dx: number, dy: number) => void;
   onZoomToFit?: (containerWidth?: number, containerHeight?: number) => void;
   onRecordUndoAction?: (action: UndoAction) => void;
+  onRegisterExport?: (exporter: (customName?: string) => Promise<boolean>) => void;
 }
 
 export function MoodboardStage({
@@ -66,6 +67,7 @@ export function MoodboardStage({
   onNudge,
   onZoomToFit,
   onRecordUndoAction,
+  onRegisterExport,
 }: MoodboardStageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
@@ -242,6 +244,66 @@ export function MoodboardStage({
     onNudge,
     onZoomToFit,
   ]);
+
+  // Export stage to PNG
+  const handleExportPNG = useCallback(
+    async (customName?: string): Promise<boolean> => {
+      if (!stageRef.current || items.length === 0) return false;
+
+      // Clear selection so bounding box is not rendered in screenshot
+      onSelectId(null);
+      setSelectedNode(null);
+
+      // Frame wait
+      await new Promise((r) => setTimeout(r, 60));
+
+      try {
+        const stage = stageRef.current;
+        if (!stage) return false;
+
+        const padding = 40;
+        const minX = Math.min(...items.map((i) => i.x)) - padding;
+        const minY = Math.min(...items.map((i) => i.y)) - padding;
+        const maxX = Math.max(...items.map((i) => i.x + i.width)) + padding;
+        const maxY = Math.max(...items.map((i) => i.y + i.height)) + padding;
+        const width = Math.max(200, maxX - minX);
+        const height = Math.max(200, maxY - minY);
+
+        const currentScale = stage.scaleX() || 1;
+        const currentX = stage.x() || 0;
+        const currentY = stage.y() || 0;
+
+        const dataUrl = stage.toDataURL({
+          x: minX * currentScale + currentX,
+          y: minY * currentScale + currentY,
+          width: width * currentScale,
+          height: height * currentScale,
+          pixelRatio: 2,
+          mimeType: 'image/png',
+        });
+
+        const link = document.createElement('a');
+        link.download = `${(customName || 'creative-moodboard')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')}-moodboard.png`;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return true;
+      } catch (err) {
+        console.error('Failed to export canvas image:', err);
+        return false;
+      }
+    },
+    [items, onSelectId]
+  );
+
+  useEffect(() => {
+    if (onRegisterExport) {
+      onRegisterExport(handleExportPNG);
+    }
+  }, [onRegisterExport, handleExportPNG]);
 
   // Track initial geometry before drag
   const handleItemDragStart = (item: MoodboardItem) => {
