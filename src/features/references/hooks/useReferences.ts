@@ -100,6 +100,51 @@ export function useReferences(projectId: string) {
     setReferences((prev) => prev.filter((r) => r.id !== id));
   };
 
+  // Bulk tag add
+  const bulkAddTag = async (ids: string[], rawTag: string): Promise<void> => {
+    const tag = rawTag.trim().replace(/^#/, '');
+    if (!tag) return;
+
+    const promises = ids.map(async (id) => {
+      const ref = references.find((r) => r.id === id);
+      if (!ref) return;
+      const existingTags = ref.tags || [];
+      if (!existingTags.includes(tag)) {
+        const newTags = [...existingTags, tag];
+        await referenceService.updateReference(id, { tags: newTags });
+      }
+    });
+
+    await Promise.all(promises);
+    await fetchReferences();
+  };
+
+  // Bulk tag remove
+  const bulkRemoveTag = async (ids: string[], rawTag: string): Promise<void> => {
+    const tag = rawTag.trim().replace(/^#/, '');
+    if (!tag) return;
+
+    const promises = ids.map(async (id) => {
+      const ref = references.find((r) => r.id === id);
+      if (!ref) return;
+      const existingTags = ref.tags || [];
+      if (existingTags.includes(tag)) {
+        const newTags = existingTags.filter((t) => t !== tag);
+        await referenceService.updateReference(id, { tags: newTags });
+      }
+    });
+
+    await Promise.all(promises);
+    await fetchReferences();
+  };
+
+  // Bulk soft-delete
+  const bulkDelete = async (ids: string[]): Promise<void> => {
+    const promises = ids.map((id) => referenceService.softDeleteReference(id));
+    await Promise.all(promises);
+    setReferences((prev) => prev.filter((r) => !ids.includes(r.id)));
+  };
+
   return {
     references,
     filteredReferences,
@@ -114,5 +159,8 @@ export function useReferences(projectId: string) {
     createReference,
     updateReference,
     deleteReference,
+    bulkAddTag,
+    bulkRemoveTag,
+    bulkDelete,
   };
 }

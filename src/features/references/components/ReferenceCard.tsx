@@ -3,18 +3,24 @@
 import React, { useState } from 'react';
 import type { Reference } from '../types';
 import { Badge } from '@/components/ui/badge';
-import { Globe, FileText, ArrowUpRight } from 'lucide-react';
+import { Globe, FileText, ArrowUpRight, Check } from 'lucide-react';
 import Image from 'next/image';
 
 interface ReferenceCardProps {
   reference: Reference;
   isSelected?: boolean;
+  isMultiSelectMode?: boolean;
+  isChecked?: boolean;
+  onToggleCheck?: (e: React.MouseEvent) => void;
   onClick: () => void;
 }
 
 export function ReferenceCard({
   reference,
   isSelected = false,
+  isMultiSelectMode = false,
+  isChecked = false,
+  onToggleCheck,
   onClick,
 }: ReferenceCardProps) {
   const [imageError, setImageError] = useState(false);
@@ -32,7 +38,9 @@ export function ReferenceCard({
         }
       }}
       className={`group relative flex flex-col overflow-hidden rounded-lg border bg-surface transition-all duration-200 cursor-pointer select-none text-left focus:outline-none focus:ring-1 focus:ring-accent ${
-        isSelected
+        isChecked
+          ? 'border-accent ring-1 ring-accent bg-accent/5'
+          : isSelected
           ? 'border-accent shadow-floating ring-1 ring-accent'
           : 'border-border hover:border-border-strong hover:bg-surface-hover shadow-subtle'
       }`}
@@ -60,6 +68,25 @@ export function ReferenceCard({
           </div>
         )}
 
+        {/* Checkbox Trigger (Visible on hover or when checked/multiselect active) */}
+        {onToggleCheck && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCheck(e);
+            }}
+            className={`absolute top-2.5 right-2.5 z-20 flex h-6 w-6 items-center justify-center rounded border transition-all ${
+              isChecked
+                ? 'bg-accent border-accent text-white opacity-100'
+                : 'border-white/40 bg-black/50 text-transparent opacity-0 group-hover:opacity-100 hover:border-white'
+            }`}
+            title={isChecked ? 'Deselect reference' : 'Select reference'}
+          >
+            <Check className={`h-3.5 w-3.5 ${isChecked ? 'text-white' : ''}`} />
+          </button>
+        )}
+
         {/* Floating Domain Pill */}
         <div className="absolute top-2.5 left-2.5 z-10">
           <span className="inline-flex items-center gap-1 rounded bg-black/60 px-2 py-0.5 font-mono text-[10px] font-medium text-foreground backdrop-blur-sm border border-white/10">
@@ -67,19 +94,21 @@ export function ReferenceCard({
           </span>
         </div>
 
-        {/* Hover Action Overlay */}
-        <div className="absolute top-2.5 right-2.5 z-10 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          <a
-            href={reference.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="flex h-6 w-6 items-center justify-center rounded bg-black/60 text-white backdrop-blur-sm hover:bg-black transition-colors"
-            title="Open source link"
-          >
-            <ArrowUpRight className="h-3.5 w-3.5" />
-          </a>
-        </div>
+        {/* Source Link Overlay (when not in multi-select check mode) */}
+        {!isChecked && !isMultiSelectMode && (
+          <div className="absolute bottom-2.5 right-2.5 z-10 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            <a
+              href={reference.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex h-6 w-6 items-center justify-center rounded bg-black/60 text-white backdrop-blur-sm hover:bg-black transition-colors"
+              title="Open source link"
+            >
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </a>
+          </div>
+        )}
       </div>
 
       {/* Card Details */}
