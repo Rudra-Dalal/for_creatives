@@ -27,9 +27,10 @@ import {
 
 interface ReferenceLibraryProps {
   projectId: string;
+  readOnly?: boolean;
 }
 
-export function ReferenceLibrary({ projectId }: ReferenceLibraryProps) {
+export function ReferenceLibrary({ projectId, readOnly = false }: ReferenceLibraryProps) {
   const {
     references,
     filteredReferences,

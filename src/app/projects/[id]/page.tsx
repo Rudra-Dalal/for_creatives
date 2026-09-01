@@ -6,6 +6,7 @@ import { useProject } from '@/features/projects/hooks/useProject';
 import { ProjectHeader } from '@/features/projects/components/ProjectHeader';
 import { CommandPalette } from '@/features/projects/components/CommandPalette';
 import { TrashModal } from '@/features/projects/components/TrashModal';
+import { ShareProjectModal } from '@/features/projects/components/ShareProjectModal';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,7 @@ export default function ProjectWorkspacePage() {
   // Command Palette & Modal States
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isTrashOpen, setIsTrashOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
   const [isAddRefOpen, setIsAddRefOpen] = useState(false);
 
   // Global Cmd/Ctrl+K keyboard listener
@@ -113,6 +115,7 @@ export default function ProjectWorkspacePage() {
         onItemRestored={handleItemRestored}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onOpenTrash={() => setIsTrashOpen(true)}
+        onOpenShare={() => setIsShareOpen(true)}
       />
 
       {/* Project Metadata Banner */}
@@ -203,6 +206,7 @@ export default function ProjectWorkspacePage() {
         onNavigate={(tab) => setActiveTab(tab)}
         onAddReference={() => setIsAddRefOpen(true)}
         onOpenTrash={() => setIsTrashOpen(true)}
+        onOpenShare={() => setIsShareOpen(true)}
       />
 
       {/* Global Trash Modal */}
@@ -211,6 +215,13 @@ export default function ProjectWorkspacePage() {
         isOpen={isTrashOpen}
         onClose={() => setIsTrashOpen(false)}
         onItemRestored={handleItemRestored}
+      />
+
+      {/* Share Project Modal */}
+      <ShareProjectModal
+        project={project}
+        isOpen={isShareOpen}
+        onClose={() => setIsShareOpen(false)}
       />
 
       {/* Add Reference Dialog */}

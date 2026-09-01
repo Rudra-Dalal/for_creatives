@@ -20,6 +20,7 @@ import {
   Maximize2,
   Trash2,
   ArrowRight,
+  Share2,
 } from 'lucide-react';
 
 export interface CommandItem {
@@ -38,6 +39,7 @@ interface CommandPaletteProps {
   onNavigate: (tab: 'references' | 'moodboard' | 'direction') => void;
   onAddReference?: () => void;
   onOpenTrash?: () => void;
+  onOpenShare?: () => void;
   onAddText?: () => void;
   onAddColor?: () => void;
   onAddIdea?: () => void;
@@ -50,6 +52,7 @@ export function CommandPalette({
   onNavigate,
   onAddReference,
   onOpenTrash,
+  onOpenShare,
   onAddText,
   onAddColor,
   onAddIdea,
@@ -160,6 +163,17 @@ export function CommandPalette({
         },
       },
       {
+        id: 'project-share',
+        category: 'Project',
+        label: 'Share Project (Read-Only Link)',
+        keywords: 'share link public token read only publish invite view',
+        icon: Share2,
+        action: () => {
+          onClose();
+          onOpenShare?.();
+        },
+      },
+      {
         id: 'project-trash',
         category: 'Project',
         label: 'Open Trash & Restore',
@@ -173,7 +187,7 @@ export function CommandPalette({
     ];
 
     return list;
-  }, [onNavigate, onClose, onAddReference, onOpenTrash, onAddText, onAddColor, onAddIdea, onZoomToFit]);
+  }, [onNavigate, onClose, onAddReference, onOpenTrash, onOpenShare, onAddText, onAddColor, onAddIdea, onZoomToFit]);
 
   // Filter commands by fuzzy keyword matching
   const filteredCommands = useMemo(() => {

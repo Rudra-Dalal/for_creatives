@@ -32,24 +32,24 @@ import {
   Plus,
   Sparkles,
   Palette,
-  Copy,
   Check,
-  LayoutGrid,
 } from 'lucide-react';
 import Image from 'next/image';
 
 interface ReferenceDetailPanelProps {
   reference: Reference | null;
   projectId: string;
+  readOnly?: boolean;
   onClose: () => void;
-  onUpdate: (id: string, input: UpdateReferenceInput) => Promise<Reference>;
-  onDelete: (id: string) => Promise<void>;
+  onUpdate?: (id: string, input: UpdateReferenceInput) => Promise<Reference>;
+  onDelete?: (id: string) => Promise<void>;
   onNavigateToDirection?: (directionNoteId: string) => void;
 }
 
 export function ReferenceDetailPanel({
   reference,
   projectId,
+  readOnly = false,
   onClose,
   onUpdate,
   onDelete,
@@ -92,10 +92,10 @@ export function ReferenceDetailPanel({
 
   // Fetch available directions for linking picker
   useEffect(() => {
-    if (projectId) {
+    if (projectId && !readOnly) {
       directionService.getDirectionNotes(projectId).then(setAvailableDirections).catch(() => {});
     }
-  }, [projectId, reference]);
+  }, [projectId, reference, readOnly]);
 
   // Sync state with selected reference
   useEffect(() => {
@@ -144,6 +144,7 @@ export function ReferenceDetailPanel({
   }).format(new Date(reference.created_at));
 
   const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (readOnly) return;
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
       const clean = tagInput.trim().replace(/^,|,$/g, '');
@@ -155,10 +156,12 @@ export function ReferenceDetailPanel({
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
+    if (readOnly) return;
     setTags(tags.filter((t) => t !== tagToRemove));
   };
 
   const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -193,6 +196,7 @@ export function ReferenceDetailPanel({
   };
 
   const handleAddColorToMoodboard = async (hex: string) => {
+    if (readOnly) return;
     try {
       await moodboardService.createItem({
         projectId: projectId,
@@ -213,6 +217,7 @@ export function ReferenceDetailPanel({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly || !onUpdate) return;
     setError(null);
     setSuccessMessage(null);
 
@@ -246,6 +251,7 @@ export function ReferenceDetailPanel({
   };
 
   const handleDelete = async () => {
+    if (readOnly || !onDelete) return;
     setIsDeleting(true);
     try {
       await onDelete(reference.id);
@@ -263,7 +269,7 @@ export function ReferenceDetailPanel({
   };
 
   const handleQuickLinkDirection = async () => {
-    if (!selectedDirectionToLink) return;
+    if (readOnly || !selectedDirectionToLink) return;
     setIsLinking(true);
     try {
       await linkToDirection(selectedDirectionToLink);
@@ -302,6 +308,11 @@ export function ReferenceDetailPanel({
             <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
               Reference Detail
             </span>
+            {readOnly && (
+              <span className="text-[10px] rounded px-1.5 py-0.5 bg-surface-subtle border border-border text-muted-foreground">
+                Read Only
+              </span>
+            )}
           </div>
 
           <button
@@ -343,18 +354,20 @@ export function ReferenceDetailPanel({
                     onError={() => setImageError(true)}
                     unoptimized
                   />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setThumbnailUrl('');
-                      setPalette([]);
-                      setImageError(false);
-                    }}
-                    className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black"
-                    title="Remove thumbnail"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setThumbnailUrl('');
+                        setPalette([]);
+                        setImageError(false);
+                      }}
+                      className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black"
+                      title="Remove thumbnail"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </>
               ) : (
                 <div className="flex h-full w-full flex-col items-center justify-center text-center p-6 text-muted-foreground/60">
@@ -367,26 +380,34 @@ export function ReferenceDetailPanel({
             </div>
 
             <div className="flex items-center justify-between pt-1">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleThumbnailUpload}
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading || isSaving}
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-accent transition-colors"
-              >
-                {isUploading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Upload className="h-3.5 w-3.5" />
-                )}
-                <span>Replace Thumbnail</span>
-              </button>
+              {!readOnly ? (
+                <>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleThumbnailUpload}
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading || isSaving}
+                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-accent transition-colors"
+                  >
+                    {isUploading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    <span>Replace Thumbnail</span>
+                  </button>
+                </>
+              ) : (
+                <span className="text-[11px] font-mono text-muted-foreground">
+                  {reference.source_domain}
+                </span>
+              )}
 
               <a
                 href={reference.url}
@@ -435,25 +456,27 @@ export function ReferenceDetailPanel({
                             {hex}
                           </span>
 
-                          {/* Quick Add to Moodboard Button on Hover */}
-                          <button
-                            type="button"
-                            onClick={() => handleAddColorToMoodboard(hex)}
-                            className="opacity-0 group-hover/color:opacity-100 absolute -top-2 -right-1 z-10 h-5 w-5 rounded-full bg-surface border border-border shadow text-foreground hover:text-accent flex items-center justify-center transition-opacity"
-                            title="Add swatch to Moodboard Canvas"
-                          >
-                            {isAdded ? (
-                              <Check className="h-2.5 w-2.5 text-accent" />
-                            ) : (
-                              <Plus className="h-2.5 w-2.5" />
-                            )}
-                          </button>
+                          {/* Quick Add to Moodboard Button on Hover (Only for owners) */}
+                          {!readOnly && (
+                            <button
+                              type="button"
+                              onClick={() => handleAddColorToMoodboard(hex)}
+                              className="opacity-0 group-hover/color:opacity-100 absolute -top-2 -right-1 z-10 h-5 w-5 rounded-full bg-surface border border-border shadow text-foreground hover:text-accent flex items-center justify-center transition-opacity"
+                              title="Add swatch to Moodboard Canvas"
+                            >
+                              {isAdded ? (
+                                <Check className="h-2.5 w-2.5 text-accent" />
+                              ) : (
+                                <Plus className="h-2.5 w-2.5" />
+                              )}
+                            </button>
+                          )}
                         </div>
                       );
                     })}
                   </div>
                   <p className="text-[10px] text-muted-foreground/70">
-                    Click a swatch to copy HEX code, or use the (+) icon to place it onto the moodboard.
+                    Click a swatch to copy HEX code.
                   </p>
                 </div>
               ) : !isExtractingPalette ? (
@@ -469,13 +492,17 @@ export function ReferenceDetailPanel({
             <label className="text-xs font-medium text-muted-foreground" htmlFor="detail-title">
               Title
             </label>
-            <Input
-              id="detail-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              disabled={isSaving}
-              required
-            />
+            {readOnly ? (
+              <p className="text-sm font-medium text-foreground py-1">{title}</p>
+            ) : (
+              <Input
+                id="detail-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                disabled={isSaving}
+                required
+              />
+            )}
           </div>
 
           {/* Source Domain & Date Metadata */}
@@ -497,32 +524,38 @@ export function ReferenceDetailPanel({
           {/* Tags Field */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground" htmlFor="detail-tags">
-              Tags <span className="text-muted-foreground/60">(press Enter to add)</span>
+              Tags {!readOnly && <span className="text-muted-foreground/60">(press Enter to add)</span>}
             </label>
-            <Input
-              id="detail-tags"
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={handleAddTag}
-              placeholder="e.g. brutalism, typography, palette"
-              disabled={isSaving}
-            />
-            {tags.length > 0 && (
+            {!readOnly && (
+              <Input
+                id="detail-tags"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={handleAddTag}
+                placeholder="e.g. brutalism, typography, palette"
+                disabled={isSaving}
+              />
+            )}
+            {tags.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {tags.map((tag) => (
                   <Badge key={tag} variant="secondary" className="gap-1 text-xs pr-1">
                     <span>{tag}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTag(tag)}
-                      className="rounded-full hover:text-foreground text-muted-foreground"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(tag)}
+                        className="rounded-full hover:text-foreground text-muted-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
                   </Badge>
                 ))}
               </div>
-            )}
+            ) : readOnly ? (
+              <p className="text-xs text-muted-foreground/60 italic">No tags</p>
+            ) : null}
           </div>
 
           {/* Note Field */}
@@ -530,14 +563,24 @@ export function ReferenceDetailPanel({
             <label className="text-xs font-medium text-muted-foreground" htmlFor="detail-note">
               Creative Notes
             </label>
-            <Textarea
-              id="detail-note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Add thoughts, observations, or aesthetic intentions..."
-              disabled={isSaving}
-              rows={3}
-            />
+            {readOnly ? (
+              note ? (
+                <p className="text-xs text-foreground/90 leading-relaxed py-1 whitespace-pre-wrap">
+                  {note}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground/60 italic">No notes added.</p>
+              )
+            ) : (
+              <Textarea
+                id="detail-note"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Add thoughts, observations, or aesthetic intentions..."
+                disabled={isSaving}
+                rows={3}
+              />
+            )}
           </div>
 
           {/* Creative Direction Bidirectional Integration */}
@@ -553,14 +596,16 @@ export function ReferenceDetailPanel({
                 </Badge>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsCreateDirectionOpen(true)}
-                className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline font-medium"
-              >
-                <Plus className="h-3 w-3" />
-                <span>New statement</span>
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={() => setIsCreateDirectionOpen(true)}
+                  className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline font-medium"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>New statement</span>
+                </button>
+              )}
             </div>
 
             {/* List of Connected Direction Notes */}
@@ -593,21 +638,23 @@ export function ReferenceDetailPanel({
                       )}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => unlinkFromDirection(dir.id)}
-                      className="text-muted-foreground hover:text-red-400 p-1 rounded hover:bg-surface-hover transition-colors"
-                      title="Unlink from this direction"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => unlinkFromDirection(dir.id)}
+                        className="text-muted-foreground hover:text-red-400 p-1 rounded hover:bg-surface-hover transition-colors"
+                        title="Unlink from this direction"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
             )}
 
             {/* Quick Link Selector */}
-            {unlinkedAvailableDirections.length > 0 && (
+            {!readOnly && unlinkedAvailableDirections.length > 0 && (
               <div className="pt-2 border-t border-border-subtle flex items-center gap-2">
                 <select
                   value={selectedDirectionToLink}
@@ -640,72 +687,90 @@ export function ReferenceDetailPanel({
 
         {/* Footer Actions */}
         <div className="flex items-center justify-between border-t border-border bg-surface p-4">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowDeleteConfirm(true)}
-            disabled={isSaving || isDeleting}
-            className="text-red-400 hover:text-red-300 hover:bg-danger/10 gap-1.5 text-xs"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            <span>Delete</span>
-          </Button>
+          {!readOnly ? (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={isSaving || isDeleting}
+                className="text-red-400 hover:text-red-300 hover:bg-danger/10 gap-1.5 text-xs"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Delete</span>
+              </Button>
 
-          <div className="flex gap-2">
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={onClose}
+                  disabled={isSaving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={isSaving || !title.trim()}
+                  className="gap-1.5"
+                >
+                  {isSaving ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Save className="h-3.5 w-3.5" />
+                  )}
+                  <span>Save Changes</span>
+                </Button>
+              </div>
+            </>
+          ) : (
             <Button
               type="button"
               variant="secondary"
               size="sm"
               onClick={onClose}
-              disabled={isSaving}
+              className="w-full text-xs"
             >
-              Cancel
+              Close
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleSave}
-              disabled={isSaving || !title.trim()}
-              className="gap-1.5"
-            >
-              {isSaving ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Save className="h-3.5 w-3.5" />
-              )}
-              <span>Save Changes</span>
-            </Button>
-          </div>
+          )}
         </div>
       </aside>
 
       {/* Delete Confirmation Dialog */}
-      <ConfirmDialog
-        open={showDeleteConfirm}
-        onOpenChange={setShowDeleteConfirm}
-        title="Delete Reference"
-        description={`Are you sure you want to delete "${reference.title}"? Any direction note links or moodboard items associated with this reference will be unlinked.`}
-        confirmLabel="Delete Reference"
-        variant="danger"
-        isLoading={isDeleting}
-        onConfirm={handleDelete}
-      />
+      {!readOnly && (
+        <ConfirmDialog
+          open={showDeleteConfirm}
+          onOpenChange={setShowDeleteConfirm}
+          title="Delete Reference"
+          description={`Are you sure you want to delete "${reference.title}"? Any direction note links or moodboard items associated with this reference will be unlinked.`}
+          confirmLabel="Delete Reference"
+          variant="danger"
+          isLoading={isDeleting}
+          onConfirm={handleDelete}
+        />
+      )}
 
       {/* Create New Direction Statement Modal */}
-      <CreateDirectionDialog
-        projectId={projectId}
-        open={isCreateDirectionOpen}
-        onOpenChange={setIsCreateDirectionOpen}
-        initialReferenceId={reference.id}
-        onSubmit={async (input) => {
-          const created = await directionService.createDirectionNote(input);
-          await refetchDirections();
-          const notes = await directionService.getDirectionNotes(projectId);
-          setAvailableDirections(notes);
-          return created;
-        }}
-      />
+      {!readOnly && (
+        <CreateDirectionDialog
+          projectId={projectId}
+          open={isCreateDirectionOpen}
+          onOpenChange={setIsCreateDirectionOpen}
+          initialReferenceId={reference.id}
+          onSubmit={async (input) => {
+            const created = await directionService.createDirectionNote(input);
+            await refetchDirections();
+            const notes = await directionService.getDirectionNotes(projectId);
+            setAvailableDirections(notes);
+            return created;
+          }}
+        />
+      )}
     </>
   );
 }

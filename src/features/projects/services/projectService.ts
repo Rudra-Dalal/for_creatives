@@ -29,12 +29,66 @@ export const projectService = {
 
     if (error) {
       if (error.code === 'PGRST116') {
-        // No rows returned
         return null;
       }
       throw error;
     }
     return data;
+  },
+
+  /**
+   * Fetch a single project by its public share token (Read-Only).
+   */
+  async getProjectByShareToken(token: string): Promise<Project | null> {
+    if (!token) return null;
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('share_token', token)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return null;
+      }
+      throw error;
+    }
+    return data;
+  },
+
+  /**
+   * Generate or regenerate a secure share token for a project.
+   */
+  async generateShareToken(projectId: string): Promise<string> {
+    const supabase = createClient();
+    // Generate a clean 16-character url-safe token
+    const token = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      : Math.random().toString(36).substring(2, 18);
+
+    const { data, error } = await supabase
+      .from('projects')
+      .update({ share_token: token })
+      .eq('id', projectId)
+      .select('share_token')
+      .single();
+
+    if (error) throw error;
+    return data.share_token || token;
+  },
+
+  /**
+   * Revoke (nullify) the share link for a project.
+   */
+  async revokeShareToken(projectId: string): Promise<void> {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('projects')
+      .update({ share_token: null })
+      .eq('id', projectId);
+
+    if (error) throw error;
   },
 
   /**

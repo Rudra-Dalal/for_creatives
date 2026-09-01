@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, LogOut, ArrowLeft, Trash2, Search } from 'lucide-react';
+import { ChevronRight, LogOut, ArrowLeft, Trash2, Search, Share2 } from 'lucide-react';
 import { authService } from '@/features/auth/services/authService';
 import { TrashModal } from './TrashModal';
 import type { Project } from '../types';
@@ -15,6 +15,7 @@ interface ProjectHeaderProps {
   onItemRestored?: () => void;
   onOpenCommandPalette?: () => void;
   onOpenTrash?: () => void;
+  onOpenShare?: () => void;
 }
 
 export function ProjectHeader({
@@ -24,6 +25,7 @@ export function ProjectHeader({
   onItemRestored,
   onOpenCommandPalette,
   onOpenTrash,
+  onOpenShare,
 }: ProjectHeaderProps) {
   const router = useRouter();
   const [internalTrashOpen, setInternalTrashOpen] = useState(false);
@@ -122,6 +124,18 @@ export function ProjectHeader({
                   <kbd className="font-mono text-[10px] text-muted-foreground/80 bg-surface-subtle px-1 rounded border border-border/60">
                     ⌘K
                   </kbd>
+                </button>
+              )}
+
+              {onOpenShare && (
+                <button
+                  type="button"
+                  onClick={onOpenShare}
+                  className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-surface hover:text-foreground border border-transparent hover:border-border"
+                  title="Share Project"
+                >
+                  <Share2 className="h-3.5 w-3.5 text-accent" />
+                  <span className="hidden sm:inline">Share</span>
                 </button>
               )}
 

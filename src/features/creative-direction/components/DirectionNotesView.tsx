@@ -17,9 +17,14 @@ import { Plus, Compass, RefreshCw, FileText } from 'lucide-react';
 interface DirectionNotesViewProps {
   projectId: string;
   projectName?: string;
+  readOnly?: boolean;
 }
 
-export function DirectionNotesView({ projectId, projectName = 'Creative Direction' }: DirectionNotesViewProps) {
+export function DirectionNotesView({
+  projectId,
+  projectName = 'Creative Direction',
+  readOnly = false,
+}: DirectionNotesViewProps) {
   const {
     directionNotes,
     isLoading,
@@ -78,14 +83,16 @@ export function DirectionNotesView({ projectId, projectName = 'Creative Directio
             </Button>
           )}
 
-          <Button
-            size="sm"
-            onClick={() => setIsCreateOpen(true)}
-            className="gap-1.5 shrink-0 text-xs font-medium"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>New Statement</span>
-          </Button>
+          {!readOnly && (
+            <Button
+              size="sm"
+              onClick={() => setIsCreateOpen(true)}
+              className="gap-1.5 shrink-0 text-xs font-medium"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>New Statement</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -121,14 +128,16 @@ export function DirectionNotesView({ projectId, projectName = 'Creative Directio
             title="Your visual thinking starts here."
             description="Formulate aesthetic principles, mood theses, or creative decisions, and connect the references that justify them."
             action={
-              <Button
-                onClick={() => setIsCreateOpen(true)}
-                size="sm"
-                className="gap-1.5"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Formulate First Direction</span>
-              </Button>
+              !readOnly ? (
+                <Button
+                  onClick={() => setIsCreateOpen(true)}
+                  size="sm"
+                  className="gap-1.5"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Formulate First Direction</span>
+                </Button>
+              ) : undefined
             }
             className="py-24"
           />
@@ -141,6 +150,7 @@ export function DirectionNotesView({ projectId, projectName = 'Creative Directio
               <DirectionNoteCard
                 key={note.id}
                 note={note}
+                readOnly={readOnly}
                 onEdit={(n) => setEditingNote(n)}
                 onDeleteRequest={(n) => setNoteToDelete(n)}
                 onUnlinkReference={unlinkReference}
@@ -152,27 +162,31 @@ export function DirectionNotesView({ projectId, projectName = 'Creative Directio
       </div>
 
       {/* Create Direction Modal */}
-      <CreateDirectionDialog
-        projectId={projectId}
-        open={isCreateOpen}
-        onOpenChange={setIsCreateOpen}
-        onSubmit={createDirectionNote}
-      />
+      {!readOnly && (
+        <CreateDirectionDialog
+          projectId={projectId}
+          open={isCreateOpen}
+          onOpenChange={setIsCreateOpen}
+          onSubmit={createDirectionNote}
+        />
+      )}
 
       {/* Edit Direction Modal */}
-      <EditDirectionModal
-        projectId={projectId}
-        note={editingNote}
-        open={!!editingNote}
-        onOpenChange={(open) => {
-          if (!open) setEditingNote(null);
-        }}
-        onUpdate={updateDirectionNote}
-        onDelete={async (id) => {
-          await deleteDirectionNote(id);
-          setEditingNote(null);
-        }}
-      />
+      {!readOnly && (
+        <EditDirectionModal
+          projectId={projectId}
+          note={editingNote}
+          open={!!editingNote}
+          onOpenChange={(open) => {
+            if (!open) setEditingNote(null);
+          }}
+          onUpdate={updateDirectionNote}
+          onDelete={async (id) => {
+            await deleteDirectionNote(id);
+            setEditingNote(null);
+          }}
+        />
+      )}
 
       {/* Export Direction PDF Modal */}
       <DirectionExportPdfModal
@@ -183,18 +197,20 @@ export function DirectionNotesView({ projectId, projectName = 'Creative Directio
       />
 
       {/* Delete Direction Confirmation */}
-      <ConfirmDialog
-        open={!!noteToDelete}
-        onOpenChange={(open) => {
-          if (!open) setNoteToDelete(null);
-        }}
-        title="Delete Creative Direction"
-        description={`Are you sure you want to delete "${noteToDelete?.title}"? All references connected to this statement will remain intact in your reference library.`}
-        confirmLabel="Delete Direction"
-        variant="danger"
-        isLoading={isDeleting}
-        onConfirm={handleConfirmDelete}
-      />
+      {!readOnly && (
+        <ConfirmDialog
+          open={!!noteToDelete}
+          onOpenChange={(open) => {
+            if (!open) setNoteToDelete(null);
+          }}
+          title="Delete Creative Direction"
+          description={`Are you sure you want to delete "${noteToDelete?.title}"? All references connected to this statement will remain intact in your reference library.`}
+          confirmLabel="Delete Direction"
+          variant="danger"
+          isLoading={isDeleting}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
     </div>
   );
 }
