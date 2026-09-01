@@ -191,7 +191,7 @@ export default function ProjectWorkspacePage() {
 
           {/* Creative Direction Tab: Fully Functional Statements & Bidirectional Links */}
           <TabsContent value="direction" className="flex-1 flex flex-col mt-0">
-            <DirectionNotesView key={`dir-${refreshKey}`} projectId={project.id} />
+            <DirectionNotesView key={`dir-${refreshKey}`} projectId={project.id} projectName={project.name} />
           </TabsContent>
         </Tabs>
       </main>

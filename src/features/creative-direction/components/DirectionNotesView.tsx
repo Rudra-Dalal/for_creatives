@@ -5,19 +5,21 @@ import { useDirectionNotes } from '../hooks/useDirectionNotes';
 import { DirectionNoteCard } from './DirectionNoteCard';
 import { CreateDirectionDialog } from './CreateDirectionDialog';
 import { EditDirectionModal } from './EditDirectionModal';
+import { DirectionExportPdfModal } from './DirectionExportPdfModal';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { DirectionNoteWithReferences } from '../types';
-import { Plus, Compass, RefreshCw } from 'lucide-react';
+import { Plus, Compass, RefreshCw, FileText } from 'lucide-react';
 
 interface DirectionNotesViewProps {
   projectId: string;
+  projectName?: string;
 }
 
-export function DirectionNotesView({ projectId }: DirectionNotesViewProps) {
+export function DirectionNotesView({ projectId, projectName = 'Creative Direction' }: DirectionNotesViewProps) {
   const {
     directionNotes,
     isLoading,
@@ -30,6 +32,7 @@ export function DirectionNotesView({ projectId }: DirectionNotesViewProps) {
   } = useDirectionNotes(projectId);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isExportPdfOpen, setIsExportPdfOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<DirectionNoteWithReferences | null>(null);
   const [noteToDelete, setNoteToDelete] = useState<DirectionNoteWithReferences | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -62,14 +65,28 @@ export function DirectionNotesView({ projectId }: DirectionNotesViewProps) {
           )}
         </div>
 
-        <Button
-          size="sm"
-          onClick={() => setIsCreateOpen(true)}
-          className="gap-1.5 shrink-0 text-xs font-medium self-start sm:self-auto"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          <span>New Creative Direction</span>
-        </Button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {directionNotes.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setIsExportPdfOpen(true)}
+              className="gap-1.5 shrink-0 text-xs font-medium"
+            >
+              <FileText className="h-3.5 w-3.5 text-accent" />
+              <span>Export PDF</span>
+            </Button>
+          )}
+
+          <Button
+            size="sm"
+            onClick={() => setIsCreateOpen(true)}
+            className="gap-1.5 shrink-0 text-xs font-medium"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>New Statement</span>
+          </Button>
+        </div>
       </div>
 
       {/* Main Content Area */}
@@ -155,6 +172,14 @@ export function DirectionNotesView({ projectId }: DirectionNotesViewProps) {
           await deleteDirectionNote(id);
           setEditingNote(null);
         }}
+      />
+
+      {/* Export Direction PDF Modal */}
+      <DirectionExportPdfModal
+        isOpen={isExportPdfOpen}
+        onClose={() => setIsExportPdfOpen(false)}
+        projectName={projectName}
+        directionNotes={directionNotes}
       />
 
       {/* Delete Direction Confirmation */}
