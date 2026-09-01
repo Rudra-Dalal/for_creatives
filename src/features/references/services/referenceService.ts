@@ -56,7 +56,7 @@ export const referenceService = {
   },
 
   /**
-   * Fetch all references belonging to a specific project.
+   * Fetch all active (non-deleted) references belonging to a specific project.
    */
   async getReferencesByProjectId(projectId: string): Promise<Reference[]> {
     const supabase = createClient();
@@ -64,7 +64,24 @@ export const referenceService = {
       .from('references')
       .select('*')
       .eq('project_id', projectId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  /**
+   * Fetch all soft-deleted references in the trash for a specific project.
+   */
+  async getTrashReferences(projectId: string): Promise<Reference[]> {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('references')
+      .select('*')
+      .eq('project_id', projectId)
+      .not('deleted_at', 'is', null)
+      .order('deleted_at', { ascending: false });
 
     if (error) throw error;
     return data || [];
@@ -154,9 +171,42 @@ export const referenceService = {
   },
 
   /**
-   * Delete a reference by ID.
+   * Soft-delete a reference (moves to trash).
+   */
+  async softDeleteReference(id: string): Promise<void> {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('references')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Delete a reference by ID (defaults to soft delete).
    */
   async deleteReference(id: string): Promise<void> {
+    return this.softDeleteReference(id);
+  },
+
+  /**
+   * Restore a soft-deleted reference from trash.
+   */
+  async restoreReference(id: string): Promise<void> {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('references')
+      .update({ deleted_at: null })
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Permanently delete a reference from the database.
+   */
+  async permanentlyDeleteReference(id: string): Promise<void> {
     const supabase = createClient();
     const { error } = await supabase
       .from('references')

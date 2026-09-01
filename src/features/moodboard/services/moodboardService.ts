@@ -5,7 +5,7 @@ import type { Reference } from '@/features/references/types';
 
 export const moodboardService = {
   /**
-   * Fetch all moodboard canvas items for a project,
+   * Fetch all active moodboard canvas items for a project,
    * joined with any associated reference metadata.
    */
   async getItems(projectId: string): Promise<MoodboardItem[]> {
@@ -18,6 +18,7 @@ export const moodboardService = {
         references (*)
       `)
       .eq('project_id', projectId)
+      .is('deleted_at', null)
       .order('z_index', { ascending: true });
 
     if (error) throw error;
@@ -38,6 +39,47 @@ export const moodboardService = {
         z_index: item.z_index,
         created_at: item.created_at,
         updated_at: item.updated_at,
+        deleted_at: item.deleted_at,
+        reference: ref && typeof ref === 'object' && 'id' in ref ? ref : null,
+      };
+    });
+  },
+
+  /**
+   * Fetch all soft-deleted moodboard canvas items in trash.
+   */
+  async getTrashItems(projectId: string): Promise<MoodboardItem[]> {
+    const supabase = createClient();
+
+    const { data: items, error } = await supabase
+      .from('moodboard_items')
+      .select(`
+        *,
+        references (*)
+      `)
+      .eq('project_id', projectId)
+      .not('deleted_at', 'is', null)
+      .order('deleted_at', { ascending: false });
+
+    if (error) throw error;
+    if (!items) return [];
+
+    return items.map((item) => {
+      const ref = item.references as unknown as Reference | null;
+      return {
+        id: item.id,
+        project_id: item.project_id,
+        reference_id: item.reference_id,
+        type: item.type as MoodboardItem['type'],
+        content: (item.content as unknown as MoodboardItem['content']) || {},
+        x: item.x,
+        y: item.y,
+        width: item.width,
+        height: item.height,
+        z_index: item.z_index,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        deleted_at: item.deleted_at,
         reference: ref && typeof ref === 'object' && 'id' in ref ? ref : null,
       };
     });
@@ -112,6 +154,7 @@ export const moodboardService = {
       z_index: item.z_index,
       created_at: item.created_at,
       updated_at: item.updated_at,
+      deleted_at: item.deleted_at,
       reference: ref && typeof ref === 'object' && 'id' in ref ? ref : null,
     };
   },
@@ -157,7 +200,7 @@ export const moodboardService = {
       id: item.id,
       project_id: item.project_id,
       reference_id: item.reference_id,
-      type: item.type as 'reference' | 'text',
+      type: item.type as MoodboardItem['type'],
       content: (item.content as unknown as MoodboardItem['content']) || {},
       x: item.x,
       y: item.y,
@@ -166,14 +209,48 @@ export const moodboardService = {
       z_index: item.z_index,
       created_at: item.created_at,
       updated_at: item.updated_at,
+      deleted_at: item.deleted_at,
       reference: ref && typeof ref === 'object' && 'id' in ref ? ref : null,
     };
   },
 
   /**
-   * Delete an item from the moodboard.
+   * Soft-delete an item from the moodboard (moves to trash).
+   */
+  async softDeleteItem(id: string): Promise<void> {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('moodboard_items')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Delete an item from the moodboard (defaults to soft delete).
    */
   async deleteItem(id: string): Promise<void> {
+    return this.softDeleteItem(id);
+  },
+
+  /**
+   * Restore a soft-deleted item from the trash.
+   */
+  async restoreItem(id: string): Promise<void> {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('moodboard_items')
+      .update({ deleted_at: null })
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Permanently delete an item from the database.
+   */
+  async permanentlyDeleteItem(id: string): Promise<void> {
     const supabase = createClient();
     const { error } = await supabase
       .from('moodboard_items')

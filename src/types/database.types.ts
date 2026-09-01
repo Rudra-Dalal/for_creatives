@@ -46,6 +46,7 @@ export interface Database {
           note: string;
           tags: string[];
           created_at: string;
+          deleted_at: string | null;
         };
         Insert: {
           id?: string;
@@ -57,6 +58,7 @@ export interface Database {
           note?: string;
           tags?: string[];
           created_at?: string;
+          deleted_at?: string | null;
         };
         Update: {
           id?: string;
@@ -68,6 +70,7 @@ export interface Database {
           note?: string;
           tags?: string[];
           created_at?: string;
+          deleted_at?: string | null;
         };
       };
       moodboard_items: {
@@ -84,6 +87,7 @@ export interface Database {
           z_index: number;
           created_at: string;
           updated_at: string;
+          deleted_at: string | null;
         };
         Insert: {
           id?: string;
@@ -98,6 +102,7 @@ export interface Database {
           z_index?: number;
           created_at?: string;
           updated_at?: string;
+          deleted_at?: string | null;
         };
         Update: {
           id?: string;
@@ -112,6 +117,7 @@ export interface Database {
           z_index?: number;
           created_at?: string;
           updated_at?: string;
+          deleted_at?: string | null;
         };
       };
       direction_notes: {
@@ -122,6 +128,7 @@ export interface Database {
           description: string;
           created_at: string;
           updated_at: string;
+          deleted_at: string | null;
         };
         Insert: {
           id?: string;
@@ -130,6 +137,7 @@ export interface Database {
           description?: string;
           created_at?: string;
           updated_at?: string;
+          deleted_at?: string | null;
         };
         Update: {
           id?: string;
@@ -138,6 +146,7 @@ export interface Database {
           description?: string;
           created_at?: string;
           updated_at?: string;
+          deleted_at?: string | null;
         };
       };
       direction_reference_links: {

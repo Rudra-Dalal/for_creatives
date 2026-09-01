@@ -15,11 +15,12 @@ export const directionService = {
   async getDirectionNotes(projectId: string): Promise<DirectionNoteWithReferences[]> {
     const supabase = createClient();
 
-    // 1. Fetch notes
+    // 1. Fetch active (non-deleted) notes
     const { data: notes, error: notesError } = await supabase
       .from('direction_notes')
       .select('*')
       .eq('project_id', projectId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
     if (notesError) throw notesError;
@@ -52,6 +53,56 @@ export const directionService = {
       for (const link of links) {
         const note = notesMap.get(link.direction_note_id);
         // Supabase returns the joined single object or array
+        const ref = link.references as unknown as Reference | null;
+        if (note && ref && typeof ref === 'object' && 'id' in ref) {
+          note.references.push(ref);
+        }
+      }
+    }
+
+    return Array.from(notesMap.values());
+  },
+
+  /**
+   * Fetch all soft-deleted direction notes in trash for a project.
+   */
+  async getTrashNotes(projectId: string): Promise<DirectionNoteWithReferences[]> {
+    const supabase = createClient();
+
+    const { data: notes, error: notesError } = await supabase
+      .from('direction_notes')
+      .select('*')
+      .eq('project_id', projectId)
+      .not('deleted_at', 'is', null)
+      .order('deleted_at', { ascending: false });
+
+    if (notesError) throw notesError;
+    if (!notes || notes.length === 0) return [];
+
+    const noteIds = notes.map((n) => n.id);
+
+    const { data: links, error: linksError } = await supabase
+      .from('direction_reference_links')
+      .select(`
+        direction_note_id,
+        reference_id,
+        references (*)
+      `)
+      .in('direction_note_id', noteIds);
+
+    if (linksError) throw linksError;
+
+    const notesMap = new Map<string, DirectionNoteWithReferences>();
+    for (const note of notes) {
+      notesMap.set(note.id, {
+        ...note,
+        references: [],
+      });
+    }
+
+    if (links) {
+      for (const link of links) {
+        const note = notesMap.get(link.direction_note_id);
         const ref = link.references as unknown as Reference | null;
         if (note && ref && typeof ref === 'object' && 'id' in ref) {
           note.references.push(ref);
@@ -221,9 +272,42 @@ export const directionService = {
   },
 
   /**
-   * Delete a direction note.
+   * Soft-delete a direction note (moves to trash, preserves relationships).
+   */
+  async softDeleteDirectionNote(id: string): Promise<void> {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('direction_notes')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Delete a direction note (defaults to soft delete).
    */
   async deleteDirectionNote(id: string): Promise<void> {
+    return this.softDeleteDirectionNote(id);
+  },
+
+  /**
+   * Restore a soft-deleted direction note from trash.
+   */
+  async restoreDirectionNote(id: string): Promise<void> {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('direction_notes')
+      .update({ deleted_at: null })
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Permanently delete a direction note from the database.
+   */
+  async permanentlyDeleteDirectionNote(id: string): Promise<void> {
     const supabase = createClient();
     const { error } = await supabase
       .from('direction_notes')

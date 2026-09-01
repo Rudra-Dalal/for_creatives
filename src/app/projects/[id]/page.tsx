@@ -20,6 +20,11 @@ export default function ProjectWorkspacePage() {
   const projectId = typeof params.id === 'string' ? params.id : '';
   const { project, isLoading, error } = useProject(projectId);
   const [activeTab, setActiveTab] = useState<'references' | 'moodboard' | 'direction'>('references');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleItemRestored = () => {
+    setRefreshKey((prev) => prev + 1);
+  };
 
   if (isLoading) {
     return (
@@ -58,6 +63,7 @@ export default function ProjectWorkspacePage() {
         project={project}
         activeTab={activeTab}
         onTabChange={(tab) => setActiveTab(tab as 'references' | 'moodboard' | 'direction')}
+        onItemRestored={handleItemRestored}
       />
 
       {/* Project Metadata Banner */}
@@ -126,17 +132,17 @@ export default function ProjectWorkspacePage() {
         >
           {/* References Tab: Fully Functional Library */}
           <TabsContent value="references" className="flex-1 flex flex-col mt-0">
-            <ReferenceLibrary projectId={project.id} />
+            <ReferenceLibrary key={`refs-${refreshKey}`} projectId={project.id} />
           </TabsContent>
 
           {/* Moodboard Tab: Full Spatial Konva Canvas */}
           <TabsContent value="moodboard" className="flex-1 flex flex-col mt-0">
-            <MoodboardCanvas projectId={project.id} />
+            <MoodboardCanvas key={`mb-${refreshKey}`} projectId={project.id} />
           </TabsContent>
 
           {/* Creative Direction Tab: Fully Functional Statements & Bidirectional Links */}
           <TabsContent value="direction" className="flex-1 flex flex-col mt-0">
-            <DirectionNotesView projectId={project.id} />
+            <DirectionNotesView key={`dir-${refreshKey}`} projectId={project.id} />
           </TabsContent>
         </Tabs>
       </main>
