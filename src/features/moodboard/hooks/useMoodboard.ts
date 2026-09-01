@@ -13,12 +13,23 @@ import type {
 import type { Json } from '@/types/database.types';
 import type { Reference } from '@/features/references/types';
 
+export interface UndoAction {
+  type: 'ADD' | 'DELETE' | 'MOVE' | 'RESIZE' | 'DUPLICATE';
+  itemId: string;
+  item?: MoodboardItem;
+  prevGeometry?: { x: number; y: number; width: number; height: number; zIndex?: number };
+  nextGeometry?: { x: number; y: number; width: number; height: number; zIndex?: number };
+}
+
 export function useMoodboard(projectId: string) {
   const [items, setItems] = useState<MoodboardItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 0, y: 0, scale: 1 });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Single-level undo action state
+  const [lastAction, setLastAction] = useState<UndoAction | null>(null);
 
   // Keep track of pending persistence timers for debouncing
   const pendingUpdatesRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -62,6 +73,64 @@ export function useMoodboard(projectId: string) {
     [viewport]
   );
 
+  // Record an undo action
+  const recordUndoAction = useCallback((action: UndoAction) => {
+    setLastAction(action);
+  }, []);
+
+  // One-level Undo execution
+  const undo = useCallback(async () => {
+    if (!lastAction) return;
+
+    const actionToRevert = lastAction;
+    setLastAction(null); // Clear single-level undo immediately
+
+    try {
+      if (actionToRevert.type === 'ADD' || actionToRevert.type === 'DUPLICATE') {
+        // Undo Add/Duplicate -> soft delete the item
+        setItems((prev) => prev.filter((i) => i.id !== actionToRevert.itemId));
+        if (selectedId === actionToRevert.itemId) setSelectedId(null);
+        await moodboardService.softDeleteItem(actionToRevert.itemId);
+      } else if (actionToRevert.type === 'DELETE' && actionToRevert.item) {
+        // Undo Delete -> restore item
+        await moodboardService.restoreItem(actionToRevert.itemId);
+        setItems((prev) => {
+          if (prev.some((i) => i.id === actionToRevert.itemId)) return prev;
+          return [...prev, actionToRevert.item!];
+        });
+        setSelectedId(actionToRevert.itemId);
+      } else if (
+        (actionToRevert.type === 'MOVE' || actionToRevert.type === 'RESIZE') &&
+        actionToRevert.prevGeometry
+      ) {
+        // Undo Move/Resize -> restore previous geometry
+        const prevGeo = actionToRevert.prevGeometry;
+        setItems((prev) =>
+          prev.map((i) => {
+            if (i.id !== actionToRevert.itemId) return i;
+            return {
+              ...i,
+              x: prevGeo.x,
+              y: prevGeo.y,
+              width: prevGeo.width,
+              height: prevGeo.height,
+              z_index: prevGeo.zIndex ?? i.z_index,
+            };
+          })
+        );
+        await moodboardService.updateItem(actionToRevert.itemId, {
+          x: prevGeo.x,
+          y: prevGeo.y,
+          width: prevGeo.width,
+          height: prevGeo.height,
+          zIndex: prevGeo.zIndex,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to execute undo:', err);
+    }
+  }, [lastAction, selectedId]);
+
   // Add reference item to canvas
   const addReferenceItem = async (
     reference: Reference,
@@ -71,7 +140,6 @@ export function useMoodboard(projectId: string) {
     const defaultWidth = 300;
     const defaultHeight = 220;
 
-    // Default position: around canvas center adjusted by viewport
     const x = canvasPosition ? canvasPosition.x : -viewport.x / viewport.scale + 200 + (items.length % 5) * 30;
     const y = canvasPosition ? canvasPosition.y : -viewport.y / viewport.scale + 150 + (items.length % 5) * 30;
 
@@ -99,6 +167,7 @@ export function useMoodboard(projectId: string) {
 
     setItems((prev) => [...prev, itemWithRef]);
     setSelectedId(created.id);
+    recordUndoAction({ type: 'ADD', itemId: created.id, item: itemWithRef });
     return itemWithRef;
   };
 
@@ -134,6 +203,7 @@ export function useMoodboard(projectId: string) {
 
     setItems((prev) => [...prev, created]);
     setSelectedId(created.id);
+    recordUndoAction({ type: 'ADD', itemId: created.id, item: created });
     return created;
   };
 
@@ -147,7 +217,6 @@ export function useMoodboard(projectId: string) {
   ): Promise<MoodboardItem> => {
     const nextZ = getMaxZIndex() + 1;
 
-    // Calculate display dimensions constrained to ~340px width while preserving aspect ratio
     const targetWidth = Math.min(360, Math.max(160, naturalWidth));
     const aspectRatio = naturalHeight > 0 && naturalWidth > 0 ? naturalHeight / naturalWidth : 0.75;
     const targetHeight = Math.round(targetWidth * aspectRatio);
@@ -176,6 +245,7 @@ export function useMoodboard(projectId: string) {
 
     setItems((prev) => [...prev, created]);
     setSelectedId(created.id);
+    recordUndoAction({ type: 'ADD', itemId: created.id, item: created });
     return created;
   };
 
@@ -211,6 +281,7 @@ export function useMoodboard(projectId: string) {
 
     setItems((prev) => [...prev, created]);
     setSelectedId(created.id);
+    recordUndoAction({ type: 'ADD', itemId: created.id, item: created });
     return created;
   };
 
@@ -246,6 +317,7 @@ export function useMoodboard(projectId: string) {
 
     setItems((prev) => [...prev, created]);
     setSelectedId(created.id);
+    recordUndoAction({ type: 'ADD', itemId: created.id, item: created });
     return created;
   };
 
@@ -277,6 +349,7 @@ export function useMoodboard(projectId: string) {
 
     setItems((prev) => [...prev, itemWithRef]);
     setSelectedId(created.id);
+    recordUndoAction({ type: 'DUPLICATE', itemId: created.id, item: itemWithRef });
     return itemWithRef;
   };
 
@@ -302,7 +375,6 @@ export function useMoodboard(projectId: string) {
       id: string,
       geometry: { x: number; y: number; width: number; height: number; zIndex?: number }
     ) => {
-      // Clear existing pending timer for this item
       const existing = pendingUpdatesRef.current.get(id);
       if (existing) clearTimeout(existing);
 
@@ -310,7 +382,7 @@ export function useMoodboard(projectId: string) {
         try {
           await moodboardService.updateItem(id, geometry);
         } catch {
-          // Keep local state or log error
+          // Handled
         } finally {
           pendingUpdatesRef.current.delete(id);
         }
@@ -319,6 +391,34 @@ export function useMoodboard(projectId: string) {
       pendingUpdatesRef.current.set(id, timer);
     },
     []
+  );
+
+  // Nudge item position with keyboard arrow keys
+  const nudgeItem = useCallback(
+    (id: string, dx: number, dy: number) => {
+      const item = items.find((i) => i.id === id);
+      if (!item) return;
+
+      const newX = item.x + dx;
+      const newY = item.y + dy;
+
+      recordUndoAction({
+        type: 'MOVE',
+        itemId: id,
+        prevGeometry: { x: item.x, y: item.y, width: item.width, height: item.height, zIndex: item.z_index },
+        nextGeometry: { x: newX, y: newY, width: item.width, height: item.height, zIndex: item.z_index },
+      });
+
+      updateItemLocal(id, { x: newX, y: newY });
+      persistItemGeometry(id, {
+        x: newX,
+        y: newY,
+        width: item.width,
+        height: item.height,
+        zIndex: item.z_index,
+      });
+    },
+    [items, updateItemLocal, persistItemGeometry, recordUndoAction]
   );
 
   // Update text note content
@@ -396,10 +496,16 @@ export function useMoodboard(projectId: string) {
     }
   };
 
-  // Delete item from moodboard
+  // Delete item from moodboard (soft-delete with undo support)
   const deleteItem = async (id: string) => {
+    const targetItem = items.find((i) => i.id === id);
     setItems((prev) => prev.filter((item) => item.id !== id));
     if (selectedId === id) setSelectedId(null);
+
+    if (targetItem) {
+      recordUndoAction({ type: 'DELETE', itemId: id, item: targetItem });
+    }
+
     try {
       await moodboardService.deleteItem(id);
     } catch {
@@ -426,6 +532,41 @@ export function useMoodboard(projectId: string) {
     setViewport({ x: 0, y: 0, scale: 1 });
   };
 
+  // Zoom to fit all canvas items
+  const zoomToFit = useCallback(
+    (containerWidth = 800, containerHeight = 600) => {
+      if (items.length === 0) {
+        setViewport({ x: 0, y: 0, scale: 1 });
+        return;
+      }
+      const minX = Math.min(...items.map((i) => i.x));
+      const minY = Math.min(...items.map((i) => i.y));
+      const maxX = Math.max(...items.map((i) => i.x + i.width));
+      const maxY = Math.max(...items.map((i) => i.y + i.height));
+
+      const contentWidth = Math.max(maxX - minX, 100);
+      const contentHeight = Math.max(maxY - minY, 100);
+      const padding = 80;
+
+      const scaleX = (containerWidth - padding * 2) / contentWidth;
+      const scaleY = (containerHeight - padding * 2) / contentHeight;
+      const newScale = Math.min(Math.max(Math.min(scaleX, scaleY), 0.25), 1.5);
+
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+
+      const newX = containerWidth / 2 - centerX * newScale;
+      const newY = containerHeight / 2 - centerY * newScale;
+
+      setViewport({
+        x: Math.round(newX),
+        y: Math.round(newY),
+        scale: Number(newScale.toFixed(2)),
+      });
+    },
+    [items]
+  );
+
   return {
     items,
     selectedId,
@@ -434,6 +575,12 @@ export function useMoodboard(projectId: string) {
     setViewport,
     isLoading,
     error,
+    canUndo: !!lastAction,
+    lastAction,
+    recordUndoAction,
+    undo,
+    nudgeItem,
+    zoomToFit,
     refetch: fetchItems,
     addReferenceItem,
     addImageItem,

@@ -12,7 +12,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Button } from '@/components/ui/button';
 import type { Reference } from '@/features/references/types';
 import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
-import { FolderPlus, Type, Palette, Sparkles, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { FolderPlus, Type, Sparkles, Loader2 } from 'lucide-react';
 
 // Dynamic Konva Stage import without SSR
 const DynamicMoodboardStage = dynamic(
@@ -40,6 +40,11 @@ export function MoodboardCanvas({ projectId }: MoodboardCanvasProps) {
     setViewport,
     isLoading,
     error,
+    canUndo,
+    undo,
+    nudgeItem,
+    zoomToFit,
+    recordUndoAction,
     addReferenceItem,
     addImageItem,
     addTextNote,
@@ -118,10 +123,10 @@ export function MoodboardCanvas({ projectId }: MoodboardCanvasProps) {
   // Global Clipboard paste listener
   useEffect(() => {
     const handlePaste = async (e: ClipboardEvent) => {
-      // Don't intercept if user is typing in an active input or textarea
       if (
         document.activeElement?.tagName === 'INPUT' ||
         document.activeElement?.tagName === 'TEXTAREA' ||
+        (document.activeElement as HTMLElement)?.isContentEditable ||
         isAddRefOpen
       ) {
         return;
@@ -235,6 +240,10 @@ export function MoodboardCanvas({ projectId }: MoodboardCanvasProps) {
         onDeleteItem={deleteItem}
         onDropReference={handleDropReference}
         onDropFiles={handleDropFiles}
+        onUndo={undo}
+        onNudge={nudgeItem}
+        onZoomToFit={zoomToFit}
+        onRecordUndoAction={recordUndoAction}
       />
 
       {/* Empty State Overlay when canvas is pristine */}
@@ -290,6 +299,8 @@ export function MoodboardCanvas({ projectId }: MoodboardCanvasProps) {
       <MoodboardToolbar
         scale={viewport.scale}
         selectedId={selectedId}
+        canUndo={canUndo}
+        onUndo={undo}
         isLibraryOpen={isLibraryOpen}
         onToggleLibrary={() => setIsLibraryOpen((prev) => !prev)}
         onUploadImageFile={(file) => handleUploadImageFile(file, file.name)}
@@ -305,6 +316,7 @@ export function MoodboardCanvas({ projectId }: MoodboardCanvasProps) {
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onResetZoom={resetViewport}
+        onZoomToFit={() => zoomToFit()}
       />
 
       {/* Reference Library Drawer */}
@@ -332,4 +344,3 @@ export function MoodboardCanvas({ projectId }: MoodboardCanvasProps) {
     </div>
   );
 }
-

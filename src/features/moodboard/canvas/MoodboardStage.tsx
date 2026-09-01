@@ -10,6 +10,7 @@ import type {
   ColorItemContent,
   IdeaItemContent,
 } from '../types';
+import type { UndoAction } from '../hooks/useMoodboard';
 import { CanvasReferenceItem } from './CanvasReferenceItem';
 import { CanvasImageItem } from './CanvasImageItem';
 import { CanvasTextItem } from './CanvasTextItem';
@@ -39,6 +40,10 @@ interface MoodboardStageProps {
   onDeleteItem: (id: string) => void;
   onDropReference: (referenceData: unknown, canvasPosition: { x: number; y: number }) => void;
   onDropFiles: (files: FileList, canvasPosition: { x: number; y: number }) => void;
+  onUndo?: () => void;
+  onNudge?: (id: string, dx: number, dy: number) => void;
+  onZoomToFit?: (containerWidth?: number, containerHeight?: number) => void;
+  onRecordUndoAction?: (action: UndoAction) => void;
 }
 
 export function MoodboardStage({
@@ -57,13 +62,19 @@ export function MoodboardStage({
   onDeleteItem,
   onDropReference,
   onDropFiles,
+  onUndo,
+  onNudge,
+  onZoomToFit,
+  onRecordUndoAction,
 }: MoodboardStageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
+  const initialGeometryRef = useRef<Map<string, { x: number; y: number; width: number; height: number; zIndex?: number }>>(new Map());
 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [selectedNode, setSelectedNode] = useState<Konva.Node | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
 
   // Editing overlays
   const [editingTextItem, setEditingTextItem] = useState<MoodboardItem | null>(null);
@@ -131,42 +142,170 @@ export function MoodboardStage({
     }
   }, [selectedId, items]);
 
-  // Keyboard shortcut listener (Delete, Escape, Duplicate Cmd+D)
+  // Keyboard shortcut listener (Undo, Delete, Escape, Duplicate, Nudge, Zoom-to-fit, Spacebar-pan)
   useEffect(() => {
+    const isTextInputActive = () => {
+      const active = document.activeElement;
+      return (
+        active?.tagName === 'INPUT' ||
+        active?.tagName === 'TEXTAREA' ||
+        (active as HTMLElement)?.isContentEditable ||
+        Boolean(editingTextItem || editingColorItem || editingIdeaItem)
+      );
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA' ||
-        editingTextItem ||
-        editingColorItem ||
-        editingIdeaItem
-      ) {
+      if (isTextInputActive()) {
         return;
       }
 
+      // Spacebar pan (Hold Space)
+      if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault();
+        setIsSpacePressed(true);
+        return;
+      }
+
+      // Undo: Cmd/Ctrl + Z
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        onUndo?.();
+        return;
+      }
+
+      // Zoom to Fit: Cmd/Ctrl + 0
+      if ((e.metaKey || e.ctrlKey) && e.key === '0') {
+        e.preventDefault();
+        onZoomToFit?.(dimensions.width, dimensions.height);
+        return;
+      }
+
+      // Delete: Delete or Backspace
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         e.preventDefault();
         onDeleteItem(selectedId);
         onSelectId(null);
-      } else if (e.key === 'Escape') {
-        onSelectId(null);
-      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd' && selectedId) {
+        return;
+      }
+
+      // Duplicate: Cmd/Ctrl + D
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd' && selectedId) {
         e.preventDefault();
         onDuplicateItem(selectedId);
+        return;
+      }
+
+      // Escape: Clear selection
+      if (e.key === 'Escape') {
+        onSelectId(null);
+        return;
+      }
+
+      // Arrow keys nudge: 1px normal, 10px shift
+      if (selectedId && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        let dx = 0;
+        let dy = 0;
+        if (e.key === 'ArrowLeft') dx = -step;
+        if (e.key === 'ArrowRight') dx = step;
+        if (e.key === 'ArrowUp') dy = -step;
+        if (e.key === 'ArrowDown') dy = step;
+
+        onNudge?.(selectedId, dx, dy);
+        return;
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [
     selectedId,
+    dimensions,
     editingTextItem,
     editingColorItem,
     editingIdeaItem,
+    onUndo,
     onDeleteItem,
     onDuplicateItem,
     onSelectId,
+    onNudge,
+    onZoomToFit,
   ]);
+
+  // Track initial geometry before drag
+  const handleItemDragStart = (item: MoodboardItem) => {
+    initialGeometryRef.current.set(item.id, {
+      x: item.x,
+      y: item.y,
+      width: item.width,
+      height: item.height,
+      zIndex: item.z_index,
+    });
+    onBringToFront(item.id);
+    onSelectId(item.id);
+  };
+
+  // Handle item drag end with undo tracking
+  const handleItemDragEnd = (id: string, x: number, y: number) => {
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
+
+    const initial = initialGeometryRef.current.get(id);
+    if (initial && (initial.x !== x || initial.y !== y)) {
+      onRecordUndoAction?.({
+        type: 'MOVE',
+        itemId: id,
+        prevGeometry: initial,
+        nextGeometry: { x, y, width: item.width, height: item.height, zIndex: item.z_index },
+      });
+    }
+
+    onUpdateItemLocal(id, { x, y });
+    onPersistGeometry(id, {
+      x,
+      y,
+      width: item.width,
+      height: item.height,
+      zIndex: item.z_index,
+    });
+  };
+
+  // Handle item transform end with undo tracking
+  const handleItemTransformEnd = (id: string, x: number, y: number, width: number, height: number) => {
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
+
+    const initial = initialGeometryRef.current.get(id) || {
+      x: item.x,
+      y: item.y,
+      width: item.width,
+      height: item.height,
+      zIndex: item.z_index,
+    };
+
+    if (initial.width !== width || initial.height !== height || initial.x !== x || initial.y !== y) {
+      onRecordUndoAction?.({
+        type: 'RESIZE',
+        itemId: id,
+        prevGeometry: initial,
+        nextGeometry: { x, y, width, height, zIndex: item.z_index },
+      });
+    }
+
+    onUpdateItemLocal(id, { x, y, width, height });
+    onPersistGeometry(id, { x, y, width, height, zIndex: item.z_index });
+  };
 
   // Mouse wheel zoom centered on cursor
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
@@ -337,9 +476,9 @@ export function MoodboardStage({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative flex-1 w-full h-full overflow-hidden select-none bg-[#121211] cursor-default ${
-        isDragOver ? 'ring-2 ring-inset ring-accent/60' : ''
-      }`}
+      className={`relative flex-1 w-full h-full overflow-hidden select-none bg-[#121211] ${
+        isSpacePressed ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
+      } ${isDragOver ? 'ring-2 ring-inset ring-accent/60' : ''}`}
     >
       {/* Subtle Drag Over Indicator */}
       {isDragOver && (
@@ -358,7 +497,7 @@ export function MoodboardStage({
         y={viewport.y}
         scaleX={viewport.scale}
         scaleY={viewport.scale}
-        draggable
+        draggable={isSpacePressed || !selectedId}
         onWheel={handleWheel}
         onDragEnd={handleStageDragEnd}
         onClick={handleBackgroundClick}
@@ -401,24 +540,9 @@ export function MoodboardStage({
                     onSelectId(item.id);
                     setSelectedNode(node);
                   }}
-                  onDragStart={() => {
-                    onBringToFront(item.id);
-                    onSelectId(item.id);
-                  }}
-                  onDragEnd={(id, x, y) => {
-                    onUpdateItemLocal(id, { x, y });
-                    onPersistGeometry(id, {
-                      x,
-                      y,
-                      width: item.width,
-                      height: item.height,
-                      zIndex: item.z_index,
-                    });
-                  }}
-                  onTransformEnd={(id, x, y, width, height) => {
-                    onUpdateItemLocal(id, { x, y, width, height });
-                    onPersistGeometry(id, { x, y, width, height, zIndex: item.z_index });
-                  }}
+                  onDragStart={() => handleItemDragStart(item)}
+                  onDragEnd={handleItemDragEnd}
+                  onTransformEnd={handleItemTransformEnd}
                   onDoubleClick={handleOpenTextEdit}
                 />
               );
@@ -434,24 +558,9 @@ export function MoodboardStage({
                     onSelectId(item.id);
                     setSelectedNode(node);
                   }}
-                  onDragStart={() => {
-                    onBringToFront(item.id);
-                    onSelectId(item.id);
-                  }}
-                  onDragEnd={(id, x, y) => {
-                    onUpdateItemLocal(id, { x, y });
-                    onPersistGeometry(id, {
-                      x,
-                      y,
-                      width: item.width,
-                      height: item.height,
-                      zIndex: item.z_index,
-                    });
-                  }}
-                  onTransformEnd={(id, x, y, width, height) => {
-                    onUpdateItemLocal(id, { x, y, width, height });
-                    onPersistGeometry(id, { x, y, width, height, zIndex: item.z_index });
-                  }}
+                  onDragStart={() => handleItemDragStart(item)}
+                  onDragEnd={handleItemDragEnd}
+                  onTransformEnd={handleItemTransformEnd}
                 />
               );
             }
@@ -466,24 +575,9 @@ export function MoodboardStage({
                     onSelectId(item.id);
                     setSelectedNode(node);
                   }}
-                  onDragStart={() => {
-                    onBringToFront(item.id);
-                    onSelectId(item.id);
-                  }}
-                  onDragEnd={(id, x, y) => {
-                    onUpdateItemLocal(id, { x, y });
-                    onPersistGeometry(id, {
-                      x,
-                      y,
-                      width: item.width,
-                      height: item.height,
-                      zIndex: item.z_index,
-                    });
-                  }}
-                  onTransformEnd={(id, x, y, width, height) => {
-                    onUpdateItemLocal(id, { x, y, width, height });
-                    onPersistGeometry(id, { x, y, width, height, zIndex: item.z_index });
-                  }}
+                  onDragStart={() => handleItemDragStart(item)}
+                  onDragEnd={handleItemDragEnd}
+                  onTransformEnd={handleItemTransformEnd}
                   onDoubleClick={handleOpenColorEdit}
                 />
               );
@@ -499,24 +593,9 @@ export function MoodboardStage({
                     onSelectId(item.id);
                     setSelectedNode(node);
                   }}
-                  onDragStart={() => {
-                    onBringToFront(item.id);
-                    onSelectId(item.id);
-                  }}
-                  onDragEnd={(id, x, y) => {
-                    onUpdateItemLocal(id, { x, y });
-                    onPersistGeometry(id, {
-                      x,
-                      y,
-                      width: item.width,
-                      height: item.height,
-                      zIndex: item.z_index,
-                    });
-                  }}
-                  onTransformEnd={(id, x, y, width, height) => {
-                    onUpdateItemLocal(id, { x, y, width, height });
-                    onPersistGeometry(id, { x, y, width, height, zIndex: item.z_index });
-                  }}
+                  onDragStart={() => handleItemDragStart(item)}
+                  onDragEnd={handleItemDragEnd}
+                  onTransformEnd={handleItemTransformEnd}
                   onDoubleClick={handleOpenIdeaEdit}
                 />
               );
@@ -532,167 +611,123 @@ export function MoodboardStage({
                   onSelectId(item.id);
                   setSelectedNode(node);
                 }}
-                onDragStart={() => {
-                  onBringToFront(item.id);
-                  onSelectId(item.id);
-                }}
-                onDragEnd={(id, x, y) => {
-                  onUpdateItemLocal(id, { x, y });
-                  onPersistGeometry(id, {
-                    x,
-                    y,
-                    width: item.width,
-                    height: item.height,
-                    zIndex: item.z_index,
-                  });
-                }}
-                onTransformEnd={(id, x, y, width, height) => {
-                  onUpdateItemLocal(id, { x, y, width, height });
-                  onPersistGeometry(id, { x, y, width, height, zIndex: item.z_index });
-                }}
+                onDragStart={() => handleItemDragStart(item)}
+                onDragEnd={handleItemDragEnd}
+                onTransformEnd={handleItemTransformEnd}
               />
             );
           })}
 
-          {/* Transformer */}
-          <CanvasTransformer
-            selectedNode={selectedNode}
-            keepRatio={selectedItem?.type === 'reference' || selectedItem?.type === 'image'}
-          />
+          {/* Konva Transformer for resize */}
+          {selectedNode && selectedItem && (
+            <CanvasTransformer
+              selectedNode={selectedNode}
+            />
+          )}
         </Layer>
       </Stage>
 
-      {/* 1. Inline Text Edit DOM Overlay */}
+      {/* Floating Editing Overlay for Text Item */}
       {editingTextItem && (
         <div
           style={getEditingOverlayStyle(editingTextItem)}
-          className="absolute z-30 flex flex-col rounded-md border border-accent bg-[#22211E] p-3 shadow-floating animate-in fade-in-50"
+          className="absolute z-30 p-3 bg-surface border border-accent/60 rounded-lg shadow-floating flex flex-col gap-2"
         >
+          <div className="flex items-center justify-between pb-1 border-b border-border text-[11px] text-muted-foreground">
+            <span className="font-medium text-foreground">Edit Text Note</span>
+            <span>Press Esc or click outside</span>
+          </div>
           <textarea
+            autoFocus
             value={editingTextValue}
             onChange={(e) => setEditingTextValue(e.target.value)}
-            onBlur={handleSaveTextEdit}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                handleSaveTextEdit();
-              } else if (e.key === 'Escape') {
-                setEditingTextItem(null);
-              }
+              if (e.key === 'Escape') handleSaveTextEdit();
             }}
-            autoFocus
-            className="flex-1 w-full resize-none bg-transparent font-display text-foreground focus:outline-none leading-relaxed"
-            placeholder="Type your creative note..."
+            onBlur={handleSaveTextEdit}
+            placeholder="Type your creative thoughts..."
+            className="w-full flex-1 min-h-[80px] bg-transparent text-foreground placeholder-muted-foreground outline-none resize-none font-serif text-sm leading-relaxed"
           />
-          <div className="flex items-center justify-between pt-2 border-t border-border-subtle text-[10px] text-muted-foreground">
-            <span>Press Cmd+Enter to save</span>
+        </div>
+      )}
+
+      {/* Floating Editing Overlay for Color Item */}
+      {editingColorItem && (
+        <div
+          style={getEditingOverlayStyle(editingColorItem)}
+          className="absolute z-30 p-3 bg-surface border border-accent/60 rounded-lg shadow-floating flex flex-col gap-2.5 max-w-[220px]"
+        >
+          <div className="flex items-center justify-between pb-1 border-b border-border text-[11px] text-muted-foreground">
+            <span className="font-medium text-foreground">Edit Swatch</span>
             <button
-              type="button"
-              onClick={handleSaveTextEdit}
-              className="text-accent hover:underline font-medium"
+              onClick={handleSaveColorEdit}
+              className="text-xs text-accent hover:underline"
             >
               Done
             </button>
           </div>
-        </div>
-      )}
-
-      {/* 2. Color Swatch Edit DOM Overlay */}
-      {editingColorItem && (
-        <div
-          style={getEditingOverlayStyle(editingColorItem)}
-          className="absolute z-30 flex flex-col gap-2.5 rounded-lg border border-accent bg-surface p-3.5 shadow-floating animate-in fade-in-50"
-        >
-          <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-            Edit Color Swatch
-          </span>
           <div className="flex items-center gap-2">
             <input
               type="color"
-              value={editingColorHex}
-              onChange={(e) => setEditingColorHex(e.target.value)}
-              className="h-8 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+              value={editingColorHex.startsWith('#') ? editingColorHex : `#${editingColorHex}`}
+              onChange={(e) => setEditingColorHex(e.target.value.toUpperCase())}
+              className="h-8 w-8 rounded cursor-pointer border border-border bg-transparent p-0"
             />
             <input
               type="text"
               value={editingColorHex}
-              onChange={(e) => setEditingColorHex(e.target.value)}
-              className="h-8 flex-1 rounded border border-border bg-surface-subtle px-2 font-mono text-xs text-foreground focus:outline-none focus:border-accent"
-              placeholder="#HEX"
-              autoFocus
+              onChange={(e) => setEditingColorHex(e.target.value.toUpperCase())}
+              placeholder="#D97706"
+              className="flex-1 rounded bg-surface-subtle px-2 py-1 font-mono text-xs text-foreground border border-border outline-none focus:border-accent"
             />
           </div>
           <input
             type="text"
             value={editingColorLabel}
             onChange={(e) => setEditingColorLabel(e.target.value)}
-            className="h-8 w-full rounded border border-border bg-surface-subtle px-2 text-xs text-foreground focus:outline-none focus:border-accent"
-            placeholder="Label (optional, e.g. Primary Amber)"
+            placeholder="Color label (optional)"
+            className="w-full rounded bg-surface-subtle px-2 py-1 text-xs text-foreground border border-border outline-none focus:border-accent"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === 'Escape') handleSaveColorEdit();
+            }}
           />
-          <div className="flex justify-end gap-2 pt-1">
+        </div>
+      )}
+
+      {/* Floating Editing Overlay for Idea Item */}
+      {editingIdeaItem && (
+        <div
+          style={getEditingOverlayStyle(editingIdeaItem)}
+          className="absolute z-30 p-3 bg-surface border border-accent/60 rounded-lg shadow-floating flex flex-col gap-2 min-w-[260px]"
+        >
+          <div className="flex items-center justify-between pb-1 border-b border-border text-[11px] text-muted-foreground">
+            <span className="font-medium text-foreground">Edit Idea</span>
             <button
-              type="button"
-              onClick={() => setEditingColorItem(null)}
-              className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveColorEdit}
-              className="rounded bg-accent px-2.5 py-1 text-xs font-medium text-white hover:bg-accent-hover"
+              onClick={handleSaveIdeaEdit}
+              className="text-xs text-accent hover:underline"
             >
               Save
             </button>
           </div>
-        </div>
-      )}
-
-      {/* 3. Creative Idea Edit DOM Overlay */}
-      {editingIdeaItem && (
-        <div
-          style={getEditingOverlayStyle(editingIdeaItem)}
-          className="absolute z-30 flex flex-col gap-2.5 rounded-lg border border-accent bg-[#1C1B17] p-3.5 shadow-floating animate-in fade-in-50"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-accent">
-              Creative Idea
-            </span>
-          </div>
           <input
+            autoFocus
             type="text"
             value={editingIdeaTitle}
             onChange={(e) => setEditingIdeaTitle(e.target.value)}
-            className="w-full bg-transparent font-display text-sm font-medium italic text-foreground focus:outline-none border-b border-border focus:border-accent pb-1"
-            placeholder="e.g. Editorial but energetic"
-            autoFocus
+            placeholder="Idea statement..."
+            className="w-full rounded bg-surface-subtle px-2.5 py-1.5 font-display text-sm font-medium text-foreground border border-border outline-none focus:border-accent"
           />
           <textarea
             value={editingIdeaNotes}
             onChange={(e) => setEditingIdeaNotes(e.target.value)}
-            rows={2}
-            className="w-full resize-none rounded border border-border/60 bg-surface-subtle/50 p-2 text-xs text-foreground focus:outline-none focus:border-accent"
-            placeholder="Additional thoughts or notes..."
+            placeholder="Supporting context, mood, or direction notes..."
+            className="w-full min-h-[60px] rounded bg-surface-subtle p-2 text-xs text-muted-foreground border border-border outline-none focus:border-accent resize-none leading-relaxed"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') handleSaveIdeaEdit();
+            }}
           />
-          <div className="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => setEditingIdeaItem(null)}
-              className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveIdeaEdit}
-              className="rounded bg-accent px-2.5 py-1 text-xs font-medium text-white hover:bg-accent-hover"
-            >
-              Save Idea
-            </button>
-          </div>
         </div>
       )}
     </div>
   );
 }
-

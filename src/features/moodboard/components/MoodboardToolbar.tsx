@@ -21,11 +21,14 @@ import {
   Maximize2,
   Copy,
   Trash2,
+  RotateCcw,
 } from 'lucide-react';
 
 interface MoodboardToolbarProps {
   scale: number;
   selectedId: string | null;
+  canUndo?: boolean;
+  onUndo?: () => void;
   isLibraryOpen: boolean;
   onToggleLibrary: () => void;
   onUploadImageFile: (file: File) => void;
@@ -37,11 +40,14 @@ interface MoodboardToolbarProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onResetZoom: () => void;
+  onZoomToFit?: () => void;
 }
 
 export function MoodboardToolbar({
   scale,
   selectedId,
+  canUndo,
+  onUndo,
   isLibraryOpen,
   onToggleLibrary,
   onUploadImageFile,
@@ -53,6 +59,7 @@ export function MoodboardToolbar({
   onZoomIn,
   onZoomOut,
   onResetZoom,
+  onZoomToFit,
 }: MoodboardToolbarProps) {
   const percentage = Math.round(scale * 100);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -62,7 +69,6 @@ export function MoodboardToolbar({
     if (file) {
       onUploadImageFile(file);
     }
-    // reset input
     if (e.target) e.target.value = '';
   };
 
@@ -129,6 +135,19 @@ export function MoodboardToolbar({
         <span>Library</span>
       </Button>
 
+      {/* Undo Button (Subtle, contextual) */}
+      {canUndo && (
+        <button
+          type="button"
+          onClick={onUndo}
+          className="flex h-7 items-center gap-1 px-2 rounded-full text-xs text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors"
+          title="Undo last canvas action (Cmd/Ctrl+Z)"
+        >
+          <RotateCcw className="h-3 w-3" />
+          <span>Undo</span>
+        </button>
+      )}
+
       <div className="h-4 w-px bg-border-subtle mx-1" />
 
       {/* Zoom Controls */}
@@ -162,9 +181,15 @@ export function MoodboardToolbar({
 
         <button
           type="button"
-          onClick={onResetZoom}
+          onClick={() => {
+            if (onZoomToFit) {
+              onZoomToFit();
+            } else {
+              onResetZoom();
+            }
+          }}
           className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors"
-          title="Fit / Center"
+          title="Zoom to Fit (Cmd+0)"
         >
           <Maximize2 className="h-3.5 w-3.5" />
         </button>
