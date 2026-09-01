@@ -1,18 +1,23 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useProject } from '@/features/projects/hooks/useProject';
 import { ProjectHeader } from '@/features/projects/components/ProjectHeader';
+import { CommandPalette } from '@/features/projects/components/CommandPalette';
+import { TrashModal } from '@/features/projects/components/TrashModal';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
-import { Bookmark, LayoutGrid, Compass, ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 import { ReferenceLibrary } from '@/features/references/components/ReferenceLibrary';
 import { DirectionNotesView } from '@/features/creative-direction/components/DirectionNotesView';
 import { MoodboardCanvas } from '@/features/moodboard/components/MoodboardCanvas';
+import { AddReferenceDialog } from '@/features/references/components/AddReferenceDialog';
+import { referenceService } from '@/features/references/services/referenceService';
+import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -22,8 +27,50 @@ export default function ProjectWorkspacePage() {
   const [activeTab, setActiveTab] = useState<'references' | 'moodboard' | 'direction'>('references');
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // Command Palette & Modal States
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isTrashOpen, setIsTrashOpen] = useState(false);
+  const [isAddRefOpen, setIsAddRefOpen] = useState(false);
+
+  // Global Cmd/Ctrl+K keyboard listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        const active = document.activeElement;
+        if (
+          !isCommandPaletteOpen &&
+          (active?.tagName === 'INPUT' ||
+            active?.tagName === 'TEXTAREA' ||
+            (active as HTMLElement)?.isContentEditable)
+        ) {
+          return;
+        }
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isCommandPaletteOpen]);
+
   const handleItemRestored = () => {
     setRefreshKey((prev) => prev + 1);
+  };
+
+  const handleCreateReferenceSubmit = async (input: CreateReferenceInput) => {
+    const created = await referenceService.createReference({
+      projectId: input.projectId,
+      url: input.url,
+      title: input.title,
+      thumbnailUrl: input.thumbnailUrl,
+      sourceDomain: input.sourceDomain,
+      note: input.note,
+      tags: input.tags,
+    });
+    setRefreshKey((prev) => prev + 1);
+    setIsAddRefOpen(false);
+    return created;
   };
 
   if (isLoading) {
@@ -64,6 +111,8 @@ export default function ProjectWorkspacePage() {
         activeTab={activeTab}
         onTabChange={(tab) => setActiveTab(tab as 'references' | 'moodboard' | 'direction')}
         onItemRestored={handleItemRestored}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        onOpenTrash={() => setIsTrashOpen(true)}
       />
 
       {/* Project Metadata Banner */}
@@ -146,6 +195,37 @@ export default function ProjectWorkspacePage() {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Global Command Palette */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onNavigate={(tab) => setActiveTab(tab)}
+        onAddReference={() => setIsAddRefOpen(true)}
+        onOpenTrash={() => setIsTrashOpen(true)}
+      />
+
+      {/* Global Trash Modal */}
+      <TrashModal
+        projectId={project.id}
+        isOpen={isTrashOpen}
+        onClose={() => setIsTrashOpen(false)}
+        onItemRestored={handleItemRestored}
+      />
+
+      {/* Add Reference Dialog */}
+      {isAddRefOpen && (
+        <AddReferenceDialog
+          projectId={project.id}
+          open={isAddRefOpen}
+          onOpenChange={(open) => setIsAddRefOpen(open)}
+          onReferenceCreated={() => {
+            setRefreshKey((prev) => prev + 1);
+            setIsAddRefOpen(false);
+          }}
+          onSubmit={handleCreateReferenceSubmit}
+        />
+      )}
     </div>
   );
 }

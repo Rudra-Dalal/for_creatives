@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, LogOut, ArrowLeft, Trash2 } from 'lucide-react';
+import { ChevronRight, LogOut, ArrowLeft, Trash2, Search } from 'lucide-react';
 import { authService } from '@/features/auth/services/authService';
 import { TrashModal } from './TrashModal';
 import type { Project } from '../types';
@@ -13,6 +13,8 @@ interface ProjectHeaderProps {
   activeTab?: string;
   onTabChange?: (tab: string) => void;
   onItemRestored?: () => void;
+  onOpenCommandPalette?: () => void;
+  onOpenTrash?: () => void;
 }
 
 export function ProjectHeader({
@@ -20,9 +22,11 @@ export function ProjectHeader({
   activeTab = 'references',
   onTabChange,
   onItemRestored,
+  onOpenCommandPalette,
+  onOpenTrash,
 }: ProjectHeaderProps) {
   const router = useRouter();
-  const [isTrashOpen, setIsTrashOpen] = useState(false);
+  const [internalTrashOpen, setInternalTrashOpen] = useState(false);
 
   const handleSignOut = async () => {
     await authService.signOut();
@@ -33,6 +37,14 @@ export function ProjectHeader({
   const handleRestored = () => {
     onItemRestored?.();
     router.refresh();
+  };
+
+  const handleOpenTrashClick = () => {
+    if (onOpenTrash) {
+      onOpenTrash();
+    } else {
+      setInternalTrashOpen(true);
+    }
   };
 
   return (
@@ -97,15 +109,32 @@ export function ProjectHeader({
 
         <div className="flex items-center gap-2">
           {project && (
-            <button
-              type="button"
-              onClick={() => setIsTrashOpen(true)}
-              className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-surface hover:text-foreground border border-transparent hover:border-border"
-              title="Open Trash"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Trash</span>
-            </button>
+            <>
+              {onOpenCommandPalette && (
+                <button
+                  type="button"
+                  onClick={onOpenCommandPalette}
+                  className="hidden md:flex items-center gap-2 rounded-md bg-surface px-2.5 py-1 text-xs text-muted-foreground border border-border hover:border-border-strong hover:text-foreground transition-colors"
+                  title="Search & Commands (Cmd+K)"
+                >
+                  <Search className="h-3 w-3 text-muted-foreground" />
+                  <span>Search</span>
+                  <kbd className="font-mono text-[10px] text-muted-foreground/80 bg-surface-subtle px-1 rounded border border-border/60">
+                    ⌘K
+                  </kbd>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleOpenTrashClick}
+                className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-surface hover:text-foreground border border-transparent hover:border-border"
+                title="Open Trash"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Trash</span>
+              </button>
+            </>
           )}
 
           <button
@@ -120,11 +149,11 @@ export function ProjectHeader({
         </div>
       </header>
 
-      {project && (
+      {project && !onOpenTrash && (
         <TrashModal
           projectId={project.id}
-          isOpen={isTrashOpen}
-          onClose={() => setIsTrashOpen(false)}
+          isOpen={internalTrashOpen}
+          onClose={() => setInternalTrashOpen(false)}
           onItemRestored={handleRestored}
         />
       )}
