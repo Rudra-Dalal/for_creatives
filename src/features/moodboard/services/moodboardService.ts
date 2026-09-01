@@ -11,7 +11,7 @@ export const moodboardService = {
   async getItems(projectId: string): Promise<MoodboardItem[]> {
     const supabase = createClient();
 
-    const { data: items, error } = await supabase
+    let { data: items, error } = await supabase
       .from('moodboard_items')
       .select(`
         *,
@@ -21,7 +21,22 @@ export const moodboardService = {
       .is('deleted_at', null)
       .order('z_index', { ascending: true });
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === '42703' || error.message?.includes('deleted_at')) {
+        const fallback = await supabase
+          .from('moodboard_items')
+          .select(`
+            *,
+            references (*)
+          `)
+          .eq('project_id', projectId)
+          .order('z_index', { ascending: true });
+        if (fallback.error) throw fallback.error;
+        items = fallback.data;
+      } else {
+        throw error;
+      }
+    }
     if (!items) return [];
 
     return items.map((item) => {
@@ -51,7 +66,7 @@ export const moodboardService = {
   async getTrashItems(projectId: string): Promise<MoodboardItem[]> {
     const supabase = createClient();
 
-    const { data: items, error } = await supabase
+    let { data: items, error } = await supabase
       .from('moodboard_items')
       .select(`
         *,
@@ -61,7 +76,12 @@ export const moodboardService = {
       .not('deleted_at', 'is', null)
       .order('deleted_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === '42703' || error.message?.includes('deleted_at')) {
+        return [];
+      }
+      throw error;
+    }
     if (!items) return [];
 
     return items.map((item) => {
