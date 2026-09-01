@@ -71,6 +71,7 @@ export function CanvasIdeaItem({
       height={item.height}
       draggable
       onClick={(e) => {
+        if (e.evt && e.evt.button !== 0) return;
         e.cancelBubble = true;
         if (groupRef.current) onSelect(groupRef.current);
       }}

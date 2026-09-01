@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Stage, Layer, Rect } from 'react-konva';
-import type Konva from 'konva';
+import Konva from 'konva';
 import type {
   MoodboardItem,
   CanvasViewport,
@@ -78,6 +78,11 @@ export function MoodboardStage({
   const [isDragOver, setIsDragOver] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
 
+  // Middle-mouse drag panning state
+  const isMiddlePanningRef = useRef(false);
+  const middlePanStartRef = useRef<{ clientX: number; clientY: number; vx: number; vy: number }>({ clientX: 0, clientY: 0, vx: 0, vy: 0 });
+  const [isMiddlePanning, setIsMiddlePanning] = useState(false);
+
   // Editing overlays
   const [editingTextItem, setEditingTextItem] = useState<MoodboardItem | null>(null);
   const [editingTextValue, setEditingTextValue] = useState('');
@@ -92,6 +97,57 @@ export function MoodboardStage({
 
   // Image for subtle dotted background pattern
   const [dotPatternImage, setDotPatternImage] = useState<HTMLImageElement | null>(null);
+
+  // Restrict Konva node dragging strictly to left click (button 0)
+  useEffect(() => {
+    Konva.dragButtons = [0];
+  }, []);
+
+  // Global mouse handlers for middle-mouse drag panning across entire window
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (!isMiddlePanningRef.current) return;
+      e.preventDefault();
+      const dx = e.clientX - middlePanStartRef.current.clientX;
+      const dy = e.clientY - middlePanStartRef.current.clientY;
+      onViewportChange({
+        x: middlePanStartRef.current.vx + dx,
+        y: middlePanStartRef.current.vy + dy,
+        scale: viewport.scale,
+      });
+    };
+
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      if (e.button === 1 || isMiddlePanningRef.current) {
+        if (isMiddlePanningRef.current) {
+          isMiddlePanningRef.current = false;
+          setIsMiddlePanning(false);
+        }
+      }
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove, { passive: false });
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [viewport.scale, onViewportChange]);
+
+  const handleContainerMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 1) {
+      // Middle mouse button pressed - start viewport panning
+      e.preventDefault();
+      isMiddlePanningRef.current = true;
+      setIsMiddlePanning(true);
+      middlePanStartRef.current = {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        vx: viewport.x,
+        vy: viewport.y,
+      };
+    }
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -535,11 +591,15 @@ export function MoodboardStage({
   return (
     <div
       ref={containerRef}
+      onMouseDown={handleContainerMouseDown}
+      onAuxClick={(e) => {
+        if (e.button === 1) e.preventDefault();
+      }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`relative flex-1 w-full h-full overflow-hidden select-none bg-[#121211] ${
-        isSpacePressed ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
+        isMiddlePanning ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
       } ${isDragOver ? 'ring-2 ring-inset ring-accent/60' : ''}`}
     >
       {/* Subtle Drag Over Indicator */}
