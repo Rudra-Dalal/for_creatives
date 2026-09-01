@@ -5,6 +5,8 @@ import type { Reference } from '../types';
 import type { UpdateReferenceInput } from '../validation/referenceSchema';
 import { updateReferenceSchema } from '../validation/referenceSchema';
 import { thumbnailService } from '../services/thumbnailService';
+import { extractPaletteFromImage } from '../utils/colorExtractor';
+import { moodboardService } from '@/features/moodboard/services/moodboardService';
 import { useReferenceDirections } from '@/features/creative-direction/hooks/useReferenceDirections';
 import { directionService } from '@/features/creative-direction/services/directionService';
 import { CreateDirectionDialog } from '@/features/creative-direction/components/CreateDirectionDialog';
@@ -29,6 +31,10 @@ import {
   Globe,
   Plus,
   Sparkles,
+  Palette,
+  Copy,
+  Check,
+  LayoutGrid,
 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -53,6 +59,12 @@ export function ReferenceDetailPanel({
   const [note, setNote] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
+
+  // Extracted Color Palette
+  const [palette, setPalette] = useState<string[]>([]);
+  const [isExtractingPalette, setIsExtractingPalette] = useState(false);
+  const [copiedHex, setCopiedHex] = useState<string | null>(null);
+  const [addedHex, setAddedHex] = useState<string | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -97,6 +109,18 @@ export function ReferenceDetailPanel({
       setSuccessMessage(null);
       setImageError(false);
       setSelectedDirectionToLink('');
+      setPalette([]);
+
+      // Trigger automatic color extraction if thumbnail exists
+      if (reference.thumbnail_url) {
+        setIsExtractingPalette(true);
+        extractPaletteFromImage(reference.thumbnail_url, 6)
+          .then((colors) => {
+            setPalette(colors);
+          })
+          .catch(() => setPalette([]))
+          .finally(() => setIsExtractingPalette(false));
+      }
     }
   }, [reference]);
 
@@ -144,6 +168,13 @@ export function ReferenceDetailPanel({
       const publicUrl = await thumbnailService.uploadThumbnail(projectId, file);
       setThumbnailUrl(publicUrl);
       setImageError(false);
+
+      // Re-extract palette from uploaded image
+      setIsExtractingPalette(true);
+      extractPaletteFromImage(publicUrl, 6)
+        .then(setPalette)
+        .catch(() => setPalette([]))
+        .finally(() => setIsExtractingPalette(false));
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);
@@ -152,6 +183,31 @@ export function ReferenceDetailPanel({
       }
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleCopyHex = (hex: string) => {
+    navigator.clipboard.writeText(hex);
+    setCopiedHex(hex);
+    setTimeout(() => setCopiedHex(null), 2000);
+  };
+
+  const handleAddColorToMoodboard = async (hex: string) => {
+    try {
+      await moodboardService.createItem({
+        projectId: projectId,
+        type: 'color',
+        content: { hex, label: title ? `${title.slice(0, 16)} swatch` : 'Color Swatch' },
+        x: Math.round(Math.random() * 200 + 100),
+        y: Math.round(Math.random() * 200 + 100),
+        width: 140,
+        height: 140,
+        zIndex: 10,
+      });
+      setAddedHex(hex);
+      setTimeout(() => setAddedHex(null), 2000);
+    } catch {
+      // Ignored
     }
   };
 
@@ -291,6 +347,7 @@ export function ReferenceDetailPanel({
                     type="button"
                     onClick={() => {
                       setThumbnailUrl('');
+                      setPalette([]);
                       setImageError(false);
                     }}
                     className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black"
@@ -342,6 +399,70 @@ export function ReferenceDetailPanel({
               </a>
             </div>
           </div>
+
+          {/* Color Palette Extraction */}
+          {hasThumbnail && (
+            <div className="rounded-lg border border-border bg-surface-subtle p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Palette className="h-3.5 w-3.5 text-accent" />
+                  <span className="text-xs font-medium text-foreground">Extracted Palette</span>
+                </div>
+                {isExtractingPalette && (
+                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                )}
+              </div>
+
+              {palette.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-6 gap-2">
+                    {palette.map((hex) => {
+                      const isCopied = copiedHex === hex;
+                      const isAdded = addedHex === hex;
+
+                      return (
+                        <div key={hex} className="group/color relative flex flex-col items-center">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyHex(hex)}
+                            style={{ backgroundColor: hex }}
+                            className="h-9 w-full rounded-md border border-white/10 shadow-sm transition-transform hover:scale-105 relative flex items-center justify-center"
+                            title={`Click to copy ${hex}`}
+                          >
+                            {isCopied && <Check className="h-3.5 w-3.5 text-white drop-shadow" />}
+                          </button>
+                          <span className="font-mono text-[9px] text-muted-foreground mt-1 truncate">
+                            {hex}
+                          </span>
+
+                          {/* Quick Add to Moodboard Button on Hover */}
+                          <button
+                            type="button"
+                            onClick={() => handleAddColorToMoodboard(hex)}
+                            className="opacity-0 group-hover/color:opacity-100 absolute -top-2 -right-1 z-10 h-5 w-5 rounded-full bg-surface border border-border shadow text-foreground hover:text-accent flex items-center justify-center transition-opacity"
+                            title="Add swatch to Moodboard Canvas"
+                          >
+                            {isAdded ? (
+                              <Check className="h-2.5 w-2.5 text-accent" />
+                            ) : (
+                              <Plus className="h-2.5 w-2.5" />
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground/70">
+                    Click a swatch to copy HEX code, or use the (+) icon to place it onto the moodboard.
+                  </p>
+                </div>
+              ) : !isExtractingPalette ? (
+                <p className="text-xs text-muted-foreground/60 italic">
+                  No palette extracted for this image.
+                </p>
+              ) : null}
+            </div>
+          )}
 
           {/* Title Field */}
           <div className="space-y-1.5">
@@ -419,7 +540,7 @@ export function ReferenceDetailPanel({
             />
           </div>
 
-          {/* FEATURE 4 & 5: Creative Direction Bidirectional Integration */}
+          {/* Creative Direction Bidirectional Integration */}
           <div className="rounded-lg border border-border bg-surface-subtle p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
