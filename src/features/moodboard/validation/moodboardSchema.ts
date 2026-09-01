@@ -3,8 +3,8 @@ import { z } from 'zod';
 export const createMoodboardItemSchema = z.object({
   projectId: z.string().uuid('Invalid project ID'),
   referenceId: z.string().uuid('Invalid reference ID').nullable().optional(),
-  type: z.enum(['reference', 'image', 'text', 'color', 'idea']),
-  content: z.record(z.any()).default({}),
+  type: z.string().refine(val => ['reference', 'image', 'text', 'color', 'idea'].includes(val), { message: 'Invalid moodboard item type' }),
+  content: z.record(z.unknown()).default({}),
   x: z.number().default(0),
   y: z.number().default(0),
   width: z.number().positive().default(300),
@@ -13,7 +13,7 @@ export const createMoodboardItemSchema = z.object({
 });
 
 export const updateMoodboardItemSchema = z.object({
-  content: z.record(z.any()).optional(),
+  content: z.record(z.unknown()).optional(),
   x: z.number().optional(),
   y: z.number().optional(),
   width: z.number().positive().optional(),
