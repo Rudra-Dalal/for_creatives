@@ -1,7 +1,31 @@
 import { createClient } from '@/lib/supabase/client';
-import type { Project, ProjectInsert, ProjectUpdate } from '../types';
+import type { Project, ProjectInsert, ProjectUpdate, SharedProjectBundle } from '../types';
 
 export const projectService = {
+  /**
+   * Fetch a full shared project bundle by token using the hardened RPC function.
+   * Returns project metadata, non-deleted references, moodboard items, and direction notes.
+   */
+  async getSharedProjectBundle(token: string): Promise<SharedProjectBundle | null> {
+    if (!token) return null;
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc('get_shared_project_bundle', {
+      p_token: token.trim(),
+    });
+
+    if (error) {
+      // Fallback if RPC function is not yet migrated in database
+      const fallbackProject = await this.getProjectByShareToken(token);
+      if (!fallbackProject) return null;
+      return {
+        project: fallbackProject,
+      };
+    }
+
+    if (!data) return null;
+    return data as unknown as SharedProjectBundle;
+  },
+
   /**
    * Fetch all projects owned by current authenticated user.
    */

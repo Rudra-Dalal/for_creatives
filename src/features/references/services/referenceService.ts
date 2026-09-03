@@ -67,19 +67,7 @@ export const referenceService = {
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
-    if (error) {
-      // Fallback if deleted_at column is not yet migrated in Supabase
-      if (error.code === '42703' || error.message?.includes('deleted_at')) {
-        const fallback = await supabase
-          .from('references')
-          .select('*')
-          .eq('project_id', projectId)
-          .order('created_at', { ascending: false });
-        if (fallback.error) throw fallback.error;
-        return fallback.data || [];
-      }
-      throw error;
-    }
+    if (error) throw error;
     return data || [];
   },
 
@@ -95,12 +83,7 @@ export const referenceService = {
       .not('deleted_at', 'is', null)
       .order('deleted_at', { ascending: false });
 
-    if (error) {
-      if (error.code === '42703' || error.message?.includes('deleted_at')) {
-        return [];
-      }
-      throw error;
-    }
+    if (error) throw error;
     return data || [];
   },
 

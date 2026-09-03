@@ -5,13 +5,24 @@ import { directionService } from '../services/directionService';
 import type { DirectionNoteWithReferences } from '../types';
 import type { CreateDirectionInput, UpdateDirectionInput } from '../validation/directionSchema';
 
-export function useDirectionNotes(projectId: string) {
-  const [directionNotes, setDirectionNotes] = useState<DirectionNoteWithReferences[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+export function useDirectionNotes(
+  projectId: string,
+  initialNotes?: DirectionNoteWithReferences[],
+  readOnly?: boolean
+) {
+  const [directionNotes, setDirectionNotes] = useState<DirectionNoteWithReferences[]>(initialNotes || []);
+  const [isLoading, setIsLoading] = useState(!initialNotes);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (initialNotes) {
+      setDirectionNotes(initialNotes);
+      setIsLoading(false);
+    }
+  }, [initialNotes]);
+
   const fetchDirectionNotes = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || (readOnly && initialNotes !== undefined)) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -26,7 +37,7 @@ export function useDirectionNotes(projectId: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, readOnly, initialNotes]);
 
   useEffect(() => {
     fetchDirectionNotes();

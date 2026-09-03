@@ -13,6 +13,7 @@ interface CanvasImageItemProps {
   onDragStart: () => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onTransformEnd: (id: string, x: number, y: number, width: number, height: number) => void;
+  isDraggable?: boolean;
 }
 
 export function CanvasImageItem({
@@ -22,6 +23,7 @@ export function CanvasImageItem({
   onDragStart,
   onDragEnd,
   onTransformEnd,
+  isDraggable = true,
 }: CanvasImageItemProps) {
   const groupRef = useRef<Konva.Group | null>(null);
 
@@ -71,7 +73,7 @@ export function CanvasImageItem({
       y={item.y}
       width={item.width}
       height={item.height}
-      draggable
+      draggable={isDraggable}
       onClick={(e) => {
         if (e.evt && e.evt.button !== 0) return;
         e.cancelBubble = true;

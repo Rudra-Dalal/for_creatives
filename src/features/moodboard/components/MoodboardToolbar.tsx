@@ -28,6 +28,7 @@ import {
 interface MoodboardToolbarProps {
   scale: number;
   selectedId: string | null;
+  readOnly?: boolean;
   canUndo?: boolean;
   onUndo?: () => void;
   isLibraryOpen: boolean;
@@ -48,6 +49,7 @@ interface MoodboardToolbarProps {
 export function MoodboardToolbar({
   scale,
   selectedId,
+  readOnly = false,
   canUndo,
   onUndo,
   isLibraryOpen,
@@ -77,81 +79,85 @@ export function MoodboardToolbar({
 
   return (
     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 rounded-full border border-border bg-surface/90 backdrop-blur-md px-3 py-1.5 shadow-floating">
-      {/* Hidden file input for image upload */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        className="hidden"
-      />
+      {!readOnly && (
+        <>
+          {/* Hidden file input for image upload */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+          />
 
-      {/* Primary ADD Dropdown Menu */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+          {/* Primary ADD Dropdown Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                className="h-8 rounded-full gap-1.5 px-3 text-xs font-medium bg-accent text-white hover:bg-accent-hover"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Add</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="center" side="top" sideOffset={10} className="w-48">
+              <DropdownMenuItem onClick={() => fileInputRef.current?.click()} className="gap-2 text-xs">
+                <ImageIcon className="h-3.5 w-3.5 text-accent" />
+                <span>Upload Image</span>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem onClick={onAddTextNote} className="gap-2 text-xs">
+                <Type className="h-3.5 w-3.5 text-accent" />
+                <span>Text Note</span>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem onClick={onAddColor} className="gap-2 text-xs">
+                <Palette className="h-3.5 w-3.5 text-accent" />
+                <span>Color Swatch</span>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem onClick={onAddIdea} className="gap-2 text-xs">
+                <Sparkles className="h-3.5 w-3.5 text-accent" />
+                <span>Creative Idea</span>
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
+
+              <DropdownMenuItem onClick={onToggleLibrary} className="gap-2 text-xs">
+                <FolderPlus className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>Reference Library</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Reference Library Drawer Quick Button */}
           <Button
+            variant={isLibraryOpen ? 'secondary' : 'ghost'}
             size="sm"
-            className="h-8 rounded-full gap-1.5 px-3 text-xs font-medium bg-accent text-white hover:bg-accent-hover"
+            onClick={onToggleLibrary}
+            className="h-8 rounded-full gap-1.5 px-3 text-xs font-medium text-foreground hover:bg-surface-hover"
           >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Add</span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="center" side="top" sideOffset={10} className="w-48">
-          <DropdownMenuItem onClick={() => fileInputRef.current?.click()} className="gap-2 text-xs">
-            <ImageIcon className="h-3.5 w-3.5 text-accent" />
-            <span>Upload Image</span>
-          </DropdownMenuItem>
-
-          <DropdownMenuItem onClick={onAddTextNote} className="gap-2 text-xs">
-            <Type className="h-3.5 w-3.5 text-accent" />
-            <span>Text Note</span>
-          </DropdownMenuItem>
-
-          <DropdownMenuItem onClick={onAddColor} className="gap-2 text-xs">
-            <Palette className="h-3.5 w-3.5 text-accent" />
-            <span>Color Swatch</span>
-          </DropdownMenuItem>
-
-          <DropdownMenuItem onClick={onAddIdea} className="gap-2 text-xs">
-            <Sparkles className="h-3.5 w-3.5 text-accent" />
-            <span>Creative Idea</span>
-          </DropdownMenuItem>
-
-          <DropdownMenuSeparator />
-
-          <DropdownMenuItem onClick={onToggleLibrary} className="gap-2 text-xs">
             <FolderPlus className="h-3.5 w-3.5 text-muted-foreground" />
-            <span>Reference Library</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <span>Library</span>
+          </Button>
 
-      {/* Reference Library Drawer Quick Button */}
-      <Button
-        variant={isLibraryOpen ? 'secondary' : 'ghost'}
-        size="sm"
-        onClick={onToggleLibrary}
-        className="h-8 rounded-full gap-1.5 px-3 text-xs font-medium text-foreground hover:bg-surface-hover"
-      >
-        <FolderPlus className="h-3.5 w-3.5 text-muted-foreground" />
-        <span>Library</span>
-      </Button>
+          {/* Undo Button (Subtle, contextual) */}
+          {canUndo && (
+            <button
+              type="button"
+              onClick={onUndo}
+              className="flex h-7 items-center gap-1 px-2 rounded-full text-xs text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors"
+              title="Undo last canvas action (Cmd/Ctrl+Z)"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span>Undo</span>
+            </button>
+          )}
 
-      {/* Undo Button (Subtle, contextual) */}
-      {canUndo && (
-        <button
-          type="button"
-          onClick={onUndo}
-          className="flex h-7 items-center gap-1 px-2 rounded-full text-xs text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors"
-          title="Undo last canvas action (Cmd/Ctrl+Z)"
-        >
-          <RotateCcw className="h-3 w-3" />
-          <span>Undo</span>
-        </button>
+          <div className="h-4 w-px bg-border-subtle mx-1" />
+        </>
       )}
-
-      <div className="h-4 w-px bg-border-subtle mx-1" />
 
       {/* Zoom Controls */}
       <div className="flex items-center gap-0.5">
@@ -215,7 +221,7 @@ export function MoodboardToolbar({
       )}
 
       {/* Contextual Item Actions (Duplicate / Delete) */}
-      {selectedId && (
+      {selectedId && !readOnly && (
         <>
           <div className="h-4 w-px bg-border-subtle mx-1" />
 

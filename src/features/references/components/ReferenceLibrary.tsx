@@ -28,9 +28,14 @@ import {
 interface ReferenceLibraryProps {
   projectId: string;
   readOnly?: boolean;
+  initialReferences?: Reference[];
 }
 
-export function ReferenceLibrary({ projectId, readOnly = false }: ReferenceLibraryProps) {
+export function ReferenceLibrary({
+  projectId,
+  readOnly = false,
+  initialReferences,
+}: ReferenceLibraryProps) {
   const {
     references,
     filteredReferences,
@@ -48,7 +53,7 @@ export function ReferenceLibrary({ projectId, readOnly = false }: ReferenceLibra
     bulkAddTag,
     bulkRemoveTag,
     bulkDelete,
-  } = useReferences(projectId);
+  } = useReferences(projectId, initialReferences, readOnly);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedReference, setSelectedReference] = useState<Reference | null>(null);

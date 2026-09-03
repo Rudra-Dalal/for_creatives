@@ -5,17 +5,25 @@ import { referenceService } from '../services/referenceService';
 import type { Reference } from '../types';
 import type { CreateReferenceInput, UpdateReferenceInput } from '../validation/referenceSchema';
 
-export function useReferences(projectId: string) {
-  const [references, setReferences] = useState<Reference[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+export function useReferences(projectId: string, initialReferences?: Reference[], readOnly?: boolean) {
+  const [references, setReferences] = useState<Reference[]>(initialReferences || []);
+  const [isLoading, setIsLoading] = useState(!initialReferences);
   const [error, setError] = useState<string | null>(null);
+
+  // Synchronize initialReferences when provided (e.g. from bundle)
+  useEffect(() => {
+    if (initialReferences) {
+      setReferences(initialReferences);
+      setIsLoading(false);
+    }
+  }, [initialReferences]);
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
   const fetchReferences = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || (readOnly && initialReferences !== undefined)) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -30,7 +38,7 @@ export function useReferences(projectId: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, readOnly, initialReferences]);
 
   useEffect(() => {
     fetchReferences();

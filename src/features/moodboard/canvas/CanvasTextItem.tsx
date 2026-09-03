@@ -13,6 +13,7 @@ interface CanvasTextItemProps {
   onDragEnd: (id: string, x: number, y: number) => void;
   onTransformEnd: (id: string, x: number, y: number, width: number, height: number) => void;
   onDoubleClick: (item: MoodboardItem) => void;
+  isDraggable?: boolean;
 }
 
 export function CanvasTextItem({
@@ -23,6 +24,7 @@ export function CanvasTextItem({
   onDragEnd,
   onTransformEnd,
   onDoubleClick,
+  isDraggable = true,
 }: CanvasTextItemProps) {
   const groupRef = useRef<Konva.Group | null>(null);
 
@@ -69,7 +71,7 @@ export function CanvasTextItem({
       y={item.y}
       width={item.width}
       height={item.height}
-      draggable
+      draggable={isDraggable}
       onClick={(e) => {
         if (e.evt && e.evt.button !== 0) return;
         e.cancelBubble = true;

@@ -177,7 +177,12 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      get_shared_project_bundle: {
+        Args: {
+          p_token: string;
+        };
+        Returns: Json;
+      };
     };
     Enums: {
       [_ in never]: never;

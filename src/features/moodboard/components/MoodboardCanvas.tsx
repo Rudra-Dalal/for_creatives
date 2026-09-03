@@ -11,6 +11,7 @@ import { playgroundImageService } from '../services/playgroundImageService';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Button } from '@/components/ui/button';
 import type { Reference } from '@/features/references/types';
+import type { MoodboardItem } from '../types';
 import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
 import { FolderPlus, Type, Sparkles, Loader2 } from 'lucide-react';
 
@@ -30,9 +31,16 @@ const DynamicMoodboardStage = dynamic(
 interface MoodboardCanvasProps {
   projectId: string;
   projectName?: string;
+  readOnly?: boolean;
+  initialItems?: MoodboardItem[];
 }
 
-export function MoodboardCanvas({ projectId, projectName }: MoodboardCanvasProps) {
+export function MoodboardCanvas({
+  projectId,
+  projectName,
+  readOnly = false,
+  initialItems,
+}: MoodboardCanvasProps) {
   const {
     items,
     selectedId,
@@ -62,7 +70,7 @@ export function MoodboardCanvas({ projectId, projectName }: MoodboardCanvasProps
     zoomIn,
     zoomOut,
     resetViewport,
-  } = useMoodboard(projectId);
+  } = useMoodboard(projectId, initialItems, readOnly);
 
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -88,6 +96,7 @@ export function MoodboardCanvas({ projectId, projectName }: MoodboardCanvasProps
   // Upload and place image file
   const handleUploadImageFile = useCallback(
     async (file: File | Blob, originalName?: string, position?: { x: number; y: number }) => {
+      if (readOnly) return;
       setIsUploading(true);
       setUploadStatus('Compressing & uploading image...');
       try {
@@ -104,12 +113,13 @@ export function MoodboardCanvas({ projectId, projectName }: MoodboardCanvasProps
         setUploadStatus(null);
       }
     },
-    [projectId, addImageItem]
+    [projectId, addImageItem, readOnly]
   );
 
   // Handle files dropped from desktop
   const handleDropFiles = useCallback(
     async (files: FileList, dropPosition: { x: number; y: number }) => {
+      if (readOnly) return;
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         if (file.type.startsWith('image/')) {
@@ -121,11 +131,12 @@ export function MoodboardCanvas({ projectId, projectName }: MoodboardCanvasProps
         }
       }
     },
-    [handleUploadImageFile]
+    [handleUploadImageFile, readOnly]
   );
 
   // Global Clipboard paste listener
   useEffect(() => {
+    if (readOnly) return;
     const handlePaste = async (e: ClipboardEvent) => {
       if (
         document.activeElement?.tagName === 'INPUT' ||
@@ -178,7 +189,7 @@ export function MoodboardCanvas({ projectId, projectName }: MoodboardCanvasProps
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [isAddRefOpen, handleUploadImageFile, addColorItem, addTextNote]);
+  }, [readOnly, isAddRefOpen, handleUploadImageFile, addColorItem, addTextNote]);
 
   // Handle reference created from dialog and place on canvas
   const handleReferenceCreated = (newRef: Reference) => {
@@ -232,6 +243,7 @@ export function MoodboardCanvas({ projectId, projectName }: MoodboardCanvasProps
         items={items}
         selectedId={selectedId}
         viewport={viewport}
+        readOnly={readOnly}
         onViewportChange={setViewport}
         onSelectId={setSelectedId}
         onUpdateItemLocal={updateItemLocal}
@@ -263,41 +275,45 @@ export function MoodboardCanvas({ projectId, projectName }: MoodboardCanvasProps
 
             <div className="space-y-1">
               <h3 className="font-display text-xl font-medium tracking-tight text-foreground">
-                Your Creative Playground
+                {readOnly ? 'Empty Moodboard' : 'Your Creative Playground'}
               </h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Paste images, drop files, add thoughts, color swatches, or drag references from your library.
+                {readOnly
+                  ? 'No items have been added to this moodboard yet.'
+                  : 'Paste images, drop files, add thoughts, color swatches, or drag references from your library.'}
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-              <Button
-                size="sm"
-                onClick={() => setIsLibraryOpen(true)}
-                className="gap-1.5 text-xs font-medium bg-accent text-white hover:bg-accent-hover"
-              >
-                <FolderPlus className="h-3.5 w-3.5" />
-                <span>Reference Library</span>
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => addIdeaItem('Brand Direction', 'A quiet, tactile editorial presence')}
-                className="gap-1.5 text-xs font-medium"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-accent" />
-                <span>Add Idea</span>
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => addTextNote('Initial thought...')}
-                className="gap-1.5 text-xs font-medium"
-              >
-                <Type className="h-3.5 w-3.5" />
-                <span>Add Note</span>
-              </Button>
-            </div>
+            {!readOnly && (
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                <Button
+                  size="sm"
+                  onClick={() => setIsLibraryOpen(true)}
+                  className="gap-1.5 text-xs font-medium bg-accent text-white hover:bg-accent-hover"
+                >
+                  <FolderPlus className="h-3.5 w-3.5" />
+                  <span>Reference Library</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => addIdeaItem('Brand Direction', 'A quiet, tactile editorial presence')}
+                  className="gap-1.5 text-xs font-medium"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-accent" />
+                  <span>Add Idea</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => addTextNote('Initial thought...')}
+                  className="gap-1.5 text-xs font-medium"
+                >
+                  <Type className="h-3.5 w-3.5" />
+                  <span>Add Note</span>
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -306,6 +322,7 @@ export function MoodboardCanvas({ projectId, projectName }: MoodboardCanvasProps
       <MoodboardToolbar
         scale={viewport.scale}
         selectedId={selectedId}
+        readOnly={readOnly}
         canUndo={canUndo}
         onUndo={undo}
         isLibraryOpen={isLibraryOpen}
@@ -327,27 +344,31 @@ export function MoodboardCanvas({ projectId, projectName }: MoodboardCanvasProps
         onExportImage={() => exportFnRef.current?.(projectName || 'moodboard')}
       />
 
-      {/* Reference Library Drawer */}
-      <MoodboardLibraryDrawer
-        projectId={projectId}
-        isOpen={isLibraryOpen}
-        onClose={() => setIsLibraryOpen(false)}
-        onPlaceReference={handlePlaceReference}
-      />
+      {!readOnly && (
+        <>
+          {/* Reference Library Drawer */}
+          <MoodboardLibraryDrawer
+            projectId={projectId}
+            isOpen={isLibraryOpen}
+            onClose={() => setIsLibraryOpen(false)}
+            onPlaceReference={handlePlaceReference}
+          />
 
-      {/* URL Reference Capture Dialog */}
-      {isAddRefOpen && (
-        <AddReferenceDialog
-          projectId={projectId}
-          open={isAddRefOpen}
-          initialUrl={pendingRefUrl}
-          onOpenChange={(open) => {
-            setIsAddRefOpen(open);
-            if (!open) setPendingRefUrl('');
-          }}
-          onReferenceCreated={handleReferenceCreated}
-          onSubmit={handleCreateReferenceSubmit}
-        />
+          {/* URL Reference Capture Dialog */}
+          {isAddRefOpen && (
+            <AddReferenceDialog
+              projectId={projectId}
+              open={isAddRefOpen}
+              initialUrl={pendingRefUrl}
+              onOpenChange={(open) => {
+                setIsAddRefOpen(open);
+                if (!open) setPendingRefUrl('');
+              }}
+              onReferenceCreated={handleReferenceCreated}
+              onSubmit={handleCreateReferenceSubmit}
+            />
+          )}
+        </>
       )}
     </div>
   );

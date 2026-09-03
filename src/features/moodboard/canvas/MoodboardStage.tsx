@@ -22,6 +22,7 @@ interface MoodboardStageProps {
   items: MoodboardItem[];
   selectedId: string | null;
   viewport: CanvasViewport;
+  readOnly?: boolean;
   onViewportChange: (viewport: CanvasViewport) => void;
   onSelectId: (id: string | null) => void;
   onUpdateItemLocal: (
@@ -51,6 +52,7 @@ export function MoodboardStage({
   items,
   selectedId,
   viewport,
+  readOnly = false,
   onViewportChange,
   onSelectId,
   onUpdateItemLocal,
@@ -224,17 +226,28 @@ export function MoodboardStage({
         return;
       }
 
-      // Undo: Cmd/Ctrl + Z
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        onUndo?.();
-        return;
-      }
-
       // Zoom to Fit: Cmd/Ctrl + 0
       if ((e.metaKey || e.ctrlKey) && e.key === '0') {
         e.preventDefault();
         onZoomToFit?.(dimensions.width, dimensions.height);
+        return;
+      }
+
+      // Escape: Clear selection
+      if (e.key === 'Escape') {
+        onSelectId(null);
+        return;
+      }
+
+      // If read-only mode, block all mutation shortcuts
+      if (readOnly) {
+        return;
+      }
+
+      // Undo: Cmd/Ctrl + Z
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        onUndo?.();
         return;
       }
 
@@ -250,12 +263,6 @@ export function MoodboardStage({
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd' && selectedId) {
         e.preventDefault();
         onDuplicateItem(selectedId);
-        return;
-      }
-
-      // Escape: Clear selection
-      if (e.key === 'Escape') {
-        onSelectId(null);
         return;
       }
 
@@ -290,6 +297,7 @@ export function MoodboardStage({
   }, [
     selectedId,
     dimensions,
+    readOnly,
     editingTextItem,
     editingColorItem,
     editingIdeaItem,
@@ -363,6 +371,7 @@ export function MoodboardStage({
 
   // Track initial geometry before drag
   const handleItemDragStart = (item: MoodboardItem) => {
+    if (readOnly) return;
     initialGeometryRef.current.set(item.id, {
       x: item.x,
       y: item.y,
@@ -376,6 +385,7 @@ export function MoodboardStage({
 
   // Handle item drag end with undo tracking
   const handleItemDragEnd = (id: string, x: number, y: number) => {
+    if (readOnly) return;
     const item = items.find((i) => i.id === id);
     if (!item) return;
 
@@ -401,6 +411,7 @@ export function MoodboardStage({
 
   // Handle item transform end with undo tracking
   const handleItemTransformEnd = (id: string, x: number, y: number, width: number, height: number) => {
+    if (readOnly) return;
     const item = items.find((i) => i.id === id);
     if (!item) return;
 
@@ -482,6 +493,7 @@ export function MoodboardStage({
 
   // Drag & drop file or reference drawer item
   const handleDragOver = (e: React.DragEvent) => {
+    if (readOnly) return;
     e.preventDefault();
     setIsDragOver(true);
     e.dataTransfer.dropEffect = 'copy';
@@ -493,6 +505,7 @@ export function MoodboardStage({
   };
 
   const handleDrop = (e: React.DragEvent) => {
+    if (readOnly) return;
     e.preventDefault();
     setIsDragOver(false);
 
@@ -524,6 +537,7 @@ export function MoodboardStage({
 
   // Text item editing overlay
   const handleOpenTextEdit = (item: MoodboardItem) => {
+    if (readOnly) return;
     setEditingTextItem(item);
     const content = (item.content as TextItemContent) || { text: '' };
     setEditingTextValue(content.text || '');
@@ -538,6 +552,7 @@ export function MoodboardStage({
 
   // Color item editing overlay
   const handleOpenColorEdit = (item: MoodboardItem) => {
+    if (readOnly) return;
     setEditingColorItem(item);
     const content = (item.content as ColorItemContent) || { hex: '#D97706', label: '' };
     setEditingColorHex(content.hex || '#D97706');
@@ -553,6 +568,7 @@ export function MoodboardStage({
 
   // Idea item editing overlay
   const handleOpenIdeaEdit = (item: MoodboardItem) => {
+    if (readOnly) return;
     setEditingIdeaItem(item);
     const content = (item.content as IdeaItemContent) || { title: '', notes: '' };
     setEditingIdeaTitle(content.title || '');
@@ -658,6 +674,7 @@ export function MoodboardStage({
                   key={item.id}
                   item={item}
                   isSelected={isSelected}
+                  isDraggable={!readOnly}
                   onSelect={(node) => {
                     onSelectId(item.id);
                     setSelectedNode(node);
@@ -676,6 +693,7 @@ export function MoodboardStage({
                   key={item.id}
                   item={item}
                   isSelected={isSelected}
+                  isDraggable={!readOnly}
                   onSelect={(node) => {
                     onSelectId(item.id);
                     setSelectedNode(node);
@@ -693,6 +711,7 @@ export function MoodboardStage({
                   key={item.id}
                   item={item}
                   isSelected={isSelected}
+                  isDraggable={!readOnly}
                   onSelect={(node) => {
                     onSelectId(item.id);
                     setSelectedNode(node);
@@ -711,6 +730,7 @@ export function MoodboardStage({
                   key={item.id}
                   item={item}
                   isSelected={isSelected}
+                  isDraggable={!readOnly}
                   onSelect={(node) => {
                     onSelectId(item.id);
                     setSelectedNode(node);
@@ -729,6 +749,7 @@ export function MoodboardStage({
                 key={item.id}
                 item={item}
                 isSelected={isSelected}
+                isDraggable={!readOnly}
                 onSelect={(node) => {
                   onSelectId(item.id);
                   setSelectedNode(node);
@@ -740,8 +761,8 @@ export function MoodboardStage({
             );
           })}
 
-          {/* Konva Transformer for resize */}
-          {selectedNode && selectedItem && (
+          {/* Konva Transformer for resize (hidden in read-only mode) */}
+          {!readOnly && selectedNode && selectedItem && (
             <CanvasTransformer
               selectedNode={selectedNode}
             />
@@ -750,7 +771,7 @@ export function MoodboardStage({
       </Stage>
 
       {/* Floating Editing Overlay for Text Item */}
-      {editingTextItem && (
+      {!readOnly && editingTextItem && (
         <div
           style={getEditingOverlayStyle(editingTextItem)}
           className="absolute z-30 p-3 bg-surface border border-accent/60 rounded-lg shadow-floating flex flex-col gap-2"
@@ -774,7 +795,7 @@ export function MoodboardStage({
       )}
 
       {/* Floating Editing Overlay for Color Item */}
-      {editingColorItem && (
+      {!readOnly && editingColorItem && (
         <div
           style={getEditingOverlayStyle(editingColorItem)}
           className="absolute z-30 p-3 bg-surface border border-accent/60 rounded-lg shadow-floating flex flex-col gap-2.5 max-w-[220px]"
@@ -817,7 +838,7 @@ export function MoodboardStage({
       )}
 
       {/* Floating Editing Overlay for Idea Item */}
-      {editingIdeaItem && (
+      {!readOnly && editingIdeaItem && (
         <div
           style={getEditingOverlayStyle(editingIdeaItem)}
           className="absolute z-30 p-3 bg-surface border border-accent/60 rounded-lg shadow-floating flex flex-col gap-2 min-w-[260px]"

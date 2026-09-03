@@ -18,12 +18,14 @@ interface DirectionNotesViewProps {
   projectId: string;
   projectName?: string;
   readOnly?: boolean;
+  initialNotes?: DirectionNoteWithReferences[];
 }
 
 export function DirectionNotesView({
   projectId,
   projectName = 'Creative Direction',
   readOnly = false,
+  initialNotes,
 }: DirectionNotesViewProps) {
   const {
     directionNotes,
@@ -34,7 +36,7 @@ export function DirectionNotesView({
     updateDirectionNote,
     deleteDirectionNote,
     unlinkReference,
-  } = useDirectionNotes(projectId);
+  } = useDirectionNotes(projectId, initialNotes, readOnly);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isExportPdfOpen, setIsExportPdfOpen] = useState(false);

@@ -61,10 +61,11 @@ export async function updateSession(request: NextRequest) {
 
   // Route protection
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/auth');
+  const isShareRoute = request.nextUrl.pathname.startsWith('/share');
   const isApiRoute = request.nextUrl.pathname.startsWith('/api');
   const isPublicAsset = request.nextUrl.pathname.startsWith('/_next') || request.nextUrl.pathname.includes('.');
 
-  if (!user && !isAuthRoute && !isApiRoute && !isPublicAsset && request.nextUrl.pathname !== '/') {
+  if (!user && !isAuthRoute && !isApiRoute && !isShareRoute && !isPublicAsset && request.nextUrl.pathname !== '/') {
     // If not authenticated and trying to access protected page, redirect to /login
     const url = request.nextUrl.clone();
     url.pathname = '/login';

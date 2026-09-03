@@ -21,12 +21,20 @@ export interface UndoAction {
   nextGeometry?: { x: number; y: number; width: number; height: number; zIndex?: number };
 }
 
-export function useMoodboard(projectId: string) {
-  const [items, setItems] = useState<MoodboardItem[]>([]);
+export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], readOnly?: boolean) {
+  const [items, setItems] = useState<MoodboardItem[]>(initialItems || []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 0, y: 0, scale: 1 });
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!initialItems);
   const [error, setError] = useState<string | null>(null);
+
+  // Synchronize initialItems if provided (e.g. from bundle)
+  useEffect(() => {
+    if (initialItems) {
+      setItems(initialItems);
+      setIsLoading(false);
+    }
+  }, [initialItems]);
 
   // Single-level undo action state
   const [lastAction, setLastAction] = useState<UndoAction | null>(null);
@@ -35,7 +43,7 @@ export function useMoodboard(projectId: string) {
   const pendingUpdatesRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   const fetchItems = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || (readOnly && initialItems !== undefined)) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -50,7 +58,7 @@ export function useMoodboard(projectId: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, readOnly, initialItems]);
 
   useEffect(() => {
     fetchItems();

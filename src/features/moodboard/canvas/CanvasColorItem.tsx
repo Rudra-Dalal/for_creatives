@@ -13,6 +13,7 @@ interface CanvasColorItemProps {
   onDragEnd: (id: string, x: number, y: number) => void;
   onTransformEnd: (id: string, x: number, y: number, width: number, height: number) => void;
   onDoubleClick: (item: MoodboardItem) => void;
+  isDraggable?: boolean;
 }
 
 export function CanvasColorItem({
@@ -23,6 +24,7 @@ export function CanvasColorItem({
   onDragEnd,
   onTransformEnd,
   onDoubleClick,
+  isDraggable = true,
 }: CanvasColorItemProps) {
   const groupRef = useRef<Konva.Group | null>(null);
 
@@ -70,7 +72,7 @@ export function CanvasColorItem({
       y={item.y}
       width={item.width}
       height={item.height}
-      draggable
+      draggable={isDraggable}
       onClick={(e) => {
         if (e.evt && e.evt.button !== 0) return;
         e.cancelBubble = true;

@@ -16,26 +16,14 @@ export const directionService = {
     const supabase = createClient();
 
     // 1. Fetch active (non-deleted) notes
-    let { data: notes, error: notesError } = await supabase
+    const { data: notes, error: notesError } = await supabase
       .from('direction_notes')
       .select('*')
       .eq('project_id', projectId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
-    if (notesError) {
-      if (notesError.code === '42703' || notesError.message?.includes('deleted_at')) {
-        const fallback = await supabase
-          .from('direction_notes')
-          .select('*')
-          .eq('project_id', projectId)
-          .order('created_at', { ascending: false });
-        if (fallback.error) throw fallback.error;
-        notes = fallback.data;
-      } else {
-        throw notesError;
-      }
-    }
+    if (notesError) throw notesError;
     if (!notes || notes.length === 0) return [];
 
     const noteIds = notes.map((n) => n.id);
@@ -81,19 +69,14 @@ export const directionService = {
   async getTrashNotes(projectId: string): Promise<DirectionNoteWithReferences[]> {
     const supabase = createClient();
 
-    let { data: notes, error: notesError } = await supabase
+    const { data: notes, error: notesError } = await supabase
       .from('direction_notes')
       .select('*')
       .eq('project_id', projectId)
       .not('deleted_at', 'is', null)
       .order('deleted_at', { ascending: false });
 
-    if (notesError) {
-      if (notesError.code === '42703' || notesError.message?.includes('deleted_at')) {
-        return [];
-      }
-      throw notesError;
-    }
+    if (notesError) throw notesError;
     if (!notes || notes.length === 0) return [];
 
     const noteIds = notes.map((n) => n.id);

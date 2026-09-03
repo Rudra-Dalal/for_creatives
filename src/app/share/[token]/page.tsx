@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { projectService } from '@/features/projects/services/projectService';
-import type { Project } from '@/features/projects/types';
+import type { Project, SharedProjectBundle } from '@/features/projects/types';
 import { ReferenceLibrary } from '@/features/references/components/ReferenceLibrary';
 import { MoodboardCanvas } from '@/features/moodboard/components/MoodboardCanvas';
 import { DirectionNotesView } from '@/features/creative-direction/components/DirectionNotesView';
@@ -19,6 +19,7 @@ export default function SharedProjectPage() {
   const router = useRouter();
   const token = typeof params.token === 'string' ? params.token : '';
 
+  const [bundle, setBundle] = useState<SharedProjectBundle | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,11 +34,12 @@ export default function SharedProjectPage() {
       setIsLoading(true);
       setError(null);
       try {
-        const found = await projectService.getProjectByShareToken(token);
-        if (!found) {
+        const result = await projectService.getSharedProjectBundle(token);
+        if (!result || !result.project) {
           setError('This share link is inactive, revoked, or invalid.');
         } else {
-          setProject(found);
+          setBundle(result);
+          setProject(result.project);
         }
       } catch (err) {
         setError('Failed to load shared project');
@@ -202,15 +204,29 @@ export default function SharedProjectPage() {
           className="flex-1 flex flex-col"
         >
           <TabsContent value="references" className="flex-1 flex flex-col mt-0">
-            <ReferenceLibrary projectId={project.id} readOnly={true} />
+            <ReferenceLibrary
+              projectId={project.id}
+              readOnly={true}
+              initialReferences={bundle?.references}
+            />
           </TabsContent>
 
           <TabsContent value="moodboard" className="flex-1 flex flex-col mt-0">
-            <MoodboardCanvas projectId={project.id} projectName={project.name} />
+            <MoodboardCanvas
+              projectId={project.id}
+              projectName={project.name}
+              readOnly={true}
+              initialItems={bundle?.moodboard_items}
+            />
           </TabsContent>
 
           <TabsContent value="direction" className="flex-1 flex flex-col mt-0">
-            <DirectionNotesView projectId={project.id} projectName={project.name} readOnly={true} />
+            <DirectionNotesView
+              projectId={project.id}
+              projectName={project.name}
+              readOnly={true}
+              initialNotes={bundle?.direction_notes}
+            />
           </TabsContent>
         </Tabs>
       </main>
