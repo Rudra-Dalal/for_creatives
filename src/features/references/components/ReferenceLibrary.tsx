@@ -156,14 +156,16 @@ export function ReferenceLibrary({
           </div>
 
           {/* Primary Action Button */}
-          <Button
-            size="sm"
-            onClick={() => setIsAddOpen(true)}
-            className="gap-1.5 shrink-0 text-xs font-medium"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Paste a link</span>
-          </Button>
+          {!readOnly && (
+            <Button
+              size="sm"
+              onClick={() => setIsAddOpen(true)}
+              className="gap-1.5 shrink-0 text-xs font-medium"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Paste a link</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -209,7 +211,7 @@ export function ReferenceLibrary({
           </div>
 
           {/* Select All Quick Button */}
-          {filteredReferences.length > 0 && (
+          {!readOnly && filteredReferences.length > 0 && (
             <button
               type="button"
               onClick={handleSelectAll}
@@ -263,14 +265,16 @@ export function ReferenceLibrary({
             title="Start collecting visual references."
             description="Paste links from Pinterest, Cosmos, Behance, Arena, Instagram, or any website to build your visual library."
             action={
-              <Button
-                onClick={() => setIsAddOpen(true)}
-                size="sm"
-                className="gap-1.5"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Paste First Link</span>
-              </Button>
+              !readOnly ? (
+                <Button
+                  onClick={() => setIsAddOpen(true)}
+                  size="sm"
+                  className="gap-1.5"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Paste First Link</span>
+                </Button>
+              ) : undefined
             }
             className="py-20"
           />
@@ -307,11 +311,11 @@ export function ReferenceLibrary({
                   key={ref.id}
                   reference={ref}
                   isSelected={activeSelected?.id === ref.id}
-                  isChecked={isChecked}
-                  isMultiSelectMode={selectedIds.length > 0}
-                  onToggleCheck={() => toggleSelect(ref.id)}
+                  isChecked={!readOnly && isChecked}
+                  isMultiSelectMode={!readOnly && selectedIds.length > 0}
+                  onToggleCheck={readOnly ? undefined : () => toggleSelect(ref.id)}
                   onClick={() => {
-                    if (selectedIds.length > 0) {
+                    if (!readOnly && selectedIds.length > 0) {
                       toggleSelect(ref.id);
                     } else {
                       setSelectedReference(ref);
@@ -325,7 +329,7 @@ export function ReferenceLibrary({
       </div>
 
       {/* Floating Multi-Select Bulk Action Toolbar */}
-      {selectedIds.length > 0 && (
+      {!readOnly && selectedIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full border border-border bg-surface/95 backdrop-blur-md px-4 py-2 shadow-floating animate-in fade-in-50 slide-in-from-bottom-2">
           <span className="text-xs font-medium text-foreground pr-2 border-r border-border">
             {selectedIds.length} selected
@@ -382,33 +386,38 @@ export function ReferenceLibrary({
       )}
 
       {/* Bulk Tag Modal */}
-      <BulkTagModal
-        isOpen={bulkTagModalOpen}
-        onClose={() => setBulkTagModalOpen(false)}
-        mode={bulkTagMode}
-        selectedCount={selectedIds.length}
-        availableTags={bulkTagMode === 'add' ? allTags : selectedItemsTags}
-        onSubmit={bulkTagMode === 'add' ? handleBulkAddTag : handleBulkRemoveTag}
-      />
+      {!readOnly && (
+        <BulkTagModal
+          isOpen={bulkTagModalOpen}
+          onClose={() => setBulkTagModalOpen(false)}
+          mode={bulkTagMode}
+          selectedCount={selectedIds.length}
+          availableTags={bulkTagMode === 'add' ? allTags : selectedItemsTags}
+          onSubmit={bulkTagMode === 'add' ? handleBulkAddTag : handleBulkRemoveTag}
+        />
+      )}
 
       {/* Capture Reference Dialog */}
-      <AddReferenceDialog
-        projectId={projectId}
-        open={isAddOpen}
-        onOpenChange={setIsAddOpen}
-        onSubmit={createReference}
-        onReferenceCreated={(created) => {
-          setSelectedReference(created);
-        }}
-      />
+      {!readOnly && (
+        <AddReferenceDialog
+          projectId={projectId}
+          open={isAddOpen}
+          onOpenChange={setIsAddOpen}
+          onSubmit={createReference}
+          onReferenceCreated={(created) => {
+            setSelectedReference(created);
+          }}
+        />
+      )}
 
       {/* Reference Detail Slide Drawer */}
       <ReferenceDetailPanel
         reference={activeSelected}
         projectId={projectId}
+        readOnly={readOnly}
         onClose={() => setSelectedReference(null)}
-        onUpdate={updateReference}
-        onDelete={deleteReference}
+        onUpdate={readOnly ? undefined : updateReference}
+        onDelete={readOnly ? undefined : deleteReference}
       />
     </div>
   );
