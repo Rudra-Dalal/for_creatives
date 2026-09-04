@@ -304,7 +304,7 @@ export function ColorPickerPopover({
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
-      className="absolute z-50 w-[268px] rounded-xl border border-border bg-surface shadow-2xl backdrop-blur-md p-3.5 flex flex-col gap-3 animate-in fade-in-50 zoom-in-95 text-foreground select-none"
+      className="absolute z-50 w-[268px] rounded-xl border border-border bg-surface shadow-2xl backdrop-blur-md p-3.5 flex flex-col gap-3 animate-in fade-in-50 zoom-in-95 text-foreground"
     >
       {/* 1. Header: Mode, Live Swatch Indicator, and Close */}
       <div className="flex items-center justify-between pb-1 border-b border-border text-xs text-muted-foreground">
@@ -453,7 +453,7 @@ export function ColorPickerPopover({
               onChange={handleHexInputChange}
               placeholder="#D97706"
               maxLength={7}
-              className="w-full rounded bg-surface-subtle px-2 py-1 font-mono text-xs text-foreground border border-border outline-none focus:border-accent"
+              className="w-full rounded bg-surface-subtle px-2 py-1 font-mono text-xs text-foreground border border-border outline-none focus:border-accent select-text selection:bg-accent selection:text-white"
             />
           </div>
         ) : (
@@ -466,7 +466,7 @@ export function ColorPickerPopover({
                 max={255}
                 value={currentRgb[ch]}
                 onChange={(e) => handleRgbChange(ch, parseInt(e.target.value, 10))}
-                className="w-full rounded bg-surface-subtle px-1 py-1 font-mono text-[11px] text-center text-foreground border border-border outline-none focus:border-accent"
+                className="w-full rounded bg-surface-subtle px-1 py-1 font-mono text-[11px] text-center text-foreground border border-border outline-none focus:border-accent select-text selection:bg-accent selection:text-white"
                 title={ch.toUpperCase()}
               />
             ))}
@@ -486,7 +486,7 @@ export function ColorPickerPopover({
                 updateFromHsv(hsv, norm);
               }
             }}
-            className="w-full rounded bg-surface-subtle px-1.5 py-1 font-mono text-xs text-center text-foreground border border-border outline-none focus:border-accent"
+            className="w-full rounded bg-surface-subtle px-1.5 py-1 font-mono text-xs text-center text-foreground border border-border outline-none focus:border-accent select-text selection:bg-accent selection:text-white"
             title="Opacity"
           />
         </div>
@@ -499,7 +499,7 @@ export function ColorPickerPopover({
           value={labelInput}
           onChange={handleLabelChange}
           placeholder="Color name (e.g. Primary Amber)"
-          className="w-full rounded bg-surface-subtle px-2 py-1 text-xs text-foreground border border-border outline-none focus:border-accent placeholder-muted-foreground/60"
+          className="w-full rounded bg-surface-subtle px-2 py-1 text-xs text-foreground border border-border outline-none focus:border-accent placeholder-muted-foreground/60 select-text selection:bg-accent selection:text-white"
         />
       </div>
 

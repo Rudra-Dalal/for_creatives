@@ -1079,7 +1079,7 @@ export function MoodboardStage({
             }}
             onBlur={handleSaveTextEdit}
             placeholder="Type your creative thoughts..."
-            className="w-full flex-1 min-h-[80px] bg-transparent text-foreground placeholder-muted-foreground outline-none resize-none font-serif text-sm leading-relaxed"
+            className="w-full flex-1 min-h-[80px] bg-transparent text-foreground placeholder-muted-foreground outline-none resize-none font-serif text-sm leading-relaxed select-text selection:bg-accent selection:text-white"
           />
         </div>
       )}
@@ -1133,13 +1133,13 @@ export function MoodboardStage({
             value={editingIdeaTitle}
             onChange={(e) => setEditingIdeaTitle(e.target.value)}
             placeholder="Idea statement..."
-            className="w-full rounded bg-surface-subtle px-2.5 py-1.5 font-display text-sm font-medium text-foreground border border-border outline-none focus:border-accent"
+            className="w-full rounded bg-surface-subtle px-2.5 py-1.5 font-display text-sm font-medium text-foreground border border-border outline-none focus:border-accent select-text selection:bg-accent selection:text-white"
           />
           <textarea
             value={editingIdeaNotes}
             onChange={(e) => setEditingIdeaNotes(e.target.value)}
             placeholder="Supporting context, mood, or direction notes..."
-            className="w-full min-h-[60px] rounded bg-surface-subtle p-2 text-xs text-muted-foreground border border-border outline-none focus:border-accent resize-none leading-relaxed"
+            className="w-full min-h-[60px] rounded bg-surface-subtle p-2 text-xs text-muted-foreground border border-border outline-none focus:border-accent resize-none leading-relaxed select-text selection:bg-accent selection:text-white"
             onKeyDown={(e) => {
               if (e.key === 'Escape') handleSaveIdeaEdit();
             }}

@@ -46,6 +46,29 @@
     overflow-x: hidden;
   }
 
+  /* High-contrast text selection styling across entire application */
+  ::selection {
+    background-color: #D97706;
+    color: #FFFFFF;
+  }
+
+  ::-moz-selection {
+    background-color: #D97706;
+    color: #FFFFFF;
+  }
+
+  input::selection,
+  textarea::selection {
+    background-color: #D97706 !important;
+    color: #FFFFFF !important;
+  }
+
+  input::-moz-selection,
+  textarea::-moz-selection {
+    background-color: #D97706 !important;
+    color: #FFFFFF !important;
+  }
+
   /* Editorial typography styles */
   h1, h2, h3, .font-display {
     font-family: var(--font-display);
