@@ -89,13 +89,13 @@ export function CanvasTextItem({
       <Rect
         width={item.width}
         height={item.height}
-        fill="#22211e"
-        stroke={isSelected ? '#f59e0b' : '#383630'}
-        strokeWidth={isSelected ? 1.5 : 1}
+        fill="#1e1e1b"
+        stroke={isSelected ? '#d97706' : '#2e2e2a'}
+        strokeWidth={isSelected ? 2 : 1}
         cornerRadius={cornerRadius}
-        shadowColor="black"
-        shadowBlur={10}
-        shadowOpacity={0.3}
+        shadowColor={isSelected ? '#d97706' : 'black'}
+        shadowBlur={isSelected ? 16 : 10}
+        shadowOpacity={isSelected ? 0.35 : 0.3}
         shadowOffset={{ x: 0, y: 3 }}
       />
 

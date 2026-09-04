@@ -37,7 +37,7 @@ export function CanvasTransformer({
       ref={transformerRef}
       boundBoxFunc={(oldBox, newBox) => {
         // Limit minimum size
-        if (newBox.width < 80 || newBox.height < 60) {
+        if (newBox.width < 40 || newBox.height < 30) {
           return oldBox;
         }
         return newBox;
@@ -47,8 +47,8 @@ export function CanvasTransformer({
       borderStroke="#f59e0b"
       borderStrokeWidth={1.5}
       borderDash={[4, 4]}
-      anchorFill="#181816"
-      anchorStroke="#f59e0b"
+      anchorFill="#f59e0b"
+      anchorStroke="#181816"
       anchorStrokeWidth={1.5}
       anchorSize={8}
       anchorCornerRadius={2}

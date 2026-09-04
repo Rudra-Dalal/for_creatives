@@ -101,6 +101,7 @@ export function MoodboardStage({
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const dragStartPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const nodeMapRef = useRef<Map<string, Konva.Node>>(new Map());
 
   // Marquee selection box state (Windows desktop / Figma style)
   const [selectionBox, setSelectionBox] = useState<{
@@ -231,8 +232,19 @@ export function MoodboardStage({
       setSelectedNode(null);
       return;
     }
+    const stage = stageRef.current;
     const nodes = effectiveSelectedIds
-      .map((id) => stageRef.current?.findOne(`#${id}`))
+      .map((id) => {
+        const cached = nodeMapRef.current.get(id);
+        if (cached && cached.getStage()) return cached;
+        // Direct search function in Konva tree (avoids CSS selector parsing quirks)
+        const found = stage.find((n: Konva.Node) => n.id() === id)[0];
+        if (found) {
+          nodeMapRef.current.set(id, found);
+          return found;
+        }
+        return null;
+      })
       .filter((n): n is Konva.Node => !!n);
 
     setSelectedNodes(nodes);
@@ -856,6 +868,7 @@ export function MoodboardStage({
 
   const handleItemSelect = useCallback(
     (id: string, node: Konva.Node) => {
+      nodeMapRef.current.set(id, node);
       if (isShiftPressed && onToggleSelectId) {
         onToggleSelectId(id, true);
       } else {
@@ -867,6 +880,10 @@ export function MoodboardStage({
         }
       }
       setSelectedNode(node);
+      setSelectedNodes((prev) => {
+        if (prev.some((n) => n === node || n.id() === id)) return prev;
+        return isShiftPressed ? [...prev, node] : [node];
+      });
     },
     [isShiftPressed, onToggleSelectId, effectiveSelectedIds, onSelectIds, onSelectId]
   );
@@ -1034,9 +1051,10 @@ export function MoodboardStage({
           })}
 
           {/* Konva Transformer for resize (hidden in read-only mode) */}
-          {!readOnly && selectedNodes.length > 0 && (
+          {!readOnly && (selectedNodes.length > 0 || selectedNode) && (
             <CanvasTransformer
-              selectedNodes={selectedNodes}
+              selectedNode={selectedNode}
+              selectedNodes={selectedNodes.length > 0 ? selectedNodes : (selectedNode ? [selectedNode] : [])}
             />
           )}
         </Layer>
