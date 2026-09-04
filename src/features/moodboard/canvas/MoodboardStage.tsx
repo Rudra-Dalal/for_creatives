@@ -159,7 +159,27 @@ export function MoodboardStage({
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const dragStartPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const liveDragPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const [liveDragTick, setLiveDragTick] = useState(0);
+  const dragRafRef = useRef<number | null>(null);
   const nodeMapRef = useRef<Map<string, Konva.Node>>(new Map());
+
+  // Real-time live coordinates lookup during active dragging (keeps anchors and connector lines attached)
+  const getItemLiveBounds = useCallback(
+    (item: MoodboardItem): MoodboardItem => {
+      const live = liveDragPositionsRef.current.get(item.id);
+      if (live) {
+        return {
+          ...item,
+          x: live.x,
+          y: live.y,
+        };
+      }
+      return item;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [liveDragTick]
+  );
 
   // Marquee selection box state (Windows desktop / Figma style)
   const [selectionBox, setSelectionBox] = useState<{
@@ -227,6 +247,14 @@ export function MoodboardStage({
         lastMarqueeHitIdsRef.current = [];
         setSelectionBox(null);
       }
+      if (dragRafRef.current !== null) {
+        cancelAnimationFrame(dragRafRef.current);
+        dragRafRef.current = null;
+      }
+      if (liveDragPositionsRef.current.size > 0) {
+        liveDragPositionsRef.current.clear();
+        setLiveDragTick((t) => (t + 1) % 10000);
+      }
     };
 
     window.addEventListener('mousemove', handleGlobalMouseMove, { passive: false });
@@ -236,6 +264,15 @@ export function MoodboardStage({
       window.removeEventListener('mouseup', handleGlobalMouseUp);
     };
   }, [viewport.scale, onViewportChange]);
+
+  // Cancel any pending animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (dragRafRef.current !== null) {
+        cancelAnimationFrame(dragRafRef.current);
+      }
+    };
+  }, []);
 
   const handleContainerMouseDown = (e: React.MouseEvent) => {
     if (e.button === 1) {
@@ -581,31 +618,70 @@ export function MoodboardStage({
     });
   };
 
-  // Synchronized drag move for all selected items
+  // Synchronized drag move for items, connector arrows, and anchor handles
   const handleStageDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
     if (e.target === stageRef.current) return;
 
-    const draggedNode = e.target;
-    const draggedId = draggedNode.id();
-    if (!draggedId || effectiveSelectedIds.length <= 1 || !effectiveSelectedIds.includes(draggedId)) {
-      return;
+    let draggedNode: Konva.Node = e.target;
+    let draggedId = draggedNode.id();
+    if (!draggedId || !items.some((i) => i.id === draggedId)) {
+      const ancestor = draggedNode.findAncestor('.moodboard-item', true);
+      if (ancestor) {
+        draggedNode = ancestor;
+        draggedId = ancestor.id();
+      }
     }
 
-    const startPos = dragStartPositionsRef.current.get(draggedId);
-    if (!startPos) return;
+    if (!draggedId) return;
+
+    const itm = items.find((i) => i.id === draggedId);
+    if (!itm) return;
+
+    let startPos = dragStartPositionsRef.current.get(draggedId);
+    if (!startPos) {
+      startPos = { x: itm.x, y: itm.y };
+      dragStartPositionsRef.current.set(draggedId, startPos);
+    }
 
     const dx = draggedNode.x() - startPos.x;
     const dy = draggedNode.y() - startPos.y;
 
-    effectiveSelectedIds.forEach((id) => {
-      if (id === draggedId) return;
-      const node = stageRef.current?.findOne(`#${id}`);
-      const otherStart = dragStartPositionsRef.current.get(id);
-      if (node && otherStart) {
-        node.x(otherStart.x + dx);
-        node.y(otherStart.y + dy);
-      }
+    // Track real-time position of the dragged item
+    liveDragPositionsRef.current.set(draggedId, {
+      x: draggedNode.x(),
+      y: draggedNode.y(),
     });
+
+    // If multi-selected, synchronize positions of all other selected items in Konva and live ref
+    if (effectiveSelectedIds.length > 1 && effectiveSelectedIds.includes(draggedId)) {
+      effectiveSelectedIds.forEach((id) => {
+        if (id === draggedId) return;
+        const node = stageRef.current?.findOne(`#${id}`);
+        let otherStart = dragStartPositionsRef.current.get(id);
+        if (!otherStart) {
+          const otherItm = items.find((i) => i.id === id);
+          if (otherItm) {
+            otherStart = { x: otherItm.x, y: otherItm.y };
+            dragStartPositionsRef.current.set(id, otherStart);
+          }
+        }
+        if (node && otherStart) {
+          const newX = otherStart.x + dx;
+          const newY = otherStart.y + dy;
+          node.x(newX);
+          node.y(newY);
+          liveDragPositionsRef.current.set(id, { x: newX, y: newY });
+        }
+      });
+    }
+
+    // Schedule RAF update to smoothly re-render connector arrows and anchor handles at 60/120fps
+    if (dragRafRef.current === null) {
+      dragRafRef.current = requestAnimationFrame(() => {
+        dragRafRef.current = null;
+        setLiveDragTick((t) => (t + 1) % 10000);
+      });
+    }
   };
 
   // Handle item drag end with group move & undo tracking
@@ -671,6 +747,13 @@ export function MoodboardStage({
         zIndex: item.z_index,
       });
     }
+
+    if (dragRafRef.current !== null) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    liveDragPositionsRef.current.clear();
+    setLiveDragTick((t) => (t + 1) % 10000);
   };
 
   // Handle item transform end with undo tracking
@@ -742,7 +825,7 @@ export function MoodboardStage({
     });
   };
 
-  // Drag stage (panning)
+  // Drag stage (panning) or fallback drag end cleanup
   const handleStageDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     if (e.target === stageRef.current) {
       onViewportChange({
@@ -750,6 +833,15 @@ export function MoodboardStage({
         y: e.target.y(),
         scale: viewport.scale,
       });
+    } else {
+      if (dragRafRef.current !== null) {
+        cancelAnimationFrame(dragRafRef.current);
+        dragRafRef.current = null;
+      }
+      if (liveDragPositionsRef.current.size > 0) {
+        liveDragPositionsRef.current.clear();
+        setLiveDragTick((t) => (t + 1) % 10000);
+      }
     }
   };
 
@@ -864,8 +956,9 @@ export function MoodboardStage({
 
       // Check if pointer is hovering over another candidate item
       let foundTarget: { itemId: string; anchor: AnchorPosition } | null = null;
-      for (const item of items) {
-        if (item.id === connectingFrom.itemId) continue;
+      for (const rawItem of items) {
+        if (rawItem.id === connectingFrom.itemId) continue;
+        const item = getItemLiveBounds(rawItem);
         const padding = 20;
         if (
           currentCanvasX >= item.x - padding &&
@@ -1213,9 +1306,11 @@ export function MoodboardStage({
 
           {/* Active Canvas Connectors (rendered beneath cards for clean layering) */}
           {connections.map((conn) => {
-            const source = items.find((i) => i.id === conn.fromId);
-            const target = items.find((i) => i.id === conn.targetId);
-            if (!source || !target) return null;
+            const rawSource = items.find((i) => i.id === conn.fromId);
+            const rawTarget = items.find((i) => i.id === conn.targetId);
+            if (!rawSource || !rawTarget) return null;
+            const source = getItemLiveBounds(rawSource);
+            const target = getItemLiveBounds(rawTarget);
             return (
               <CanvasConnectorItem
                 key={conn.id}
@@ -1246,7 +1341,7 @@ export function MoodboardStage({
                   ? calculateBezierCurve(
                       connectingFrom.startPoint,
                       getAnchorPoint(
-                        items.find((i) => i.id === connectingTarget.itemId)!,
+                        getItemLiveBounds(items.find((i) => i.id === connectingTarget.itemId)!),
                         connectingTarget.anchor
                       ),
                       connectingFrom.anchor,
@@ -1367,12 +1462,14 @@ export function MoodboardStage({
 
           {/* Cardinal Anchor Handles on Selected or Candidate Items */}
           {!readOnly &&
-            sortedItems.map((item) => {
-              const isSelected = effectiveSelectedIds.includes(item.id);
-              const isConnectingTarget = connectingTarget?.itemId === item.id;
-              const isCandidate = connectingFrom !== null && connectingFrom.itemId !== item.id;
+            sortedItems.map((rawItem) => {
+              const isSelected = effectiveSelectedIds.includes(rawItem.id);
+              const isConnectingTarget = connectingTarget?.itemId === rawItem.id;
+              const isCandidate = connectingFrom !== null && connectingFrom.itemId !== rawItem.id;
 
               if (!isSelected && !isConnectingTarget && !isCandidate) return null;
+
+              const item = getItemLiveBounds(rawItem);
 
               return (
                 <CanvasItemAnchors
