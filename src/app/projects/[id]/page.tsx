@@ -180,62 +180,16 @@ export default function ProjectWorkspacePage() {
         onOpenShare={() => setIsShareOpen(true)}
       />
 
-      {/* Project Metadata Banner */}
-      <div className="border-b border-border bg-surface-subtle px-6 py-4">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
-          <div>
-            <h2 className="font-display text-xl font-medium tracking-tight text-foreground">
-              {project.name}
-            </h2>
-            {project.description ? (
-              <p className="text-xs text-muted-foreground mt-1 max-w-2xl leading-relaxed">
-                {project.description}
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground/50 italic mt-0.5">
-                No description provided.
-              </p>
-            )}
-          </div>
-
-          {/* Mobile Tab Switcher */}
-          <div className="sm:hidden flex items-center gap-1 rounded-md bg-surface p-1 border border-border mt-2">
-            <button
-              type="button"
-              onClick={() => handleTabChange('references')}
-              className={`flex-1 rounded py-1 text-xs font-medium text-center ${
-                activeTab === 'references'
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground'
-              }`}
-            >
-              References
-            </button>
-            <button
-              type="button"
-              onClick={() => handleTabChange('moodboard')}
-              className={`flex-1 rounded py-1 text-xs font-medium text-center ${
-                activeTab === 'moodboard'
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground'
-              }`}
-            >
-              Moodboard
-            </button>
-            <button
-              type="button"
-              onClick={() => handleTabChange('direction')}
-              className={`flex-1 rounded py-1 text-xs font-medium text-center ${
-                activeTab === 'direction'
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground'
-              }`}
-            >
-              Direction
-            </button>
+      {/* Project Description (shown only when description exists and not on moodboard) */}
+      {activeTab !== 'moodboard' && project.description && (
+        <div className="border-b border-border bg-surface-subtle px-6 py-2.5">
+          <div className="max-w-7xl mx-auto">
+            <p className="text-xs text-muted-foreground max-w-2xl leading-relaxed">
+              {project.description}
+            </p>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Tab Content */}
       <main className="flex-1 flex flex-col">

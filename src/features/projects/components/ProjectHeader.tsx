@@ -72,11 +72,11 @@ export function ProjectHeader({
         </div>
 
         {onTabChange && (
-          <nav className="hidden sm:flex items-center gap-1 rounded-md bg-surface p-1 border border-border">
+          <nav className="flex items-center gap-0.5 sm:gap-1 rounded-md bg-surface p-0.5 sm:p-1 border border-border">
             <button
               type="button"
               onClick={() => onTabChange('references')}
-              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+              className={`rounded px-2 sm:px-3 py-1 text-[11px] sm:text-xs font-medium transition-colors ${
                 activeTab === 'references'
                   ? 'bg-muted text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
@@ -87,7 +87,7 @@ export function ProjectHeader({
             <button
               type="button"
               onClick={() => onTabChange('moodboard')}
-              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+              className={`rounded px-2 sm:px-3 py-1 text-[11px] sm:text-xs font-medium transition-colors ${
                 activeTab === 'moodboard'
                   ? 'bg-muted text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
@@ -98,13 +98,13 @@ export function ProjectHeader({
             <button
               type="button"
               onClick={() => onTabChange('direction')}
-              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+              className={`rounded px-2 sm:px-3 py-1 text-[11px] sm:text-xs font-medium transition-colors ${
                 activeTab === 'direction'
                   ? 'bg-muted text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Creative Direction
+              <span className="hidden md:inline">Creative </span>Direction
             </button>
           </nav>
         )}

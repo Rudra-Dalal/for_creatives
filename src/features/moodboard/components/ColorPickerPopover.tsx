@@ -16,9 +16,12 @@ interface ColorPickerPopoverProps {
   initialHex: string;
   initialLabel?: string;
   documentColors?: string[];
-  onChange: (hex: string, label: string) => void;
+  onChange?: (hex: string, label: string) => void;
   onClose: () => void;
   anchorPosition?: { top: number; left: number };
+  isCreateMode?: boolean;
+  onConfirm?: (hex: string, label: string) => void;
+  confirmLabel?: string;
 }
 
 export function ColorPickerPopover({
@@ -28,6 +31,9 @@ export function ColorPickerPopover({
   onChange,
   onClose,
   anchorPosition,
+  isCreateMode = false,
+  onConfirm,
+  confirmLabel,
 }: ColorPickerPopoverProps) {
   const [hsv, setHsv] = useState<HSV>(() => hexToHsv(initialHex));
   const [alpha, setAlpha] = useState(1);
@@ -67,7 +73,7 @@ export function ColorPickerPopover({
   // Notify parent on color changes
   const notifyChange = useCallback(
     (newHex: string, newLabel: string) => {
-      onChange(newHex, newLabel);
+      onChange?.(newHex, newLabel);
     },
     [onChange]
   );
@@ -309,8 +315,8 @@ export function ColorPickerPopover({
       {/* 1. Header: Mode, Live Swatch Indicator, and Close */}
       <div className="flex items-center justify-between pb-1 border-b border-border text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5 font-medium text-foreground">
-          <span>Solid</span>
-          <ChevronDown className="h-3 w-3 opacity-60" />
+          <span>{isCreateMode ? 'New Color Swatch' : 'Solid'}</span>
+          {!isCreateMode && <ChevronDown className="h-3 w-3 opacity-60" />}
         </div>
 
         <div className="flex items-center gap-2">
@@ -498,6 +504,13 @@ export function ColorPickerPopover({
           type="text"
           value={labelInput}
           onChange={handleLabelChange}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && isCreateMode && onConfirm) {
+              e.preventDefault();
+              onConfirm(currentSolidHex, labelInput.trim() || currentSolidHex);
+              onClose();
+            }
+          }}
           placeholder="Color name (e.g. Primary Amber)"
           className="w-full rounded bg-surface-subtle px-2 py-1 text-xs text-foreground border border-border outline-none focus:border-accent placeholder-muted-foreground/60 select-text selection:bg-accent selection:text-white"
         />
@@ -541,6 +554,23 @@ export function ColorPickerPopover({
           })}
         </div>
       </div>
+
+      {/* 6. Action Button for Create Mode */}
+      {isCreateMode && onConfirm && (
+        <div className="pt-2 border-t border-border">
+          <button
+            type="button"
+            onClick={() => {
+              onConfirm(currentSolidHex, labelInput.trim() || currentSolidHex);
+              onClose();
+            }}
+            className="w-full h-8 rounded-lg bg-accent text-white hover:bg-accent-hover text-xs font-medium flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>{confirmLabel || 'Add Swatch to Moodboard'}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

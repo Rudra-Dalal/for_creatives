@@ -11,9 +11,10 @@ import { playgroundImageService } from '../services/playgroundImageService';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Button } from '@/components/ui/button';
 import type { Reference } from '@/features/references/types';
-import type { MoodboardItem } from '../types';
+import type { MoodboardItem, ColorItemContent } from '../types';
 import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
 import { FolderPlus, Type, Sparkles, Loader2, AlertCircle, LayoutGrid, X } from 'lucide-react';
+import { ColorPickerPopover } from './ColorPickerPopover';
 
 // Dynamic Konva Stage import without SSR
 const DynamicMoodboardStage = dynamic(
@@ -93,6 +94,9 @@ export function MoodboardCanvas({
   // URL reference capture modal on canvas paste
   const [isAddRefOpen, setIsAddRefOpen] = useState(false);
   const [pendingRefUrl, setPendingRefUrl] = useState<string>('');
+
+  // Popover for picking color swatch before placing it
+  const [isAddColorOpen, setIsAddColorOpen] = useState(false);
 
   const handleUndo = useCallback(async () => {
     setShowArrangeToast(false);
@@ -322,7 +326,7 @@ export function MoodboardCanvas({
 
   if (error) {
     return (
-      <div className="flex-1 w-full h-[calc(100vh-140px)] min-h-[500px] flex flex-col items-center justify-center bg-[#121211] p-6 text-center">
+      <div className="flex-1 w-full h-[calc(100vh-56px)] min-h-[500px] flex flex-col items-center justify-center bg-[#121211] p-6 text-center">
         <p className="text-xs text-red-400 mb-3">{error}</p>
         <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>
           Reload Playground
@@ -332,7 +336,7 @@ export function MoodboardCanvas({
   }
 
   return (
-    <div className="relative flex-1 w-full h-[calc(100vh-140px)] min-h-[500px] overflow-hidden bg-[#121211]">
+    <div className="relative flex-1 w-full h-[calc(100vh-56px)] min-h-[500px] overflow-hidden bg-[#121211]">
       {/* Uploading Status Banner */}
       {isUploading && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full border border-border bg-surface px-4 py-1.5 shadow-floating animate-in fade-in-50">
@@ -476,7 +480,7 @@ export function MoodboardCanvas({
         onToggleLibrary={() => setIsLibraryOpen((prev) => !prev)}
         onUploadImageFile={(file) => handleUploadImageFile(file, file.name)}
         onAddTextNote={handleAddTextNote}
-        onAddColor={handleAddColor}
+        onAddColor={() => setIsAddColorOpen(true)}
         onAddIdea={handleAddIdea}
         onDuplicateSelected={duplicateSelectedItems}
         onDeleteSelected={deleteSelectedItems}
@@ -509,6 +513,41 @@ export function MoodboardCanvas({
               }}
               onReferenceCreated={handleReferenceCreated}
               onSubmit={handleCreateReferenceSubmit}
+            />
+          )}
+
+          {/* Color Swatch Creation Popover (appears instantly on clicking Color Swatch before placing) */}
+          {isAddColorOpen && (
+            <ColorPickerPopover
+              isCreateMode
+              initialHex="#D97706"
+              initialLabel=""
+              documentColors={
+                items
+                  .filter((i) => i.type === 'color')
+                  .map((i) => (i.content as ColorItemContent)?.hex)
+                  .filter(Boolean) as string[]
+              }
+              onConfirm={async (hex, label) => {
+                setIsAddColorOpen(false);
+                try {
+                  await addColorItem(hex, label || undefined);
+                } catch (err: unknown) {
+                  console.error('Failed to add color swatch:', err);
+                  const msg = err instanceof Error ? err.message : 'Failed to add color swatch';
+                  setUploadError(msg);
+                  setTimeout(() => setUploadError(null), 6000);
+                }
+              }}
+              onClose={() => setIsAddColorOpen(false)}
+              anchorPosition={
+                typeof window !== 'undefined'
+                  ? {
+                      left: Math.max(16, window.innerWidth / 2 - 134),
+                      top: Math.max(70, window.innerHeight - 560),
+                    }
+                  : undefined
+              }
             />
           )}
         </>
