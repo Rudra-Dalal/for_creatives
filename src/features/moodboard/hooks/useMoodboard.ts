@@ -12,7 +12,6 @@ import type {
 } from '../types';
 import type { Json } from '@/types/database.types';
 import type { Reference } from '@/features/references/types';
-import { calculateAutoArrangeLayout } from '../utils/autoArrangeUtils';
 
 export type UndoAction =
   | {
@@ -85,6 +84,43 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
 
   // Single-level undo action state
   const [lastAction, setLastAction] = useState<UndoAction | null>(null);
+
+  // Save status tracking for visible persistence feedback (no silent failures)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const activeSavesRef = useRef(0);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const beginSave = useCallback(() => {
+    activeSavesRef.current += 1;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    setSaveStatus('saving');
+    setSaveError(null);
+  }, []);
+
+  const endSave = useCallback((err?: unknown) => {
+    activeSavesRef.current = Math.max(0, activeSavesRef.current - 1);
+    if (err) {
+      console.error('Moodboard persistence error:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to save changes to moodboard';
+      setSaveStatus('error');
+      setSaveError(msg);
+    } else if (activeSavesRef.current === 0) {
+      setSaveStatus('saved');
+      saveTimerRef.current = setTimeout(() => {
+        setSaveStatus('idle');
+      }, 2500);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
 
   // Keep track of pending persistence timers for debouncing
   const pendingUpdatesRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -464,10 +500,12 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
       if (existing) clearTimeout(existing);
 
       const timer = setTimeout(async () => {
+        beginSave();
         try {
           await moodboardService.updateItem(id, geometry);
-        } catch {
-          // Handled
+          endSave();
+        } catch (err) {
+          endSave(err);
         } finally {
           pendingUpdatesRef.current.delete(id);
         }
@@ -475,7 +513,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
 
       pendingUpdatesRef.current.set(id, timer);
     },
-    []
+    [beginSave, endSave]
   );
 
   // Nudge item position with keyboard arrow keys
@@ -519,12 +557,14 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
 
     updateItemLocal(id, { content: updatedContent });
 
+    beginSave();
     try {
       await moodboardService.updateItem(id, {
         content: updatedContent as unknown as Json,
       });
-    } catch {
-      // Handled
+      endSave();
+    } catch (err) {
+      endSave(err);
     }
   };
 
@@ -540,12 +580,14 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
 
     updateItemLocal(id, { content: updatedContent });
 
+    beginSave();
     try {
       await moodboardService.updateItem(id, {
         content: updatedContent as unknown as Json,
       });
-    } catch {
-      // Handled
+      endSave();
+    } catch (err) {
+      endSave(err);
     }
   };
 
@@ -561,12 +603,14 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
 
     updateItemLocal(id, { content: updatedContent });
 
+    beginSave();
     try {
       await moodboardService.updateItem(id, {
         content: updatedContent as unknown as Json,
       });
-    } catch {
-      // Handled
+      endSave();
+    } catch (err) {
+      endSave(err);
     }
   };
 
@@ -574,10 +618,12 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
   const bringToFront = async (id: string) => {
     const nextZ = getMaxZIndex() + 1;
     updateItemLocal(id, { z_index: nextZ });
+    beginSave();
     try {
       await moodboardService.updateItem(id, { zIndex: nextZ });
-    } catch {
-      // Handled
+      endSave();
+    } catch (err) {
+      endSave(err);
     }
   };
 
@@ -591,10 +637,12 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
       recordUndoAction({ type: 'DELETE', itemId: id, item: targetItem });
     }
 
+    beginSave();
     try {
       await moodboardService.deleteItem(id);
-    } catch {
-      // Handled
+      endSave();
+    } catch (err) {
+      endSave(err);
     }
   };
 
@@ -607,13 +655,15 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     setItems((prev) => prev.filter((item) => !idsToDelete.includes(item.id)));
     setSelectedIds([]);
 
-    for (const target of targets) {
-      recordUndoAction({ type: 'DELETE', itemId: target.id, item: target });
-      try {
+    beginSave();
+    try {
+      for (const target of targets) {
+        recordUndoAction({ type: 'DELETE', itemId: target.id, item: target });
         await moodboardService.deleteItem(target.id);
-      } catch {
-        // Handled
       }
+      endSave();
+    } catch (err) {
+      endSave(err);
     }
   };
 
@@ -623,37 +673,44 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     const duplicated: MoodboardItem[] = [];
     const newSelectedIds: string[] = [];
 
-    for (const id of selectedIds) {
-      const source = items.find((i) => i.id === id);
-      if (!source) continue;
+    beginSave();
+    try {
+      for (const id of selectedIds) {
+        const source = items.find((i) => i.id === id);
+        if (!source) continue;
 
-      const nextZ = getMaxZIndex() + 1;
-      const created = await moodboardService.createItem({
-        projectId,
-        referenceId: source.reference_id,
-        type: source.type,
-        content: source.content as unknown as Json,
-        x: source.x + 30,
-        y: source.y + 30,
-        width: source.width,
-        height: source.height,
-        zIndex: nextZ,
-      });
+        const nextZ = getMaxZIndex() + 1;
+        const created = await moodboardService.createItem({
+          projectId,
+          referenceId: source.reference_id,
+          type: source.type,
+          content: source.content as unknown as Json,
+          x: source.x + 30,
+          y: source.y + 30,
+          width: source.width,
+          height: source.height,
+          zIndex: nextZ,
+        });
 
-      const itemWithRef: MoodboardItem = {
-        ...created,
-        reference: source.reference,
-      };
-      duplicated.push(itemWithRef);
-      newSelectedIds.push(created.id);
-      recordUndoAction({ type: 'DUPLICATE', itemId: created.id, item: itemWithRef });
+        const itemWithRef: MoodboardItem = {
+          ...created,
+          reference: source.reference,
+        };
+        duplicated.push(itemWithRef);
+        newSelectedIds.push(created.id);
+        recordUndoAction({ type: 'DUPLICATE', itemId: created.id, item: itemWithRef });
+      }
+
+      if (duplicated.length > 0) {
+        setItems((prev) => [...prev, ...duplicated]);
+        setSelectedIds(newSelectedIds);
+      }
+      endSave();
+      return duplicated;
+    } catch (err) {
+      endSave(err);
+      return [];
     }
-
-    if (duplicated.length > 0) {
-      setItems((prev) => [...prev, ...duplicated]);
-      setSelectedIds(newSelectedIds);
-    }
-    return duplicated;
   };
 
   // Bulk nudge all selected items
@@ -678,69 +735,6 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
       })
     );
   }, [selectedIds, persistItemGeometry]);
-
-  // Auto-arrange all items in an aesthetic masonry grid with undo support
-  const autoArrangeItems = useCallback(async (): Promise<boolean> => {
-    if (items.length < 2) return false;
-
-    const layout = calculateAutoArrangeLayout(items);
-    if (layout.size === 0) return false;
-
-    const batchMoves: Array<{
-      id: string;
-      prevPosition: { x: number; y: number };
-      nextPosition: { x: number; y: number };
-    }> = [];
-
-    // Capture previous positions for undo
-    items.forEach((item) => {
-      const nextPos = layout.get(item.id);
-      if (nextPos && (nextPos.x !== item.x || nextPos.y !== item.y)) {
-        batchMoves.push({
-          id: item.id,
-          prevPosition: { x: item.x, y: item.y },
-          nextPosition: { x: nextPos.x, y: nextPos.y },
-        });
-      }
-    });
-
-    if (batchMoves.length === 0) return false;
-
-    // Record BATCH_MOVE undo action
-    recordUndoAction({
-      type: 'BATCH_MOVE',
-      items: batchMoves,
-    });
-
-    // Update items locally
-    setItems((prev) =>
-      prev.map((item) => {
-        const nextPos = layout.get(item.id);
-        if (!nextPos) return item;
-        return {
-          ...item,
-          x: nextPos.x,
-          y: nextPos.y,
-        };
-      })
-    );
-
-    // Persist changes asynchronously to database
-    for (const move of batchMoves) {
-      const itm = items.find((i) => i.id === move.id);
-      if (itm) {
-        persistItemGeometry(move.id, {
-          x: move.nextPosition.x,
-          y: move.nextPosition.y,
-          width: itm.width,
-          height: itm.height,
-          zIndex: itm.z_index,
-        });
-      }
-    }
-
-    return true;
-  }, [items, recordUndoAction, persistItemGeometry]);
 
   // Viewport Zoom & Pan Helpers
   const zoomIn = () => {
@@ -807,12 +801,13 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     setViewport,
     isLoading,
     error,
+    saveStatus,
+    saveError,
+    clearSaveError: () => setSaveError(null),
     canUndo: !!lastAction,
     lastAction,
     recordUndoAction,
     undo,
-    autoArrangeItems,
-    canAutoArrange: items.length >= 2,
     nudgeItem,
     nudgeSelectedItems,
     zoomToFit,

@@ -23,7 +23,6 @@ import {
   Trash2,
   RotateCcw,
   Download,
-  LayoutGrid,
 } from 'lucide-react';
 
 interface MoodboardToolbarProps {
@@ -33,8 +32,6 @@ interface MoodboardToolbarProps {
   readOnly?: boolean;
   canUndo?: boolean;
   onUndo?: () => void;
-  canAutoArrange?: boolean;
-  onAutoArrange?: () => void;
   isLibraryOpen: boolean;
   onToggleLibrary: () => void;
   onUploadImageFile: (file: File) => void;
@@ -57,8 +54,6 @@ export function MoodboardToolbar({
   readOnly = false,
   canUndo,
   onUndo,
-  canAutoArrange = false,
-  onAutoArrange,
   isLibraryOpen,
   onToggleLibrary,
   onUploadImageFile,
@@ -159,24 +154,6 @@ export function MoodboardToolbar({
             >
               <RotateCcw className="h-3 w-3" />
               <span>Undo</span>
-            </button>
-          )}
-
-          {/* Auto-arrange Button */}
-          {onAutoArrange && (
-            <button
-              type="button"
-              onClick={onAutoArrange}
-              disabled={!canAutoArrange}
-              className={`flex h-7 items-center gap-1 px-2.5 rounded-full text-xs transition-colors ${
-                canAutoArrange
-                  ? 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
-                  : 'text-muted-foreground/30 cursor-not-allowed'
-              }`}
-              title={canAutoArrange ? 'Auto-arrange items into clean layout' : 'Need at least 2 items to arrange'}
-            >
-              <LayoutGrid className="h-3 w-3" />
-              <span>Arrange</span>
             </button>
           )}
 

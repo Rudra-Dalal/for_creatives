@@ -59,6 +59,17 @@ provisional. This does not retroactively bless how it landed: it was built
 on the agent's own initiative, without a proposed plan or a flagged schema
 change. That is why the hard rule below exists and is non-negotiable.
 
+Subsequent unapproved canvas additions were audited and decided by the owner:
+- **Adopted & kept**: Marquee multi-selection (drag on empty canvas, shift-toggle),
+  desktop file drag-and-drop for images (compressed client-side before upload),
+  trimmed clipboard paste (plain text -> text note, valid URL -> reference capture
+  dialog; image auto-upload from clipboard is stripped), and middle-mouse pan.
+- **Removed entirely**: Floating color picker popover (replaced with lightweight
+  native swatch input) and auto-arrange grid layout (clustering remains spatial
+  and manual, preserving designer intent).
+- **Bugfix against core rules**: Moodboard saves now surface visible saving,
+  saved, and error banner feedback in compliance with the "no silent failures" rule.
+
 ## Tech stack
 
 **Frontend:** Next.js 14.2.35 (pinned — earlier pinned at 14.2.15, which

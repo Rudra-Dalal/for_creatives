@@ -17,7 +17,6 @@ import { CanvasTextItem } from './CanvasTextItem';
 import { CanvasColorItem } from './CanvasColorItem';
 import { CanvasIdeaItem } from './CanvasIdeaItem';
 import { CanvasTransformer } from './CanvasTransformer';
-import { ColorPickerPopover } from '../components/ColorPickerPopover';
 
 interface MoodboardStageProps {
   items: MoodboardItem[];
@@ -1149,32 +1148,58 @@ export function MoodboardStage({
         </div>
       )}
 
-      {/* Figma-Style Color Selection Tool Popover */}
+      {/* Floating Editing Overlay for Color Item */}
       {!readOnly && editingColorItem && (
-        <ColorPickerPopover
-          initialHex={editingColorHex}
-          initialLabel={editingColorLabel}
-          documentColors={
-            items
-              .filter((i) => i.type === 'color')
-              .map((i) => (i.content as ColorItemContent)?.hex)
-              .filter(Boolean) as string[]
-          }
-          onChange={(nextHex, nextLabel) => {
-            setEditingColorHex(nextHex);
-            setEditingColorLabel(nextLabel);
-            onUpdateColor(editingColorItem.id, nextHex, nextLabel);
-          }}
-          onClose={handleSaveColorEdit}
-          anchorPosition={{
-            left:
-              editingColorItem.x * viewport.scale +
-              viewport.x +
-              editingColorItem.width * viewport.scale +
-              16,
-            top: editingColorItem.y * viewport.scale + viewport.y,
-          }}
-        />
+        <div
+          style={getEditingOverlayStyle(editingColorItem)}
+          className="absolute z-30 p-3 bg-surface border border-accent/60 rounded-lg shadow-floating flex flex-col gap-2 min-w-[220px]"
+        >
+          <div className="flex items-center justify-between pb-1 border-b border-border text-[11px] text-muted-foreground">
+            <span className="font-medium text-foreground">Edit Color Swatch</span>
+            <button
+              onClick={handleSaveColorEdit}
+              className="text-xs text-accent hover:underline"
+            >
+              Save
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={editingColorHex.startsWith('#') && editingColorHex.length === 7 ? editingColorHex : '#D97706'}
+              onChange={(e) => {
+                const nextHex = e.target.value.toUpperCase();
+                setEditingColorHex(nextHex);
+                onUpdateColor(editingColorItem.id, nextHex, editingColorLabel);
+              }}
+              className="h-8 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+            />
+            <input
+              type="text"
+              value={editingColorHex}
+              onChange={(e) => {
+                const nextHex = e.target.value.toUpperCase();
+                setEditingColorHex(nextHex);
+                onUpdateColor(editingColorItem.id, nextHex, editingColorLabel);
+              }}
+              placeholder="#D97706"
+              className="flex-1 rounded bg-surface-subtle px-2 py-1 font-mono text-xs text-foreground border border-border outline-none focus:border-accent"
+            />
+          </div>
+          <input
+            type="text"
+            value={editingColorLabel}
+            onChange={(e) => {
+              setEditingColorLabel(e.target.value);
+              onUpdateColor(editingColorItem.id, editingColorHex, e.target.value);
+            }}
+            placeholder="Color label (e.g. Primary Amber)"
+            className="w-full rounded bg-surface-subtle px-2 py-1 text-xs text-foreground border border-border outline-none focus:border-accent"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === 'Escape') handleSaveColorEdit();
+            }}
+          />
+        </div>
       )}
 
       {/* Floating Editing Overlay for Idea Item */}

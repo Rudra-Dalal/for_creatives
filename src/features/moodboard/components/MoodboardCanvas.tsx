@@ -13,8 +13,7 @@ import { Button } from '@/components/ui/button';
 import type { Reference } from '@/features/references/types';
 import type { MoodboardItem, ColorItemContent } from '../types';
 import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
-import { FolderPlus, Type, Sparkles, Loader2, AlertCircle, LayoutGrid, X } from 'lucide-react';
-import { ColorPickerPopover } from './ColorPickerPopover';
+import { FolderPlus, Type, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 
 // Dynamic Konva Stage import without SSR
 const DynamicMoodboardStage = dynamic(
@@ -53,10 +52,11 @@ export function MoodboardCanvas({
     setViewport,
     isLoading,
     error,
+    saveStatus,
+    saveError,
+    clearSaveError,
     canUndo,
     undo,
-    autoArrangeItems,
-    canAutoArrange,
     nudgeItem,
     nudgeSelectedItems,
     zoomToFit,
@@ -85,8 +85,6 @@ export function MoodboardCanvas({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [showArrangeToast, setShowArrangeToast] = useState(false);
-  const arrangeToastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Exporter reference
   const exportFnRef = useRef<((name?: string) => Promise<boolean>) | null>(null);
@@ -95,49 +93,9 @@ export function MoodboardCanvas({
   const [isAddRefOpen, setIsAddRefOpen] = useState(false);
   const [pendingRefUrl, setPendingRefUrl] = useState<string>('');
 
-  // Popover for picking color swatch before placing it
-  const [isAddColorOpen, setIsAddColorOpen] = useState(false);
-
   const handleUndo = useCallback(async () => {
-    setShowArrangeToast(false);
-    if (arrangeToastTimerRef.current) {
-      clearTimeout(arrangeToastTimerRef.current);
-    }
     await undo();
   }, [undo]);
-
-  const handleAutoArrange = async () => {
-    try {
-      const moved = await autoArrangeItems();
-      if (moved) {
-        setShowArrangeToast(true);
-        if (arrangeToastTimerRef.current) {
-          clearTimeout(arrangeToastTimerRef.current);
-        }
-        arrangeToastTimerRef.current = setTimeout(() => {
-          setShowArrangeToast(false);
-        }, 8000);
-      }
-    } catch (err: unknown) {
-      console.error('Failed to auto-arrange canvas:', err);
-    }
-  };
-
-  const handleRevertArrange = async () => {
-    setShowArrangeToast(false);
-    if (arrangeToastTimerRef.current) {
-      clearTimeout(arrangeToastTimerRef.current);
-    }
-    await undo();
-  };
-
-  useEffect(() => {
-    return () => {
-      if (arrangeToastTimerRef.current) {
-        clearTimeout(arrangeToastTimerRef.current);
-      }
-    };
-  }, []);
 
   const handlePlaceReference = async (reference: Reference) => {
     try {
@@ -241,7 +199,7 @@ export function MoodboardCanvas({
     [handleUploadImageFile, readOnly]
   );
 
-  // Global Clipboard paste listener
+  // Global Clipboard paste listener (trimmed: text & URLs only, no image auto-upload)
   useEffect(() => {
     if (readOnly) return;
     const handlePaste = async (e: ClipboardEvent) => {
@@ -254,23 +212,6 @@ export function MoodboardCanvas({
         return;
       }
 
-      // 1. Check for Image in clipboard items
-      const clipboardItems = e.clipboardData?.items;
-      if (clipboardItems) {
-        for (let i = 0; i < clipboardItems.length; i++) {
-          const item = clipboardItems[i];
-          if (item.type.startsWith('image/')) {
-            const blob = item.getAsFile();
-            if (blob) {
-              e.preventDefault();
-              await handleUploadImageFile(blob, 'Pasted Image');
-              return;
-            }
-          }
-        }
-      }
-
-      // 2. Check for Text in clipboard
       const pastedText = e.clipboardData?.getData('text/plain')?.trim();
       if (!pastedText) return;
 
@@ -282,13 +223,6 @@ export function MoodboardCanvas({
         return;
       }
 
-      // If it's a HEX color code -> create Color swatch
-      if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(pastedText)) {
-        e.preventDefault();
-        await addColorItem(pastedText.toUpperCase(), pastedText.toUpperCase());
-        return;
-      }
-
       // Otherwise -> create Text note
       e.preventDefault();
       await addTextNote(pastedText);
@@ -296,7 +230,7 @@ export function MoodboardCanvas({
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [readOnly, isAddRefOpen, handleUploadImageFile, addColorItem, addTextNote]);
+  }, [readOnly, isAddRefOpen, addTextNote]);
 
   // Handle reference created from dialog and place on canvas
   const handleReferenceCreated = (newRef: Reference) => {
@@ -350,6 +284,38 @@ export function MoodboardCanvas({
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full border border-danger bg-surface px-4 py-1.5 shadow-floating animate-in fade-in-50 text-red-400">
           <AlertCircle className="h-3.5 w-3.5" />
           <span className="text-xs font-medium">{uploadError}</span>
+        </div>
+      )}
+
+      {/* Persistence Error Banner (No Silent Failures) */}
+      {saveError && (
+        <div className="absolute top-4 right-4 z-40 flex items-center gap-2.5 rounded-lg border border-red-500/40 bg-[#1A1A19]/95 backdrop-blur px-3.5 py-2 shadow-floating text-red-400 animate-in fade-in-50">
+          <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+          <span className="text-xs font-medium">{saveError}</span>
+          <button
+            type="button"
+            onClick={clearSaveError}
+            className="ml-2 text-xs text-muted-foreground hover:text-foreground underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Save Status Pill (Quiet, restrained indicator) */}
+      {saveStatus !== 'idle' && saveStatus !== 'error' && (
+        <div className="absolute top-4 right-4 z-30 flex items-center gap-1.5 rounded-full border border-border/70 bg-[#1A1A19]/85 backdrop-blur px-3 py-1 text-[11px] text-muted-foreground select-none pointer-events-none transition-opacity duration-300">
+          {saveStatus === 'saving' ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin text-accent" />
+              <span>Saving...</span>
+            </>
+          ) : (
+            <>
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span className="text-foreground/80">Saved</span>
+            </>
+          )}
         </div>
       )}
 
@@ -439,33 +405,6 @@ export function MoodboardCanvas({
         </div>
       )}
 
-      {/* Auto-arranged Revert Toast */}
-      {showArrangeToast && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 rounded-full border border-border bg-surface/95 backdrop-blur-md px-4 py-2 shadow-floating animate-in fade-in slide-in-from-bottom-2 text-xs">
-          <span className="text-foreground font-medium flex items-center gap-1.5">
-            <LayoutGrid className="h-3.5 w-3.5 text-accent" />
-            Canvas auto-arranged
-          </span>
-          <div className="h-3.5 w-px bg-border-subtle" />
-          <button
-            type="button"
-            onClick={handleRevertArrange}
-            className="font-medium text-accent hover:text-accent-hover transition-colors underline-offset-4 hover:underline"
-          >
-            Revert
-          </button>
-          <span className="text-[10px] text-muted-foreground font-mono">(Cmd+Z)</span>
-          <button
-            type="button"
-            onClick={() => setShowArrangeToast(false)}
-            className="text-muted-foreground hover:text-foreground transition-colors ml-0.5"
-            title="Dismiss"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-
       {/* Floating Playground Toolbar */}
       <MoodboardToolbar
         scale={viewport.scale}
@@ -474,13 +413,11 @@ export function MoodboardCanvas({
         readOnly={readOnly}
         canUndo={canUndo}
         onUndo={handleUndo}
-        canAutoArrange={canAutoArrange}
-        onAutoArrange={handleAutoArrange}
         isLibraryOpen={isLibraryOpen}
         onToggleLibrary={() => setIsLibraryOpen((prev) => !prev)}
         onUploadImageFile={(file) => handleUploadImageFile(file, file.name)}
         onAddTextNote={handleAddTextNote}
-        onAddColor={() => setIsAddColorOpen(true)}
+        onAddColor={handleAddColor}
         onAddIdea={handleAddIdea}
         onDuplicateSelected={duplicateSelectedItems}
         onDeleteSelected={deleteSelectedItems}
@@ -513,33 +450,6 @@ export function MoodboardCanvas({
               }}
               onReferenceCreated={handleReferenceCreated}
               onSubmit={handleCreateReferenceSubmit}
-            />
-          )}
-
-          {/* Color Swatch Creation Popover (appears instantly on clicking Color Swatch before placing) */}
-          {isAddColorOpen && (
-            <ColorPickerPopover
-              isCreateMode
-              initialHex="#D97706"
-              initialLabel=""
-              documentColors={
-                items
-                  .filter((i) => i.type === 'color')
-                  .map((i) => (i.content as ColorItemContent)?.hex)
-                  .filter(Boolean) as string[]
-              }
-              onConfirm={async (hex, label) => {
-                setIsAddColorOpen(false);
-                try {
-                  await addColorItem(hex, label || undefined);
-                } catch (err: unknown) {
-                  console.error('Failed to add color swatch:', err);
-                  const msg = err instanceof Error ? err.message : 'Failed to add color swatch';
-                  setUploadError(msg);
-                  setTimeout(() => setUploadError(null), 6000);
-                }
-              }}
-              onClose={() => setIsAddColorOpen(false)}
             />
           )}
         </>
