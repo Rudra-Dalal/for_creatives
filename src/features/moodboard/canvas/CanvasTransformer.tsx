@@ -54,6 +54,7 @@ export function CanvasTransformer({
       anchorCornerRadius={2}
       padding={0}
       ignoreStroke={true}
+      shouldOverdrawWholeArea={false}
     />
   );
 }

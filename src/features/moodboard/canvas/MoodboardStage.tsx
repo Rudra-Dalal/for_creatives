@@ -94,6 +94,10 @@ export function MoodboardStage({
     return [];
   }, [selectedIds, selectedId]);
 
+  const sortedItems = React.useMemo(() => {
+    return [...items].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
+  }, [items]);
+
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [selectedNodes, setSelectedNodes] = useState<Konva.Node[]>([]);
   const [selectedNode, setSelectedNode] = useState<Konva.Node | null>(null);
@@ -163,6 +167,12 @@ export function MoodboardStage({
           setIsMiddlePanning(false);
         }
       }
+      if (isMarqueeSelectingRef.current) {
+        isMarqueeSelectingRef.current = false;
+        marqueeStartPointerRef.current = null;
+        lastMarqueeHitIdsRef.current = [];
+        setSelectionBox(null);
+      }
     };
 
     window.addEventListener('mousemove', handleGlobalMouseMove, { passive: false });
@@ -210,19 +220,33 @@ export function MoodboardStage({
     }
   }, []);
 
-  // Resize observer to fill container
+  // Resize observer to fill container with exact bounding rect
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
     const updateSize = () => {
-      if (containerRef.current) {
+      const rect = container.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
         setDimensions({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
         });
       }
     };
+
     updateSize();
+
+    const ro = new ResizeObserver(() => {
+      updateSize();
+    });
+    ro.observe(container);
+
     window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateSize);
+    };
   }, []);
 
   // Update selectedNodes and selectedNode when selection changes
@@ -635,10 +659,61 @@ export function MoodboardStage({
     }
   };
 
+  const handleItemPointerDown = useCallback(
+    (id: string, node: Konva.Node) => {
+      nodeMapRef.current.set(id, node);
+      // When holding shift, toggle happens on click to allow shift-drag
+      if (isShiftPressed) return;
+
+      // If clicking an item that's not currently selected, isolate selection to it immediately!
+      if (!effectiveSelectedIds.includes(id)) {
+        if (onSelectIds) onSelectIds([id]);
+        else onSelectId(id);
+        setSelectedNode(node);
+        setSelectedNodes([node]);
+      }
+    },
+    [isShiftPressed, effectiveSelectedIds, onSelectIds, onSelectId]
+  );
+
+  const handleItemClick = useCallback(
+    (id: string, node: Konva.Node) => {
+      nodeMapRef.current.set(id, node);
+      if (isShiftPressed && onToggleSelectId) {
+        onToggleSelectId(id, true);
+        setSelectedNodes((prev) =>
+          prev.some((n) => n.id() === id)
+            ? prev.filter((n) => n.id() !== id)
+            : [...prev, node]
+        );
+      } else {
+        // Normal click on a card always isolates selection to this single card
+        if (onSelectIds) onSelectIds([id]);
+        else onSelectId(id);
+        setSelectedNode(node);
+        setSelectedNodes([node]);
+      }
+    },
+    [isShiftPressed, onToggleSelectId, onSelectIds, onSelectId]
+  );
+
   // Handle Stage Mouse Down for Marquee selection
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     if ('button' in e.evt && e.evt.button === 1) return;
     if (isSpacePressed) return;
+
+    // Fallback: If clicked directly on a card or child of a card
+    const clickedItemGroup = e.target.findAncestor('.moodboard-item', true);
+    if (clickedItemGroup) {
+      isMarqueeSelectingRef.current = false;
+      marqueeStartPointerRef.current = null;
+      setSelectionBox(null);
+      const clickedId = clickedItemGroup.id();
+      if (clickedId) {
+        handleItemPointerDown(clickedId, clickedItemGroup);
+      }
+      return;
+    }
 
     const isBackground = e.target === stageRef.current || e.target.name() === 'canvas-background';
     if (!isBackground) return;
@@ -665,13 +740,14 @@ export function MoodboardStage({
       y: canvasY,
       width: 0,
       height: 0,
-      visible: true,
+      visible: false,
     });
 
     if (!('shiftKey' in e.evt && e.evt.shiftKey)) {
       if (onSelectIds) onSelectIds([]);
       else onSelectId(null);
       setSelectedNode(null);
+      setSelectedNodes([]);
     }
   };
 
@@ -690,10 +766,16 @@ export function MoodboardStage({
     const startX = marqueeStartPointerRef.current.x;
     const startY = marqueeStartPointerRef.current.y;
 
-    const boxX = Math.min(startX, currentCanvasX);
-    const boxY = Math.min(startY, currentCanvasY);
     const boxWidth = Math.abs(currentCanvasX - startX);
     const boxHeight = Math.abs(currentCanvasY - startY);
+
+    // Require minimum 6px drag threshold before marquee selection begins
+    if (boxWidth < 6 && boxHeight < 6) {
+      return;
+    }
+
+    const boxX = Math.min(startX, currentCanvasX);
+    const boxY = Math.min(startY, currentCanvasY);
 
     setSelectionBox({
       startX,
@@ -866,28 +948,6 @@ export function MoodboardStage({
 
   const selectedItem = items.find((i) => i.id === selectedId);
 
-  const handleItemSelect = useCallback(
-    (id: string, node: Konva.Node) => {
-      nodeMapRef.current.set(id, node);
-      if (isShiftPressed && onToggleSelectId) {
-        onToggleSelectId(id, true);
-      } else {
-        if (effectiveSelectedIds.length > 1 && effectiveSelectedIds.includes(id)) {
-          // Keep multi-selection intact for group dragging
-        } else {
-          if (onSelectIds) onSelectIds([id]);
-          else onSelectId(id);
-        }
-      }
-      setSelectedNode(node);
-      setSelectedNodes((prev) => {
-        if (prev.some((n) => n === node || n.id() === id)) return prev;
-        return isShiftPressed ? [...prev, node] : [node];
-      });
-    },
-    [isShiftPressed, onToggleSelectId, effectiveSelectedIds, onSelectIds, onSelectId]
-  );
-
   return (
     <div
       ref={containerRef}
@@ -968,8 +1028,8 @@ export function MoodboardStage({
             />
           )}
 
-          {/* Render All 5 Playground Objects */}
-          {items.map((item) => {
+          {/* Render All 5 Playground Objects in strict z-index order */}
+          {sortedItems.map((item) => {
             const isSelected = effectiveSelectedIds.includes(item.id);
 
             if (item.type === 'text') {
@@ -979,7 +1039,8 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={(node) => handleItemSelect(item.id, node)}
+                  onPointerDown={(node) => handleItemPointerDown(item.id, node)}
+                  onSelect={(node) => handleItemClick(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -995,7 +1056,8 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={(node) => handleItemSelect(item.id, node)}
+                  onPointerDown={(node) => handleItemPointerDown(item.id, node)}
+                  onSelect={(node) => handleItemClick(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -1010,7 +1072,8 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={(node) => handleItemSelect(item.id, node)}
+                  onPointerDown={(node) => handleItemPointerDown(item.id, node)}
+                  onSelect={(node) => handleItemClick(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -1026,7 +1089,8 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={(node) => handleItemSelect(item.id, node)}
+                  onPointerDown={(node) => handleItemPointerDown(item.id, node)}
+                  onSelect={(node) => handleItemClick(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -1042,7 +1106,8 @@ export function MoodboardStage({
                 item={item}
                 isSelected={isSelected}
                 isDraggable={!readOnly}
-                onSelect={(node) => handleItemSelect(item.id, node)}
+                onPointerDown={(node) => handleItemPointerDown(item.id, node)}
+                onSelect={(node) => handleItemClick(item.id, node)}
                 onDragStart={() => handleItemDragStart(item)}
                 onDragEnd={handleItemDragEnd}
                 onTransformEnd={handleItemTransformEnd}

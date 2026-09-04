@@ -10,6 +10,7 @@ interface CanvasImageItemProps {
   item: MoodboardItem;
   isSelected: boolean;
   onSelect: (node: Konva.Node) => void;
+  onPointerDown?: (node: Konva.Node) => void;
   onDragStart: () => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onTransformEnd: (id: string, x: number, y: number, width: number, height: number) => void;
@@ -20,6 +21,7 @@ export function CanvasImageItem({
   item,
   isSelected,
   onSelect,
+  onPointerDown,
   onDragStart,
   onDragEnd,
   onTransformEnd,
@@ -64,11 +66,27 @@ export function CanvasImageItem({
     <Group
       ref={groupRef}
       id={item.id}
+      name="moodboard-item"
       x={item.x}
       y={item.y}
       width={item.width}
       height={item.height}
       draggable={isDraggable}
+      onMouseDown={(e) => {
+        if (e.evt && e.evt.button !== 0) return;
+        e.cancelBubble = true;
+        if (groupRef.current) {
+          if (onPointerDown) onPointerDown(groupRef.current);
+          else onSelect(groupRef.current);
+        }
+      }}
+      onTouchStart={(e) => {
+        e.cancelBubble = true;
+        if (groupRef.current) {
+          if (onPointerDown) onPointerDown(groupRef.current);
+          else onSelect(groupRef.current);
+        }
+      }}
       onClick={(e) => {
         if (e.evt && e.evt.button !== 0) return;
         e.cancelBubble = true;
