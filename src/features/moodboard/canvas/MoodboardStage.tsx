@@ -152,8 +152,8 @@ export function MoodboardStage({
   const [editingIdeaTitle, setEditingIdeaTitle] = useState('');
   const [editingIdeaNotes, setEditingIdeaNotes] = useState('');
 
-  // Image for subtle dotted background pattern
-  const [dotPatternImage, setDotPatternImage] = useState<HTMLImageElement | null>(null);
+  // Canvas for crisp dotted background pattern that redraws dynamically at current zoom
+  const [dotPatternCanvas, setDotPatternCanvas] = useState<HTMLCanvasElement | null>(null);
 
   // Restrict Konva node dragging strictly to left click (button 0)
   useEffect(() => {
@@ -212,27 +212,32 @@ export function MoodboardStage({
     }
   };
 
+  // Redraw dotted background crisply at current zoom scale and device pixel ratio
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const scaleFactor = Math.max(0.2, viewport.scale) * dpr;
+    const baseGrid = 28;
+    const tileSize = Math.max(4, Math.round(baseGrid * scaleFactor));
+
     const canvas = document.createElement('canvas');
-    canvas.width = 28;
-    canvas.height = 28;
+    canvas.width = tileSize;
+    canvas.height = tileSize;
     const ctx = canvas.getContext('2d');
     if (ctx) {
       ctx.fillStyle = '#121211';
-      ctx.fillRect(0, 0, 28, 28);
+      ctx.fillRect(0, 0, tileSize, tileSize);
+
+      // Dot radius scales smoothly with zoom so it renders crisply at native screen resolution
+      const dotRadius = Math.max(0.8, 1.2 * scaleFactor);
       ctx.fillStyle = '#262622';
       ctx.beginPath();
-      ctx.arc(14, 14, 1.2, 0, Math.PI * 2);
+      ctx.arc(tileSize / 2, tileSize / 2, dotRadius, 0, Math.PI * 2);
       ctx.fill();
 
-      const img = new Image();
-      img.src = canvas.toDataURL();
-      img.onload = () => {
-        setDotPatternImage(img);
-      };
+      setDotPatternCanvas(canvas);
     }
-  }, []);
+  }, [viewport.scale]);
 
   // Resize observer to fill container with exact bounding rect
   useEffect(() => {
@@ -1015,15 +1020,19 @@ export function MoodboardStage({
       >
         <Layer>
           {/* Dotted Infinite Playground Canvas Background */}
-          {dotPatternImage ? (
+          {dotPatternCanvas ? (
             <Rect
               name="canvas-background"
               x={-50000}
               y={-50000}
               width={100000}
               height={100000}
-              fillPatternImage={dotPatternImage}
+              fillPatternImage={dotPatternCanvas as unknown as HTMLImageElement}
               fillPatternRepeat="repeat"
+              fillPatternScale={{
+                x: 28 / dotPatternCanvas.width,
+                y: 28 / dotPatternCanvas.height,
+              }}
             />
           ) : (
             <Rect
