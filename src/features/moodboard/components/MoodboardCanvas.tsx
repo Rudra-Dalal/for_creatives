@@ -540,14 +540,6 @@ export function MoodboardCanvas({
                 }
               }}
               onClose={() => setIsAddColorOpen(false)}
-              anchorPosition={
-                typeof window !== 'undefined'
-                  ? {
-                      left: Math.max(16, window.innerWidth / 2 - 134),
-                      top: Math.max(70, window.innerHeight - 560),
-                    }
-                  : undefined
-              }
             />
           )}
         </>

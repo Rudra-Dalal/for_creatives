@@ -278,11 +278,14 @@ export function ColorPickerPopover({
 
   // Calculate position with viewport boundaries
   const style: React.CSSProperties = React.useMemo(() => {
+    if (isCreateMode) {
+      return {};
+    }
     if (!anchorPosition) {
       return { top: '80px', left: '80px' };
     }
-    const popoverWidth = 268;
-    const popoverHeight = 440;
+    const popoverWidth = 276;
+    const popoverHeight = 460;
     const padding = 16;
 
     let left = anchorPosition.left;
@@ -301,7 +304,7 @@ export function ColorPickerPopover({
       left: `${Math.round(left)}px`,
       top: `${Math.round(top)}px`,
     };
-  }, [anchorPosition]);
+  }, [anchorPosition, isCreateMode]);
 
   return (
     <div
@@ -310,7 +313,11 @@ export function ColorPickerPopover({
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
-      className="absolute z-50 w-[268px] rounded-xl border border-border bg-surface shadow-2xl backdrop-blur-md p-3.5 flex flex-col gap-3 animate-in fade-in-50 zoom-in-95 text-foreground"
+      className={
+        isCreateMode
+          ? 'fixed z-50 bottom-24 left-1/2 -translate-x-1/2 w-[276px] max-h-[calc(100vh-110px)] rounded-xl border border-border bg-surface shadow-2xl backdrop-blur-md p-3.5 flex flex-col gap-2.5 animate-in fade-in-50 zoom-in-95 text-foreground overflow-y-auto'
+          : 'absolute z-50 w-[276px] max-h-[calc(100vh-60px)] rounded-xl border border-border bg-surface shadow-2xl backdrop-blur-md p-3.5 flex flex-col gap-2.5 animate-in fade-in-50 zoom-in-95 text-foreground overflow-y-auto'
+      }
     >
       {/* 1. Header: Mode, Live Swatch Indicator, and Close */}
       <div className="flex items-center justify-between pb-1 border-b border-border text-xs text-muted-foreground">
@@ -342,7 +349,7 @@ export function ColorPickerPopover({
       <div
         ref={satValBoxRef}
         onPointerDown={handleSatValPointerDown}
-        className="relative h-[150px] w-full rounded-lg overflow-hidden cursor-crosshair border border-border/80"
+        className="relative h-[130px] w-full rounded-lg overflow-hidden cursor-crosshair border border-border/80"
         style={{
           backgroundColor: `hsl(${hsv.h}, 100%, 50%)`,
         }}
@@ -532,7 +539,7 @@ export function ColorPickerPopover({
         </div>
 
         {/* Swatch Chips Grid */}
-        <div className="grid grid-cols-8 gap-1.5 max-h-[84px] overflow-y-auto pr-0.5">
+        <div className="grid grid-cols-8 gap-1.5 p-0.5 max-h-[76px] overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {allPaletteColors.map((color) => {
             const isSelected = color.toUpperCase() === currentSolidHex.toUpperCase();
             return (
@@ -540,8 +547,8 @@ export function ColorPickerPopover({
                 key={color}
                 type="button"
                 onClick={() => handleSelectColor(color)}
-                className={`relative h-5 w-5 rounded transition-transform hover:scale-110 border ${
-                  isSelected ? 'border-accent ring-1 ring-accent' : 'border-border/60 hover:border-border-strong'
+                className={`relative h-5 w-5 rounded border transition-all hover:brightness-125 hover:ring-2 hover:ring-white/80 ${
+                  isSelected ? 'border-accent ring-2 ring-accent' : 'border-border/60 hover:border-border-strong'
                 }`}
                 style={{ backgroundColor: color }}
                 title={color}
@@ -557,14 +564,14 @@ export function ColorPickerPopover({
 
       {/* 6. Action Button for Create Mode */}
       {isCreateMode && onConfirm && (
-        <div className="pt-2 border-t border-border">
+        <div className="pt-2 border-t border-border mt-0.5">
           <button
             type="button"
             onClick={() => {
               onConfirm(currentSolidHex, labelInput.trim() || currentSolidHex);
               onClose();
             }}
-            className="w-full h-8 rounded-lg bg-accent text-white hover:bg-accent-hover text-xs font-medium flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+            className="w-full h-8 rounded-lg bg-accent text-white hover:bg-accent-hover active:scale-[0.99] text-xs font-medium flex items-center justify-center gap-1.5 transition-all shadow-sm"
           >
             <Plus className="h-3.5 w-3.5" />
             <span>{confirmLabel || 'Add Swatch to Moodboard'}</span>
