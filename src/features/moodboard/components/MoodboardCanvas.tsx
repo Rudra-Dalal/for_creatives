@@ -84,13 +84,60 @@ export function MoodboardCanvas({
   const [isAddRefOpen, setIsAddRefOpen] = useState(false);
   const [pendingRefUrl, setPendingRefUrl] = useState<string>('');
 
-  const handlePlaceReference = (reference: Reference) => {
-    addReferenceItem(reference);
+  const handlePlaceReference = async (reference: Reference) => {
+    try {
+      await addReferenceItem(reference);
+    } catch (err: unknown) {
+      console.error('Failed to place reference:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to add reference to canvas';
+      setUploadError(msg);
+      setTimeout(() => setUploadError(null), 6000);
+    }
   };
 
-  const handleDropReference = (rawReference: unknown, dropCoords: { x: number; y: number }) => {
+  const handleDropReference = async (rawReference: unknown, dropCoords: { x: number; y: number }) => {
     if (rawReference && typeof rawReference === 'object' && 'id' in rawReference) {
-      addReferenceItem(rawReference as Reference, dropCoords);
+      try {
+        await addReferenceItem(rawReference as Reference, dropCoords);
+      } catch (err: unknown) {
+        console.error('Failed to drop reference:', err);
+        const msg = err instanceof Error ? err.message : 'Failed to add reference to canvas';
+        setUploadError(msg);
+        setTimeout(() => setUploadError(null), 6000);
+      }
+    }
+  };
+
+  const handleAddColor = async () => {
+    try {
+      await addColorItem('#D97706', 'Primary Amber');
+    } catch (err: unknown) {
+      console.error('Failed to add color swatch:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to add color swatch';
+      setUploadError(msg);
+      setTimeout(() => setUploadError(null), 6000);
+    }
+  };
+
+  const handleAddIdea = async () => {
+    try {
+      await addIdeaItem('Creative Direction', 'Focus on warmth, restraint, and tactile typography');
+    } catch (err: unknown) {
+      console.error('Failed to add creative idea:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to add creative idea';
+      setUploadError(msg);
+      setTimeout(() => setUploadError(null), 6000);
+    }
+  };
+
+  const handleAddTextNote = async () => {
+    try {
+      await addTextNote('Creative Note');
+    } catch (err: unknown) {
+      console.error('Failed to add text note:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to add text note';
+      setUploadError(msg);
+      setTimeout(() => setUploadError(null), 6000);
     }
   };
 
@@ -341,9 +388,9 @@ export function MoodboardCanvas({
         isLibraryOpen={isLibraryOpen}
         onToggleLibrary={() => setIsLibraryOpen((prev) => !prev)}
         onUploadImageFile={(file) => handleUploadImageFile(file, file.name)}
-        onAddTextNote={() => addTextNote('Creative Note')}
-        onAddColor={() => addColorItem('#D97706', 'Primary Amber')}
-        onAddIdea={() => addIdeaItem('Creative Direction', 'Focus on warmth, restraint, and tactile typography')}
+        onAddTextNote={handleAddTextNote}
+        onAddColor={handleAddColor}
+        onAddIdea={handleAddIdea}
         onDuplicateSelected={() => {
           if (selectedId) duplicateItem(selectedId);
         }}
