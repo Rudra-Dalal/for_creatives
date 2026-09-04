@@ -12,14 +12,24 @@ import type {
 } from '../types';
 import type { Json } from '@/types/database.types';
 import type { Reference } from '@/features/references/types';
+import { calculateAutoArrangeLayout } from '../utils/autoArrangeUtils';
 
-export interface UndoAction {
-  type: 'ADD' | 'DELETE' | 'MOVE' | 'RESIZE' | 'DUPLICATE';
-  itemId: string;
-  item?: MoodboardItem;
-  prevGeometry?: { x: number; y: number; width: number; height: number; zIndex?: number };
-  nextGeometry?: { x: number; y: number; width: number; height: number; zIndex?: number };
-}
+export type UndoAction =
+  | {
+      type: 'ADD' | 'DELETE' | 'MOVE' | 'RESIZE' | 'DUPLICATE';
+      itemId: string;
+      item?: MoodboardItem;
+      prevGeometry?: { x: number; y: number; width: number; height: number; zIndex?: number };
+      nextGeometry?: { x: number; y: number; width: number; height: number; zIndex?: number };
+    }
+  | {
+      type: 'BATCH_MOVE';
+      items: Array<{
+        id: string;
+        prevPosition: { x: number; y: number };
+        nextPosition: { x: number; y: number };
+      }>;
+    };
 
 export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], readOnly?: boolean) {
   const [items, setItems] = useState<MoodboardItem[]>(initialItems || []);
@@ -170,11 +180,41 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
           height: prevGeo.height,
           zIndex: prevGeo.zIndex,
         });
+      } else if (actionToRevert.type === 'BATCH_MOVE' && actionToRevert.items) {
+        // Undo Batch Move / Auto Arrange -> restore all items' previous positions
+        const revertMap = new Map(
+          actionToRevert.items.map((i) => [i.id, i.prevPosition])
+        );
+
+        setItems((prev) =>
+          prev.map((item) => {
+            const prevPos = revertMap.get(item.id);
+            if (!prevPos) return item;
+            return {
+              ...item,
+              x: prevPos.x,
+              y: prevPos.y,
+            };
+          })
+        );
+
+        for (const i of actionToRevert.items) {
+          const itm = items.find((it) => it.id === i.id);
+          if (itm) {
+            await moodboardService.updateItem(i.id, {
+              x: i.prevPosition.x,
+              y: i.prevPosition.y,
+              width: itm.width,
+              height: itm.height,
+              zIndex: itm.z_index,
+            });
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to execute undo:', err);
     }
-  }, [lastAction, selectedId, setSelectedId]);
+  }, [lastAction, selectedId, setSelectedId, items]);
 
   // Add reference item to canvas
   const addReferenceItem = async (
@@ -639,6 +679,69 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     );
   }, [selectedIds, persistItemGeometry]);
 
+  // Auto-arrange all items in an aesthetic masonry grid with undo support
+  const autoArrangeItems = useCallback(async (): Promise<boolean> => {
+    if (items.length < 2) return false;
+
+    const layout = calculateAutoArrangeLayout(items);
+    if (layout.size === 0) return false;
+
+    const batchMoves: Array<{
+      id: string;
+      prevPosition: { x: number; y: number };
+      nextPosition: { x: number; y: number };
+    }> = [];
+
+    // Capture previous positions for undo
+    items.forEach((item) => {
+      const nextPos = layout.get(item.id);
+      if (nextPos && (nextPos.x !== item.x || nextPos.y !== item.y)) {
+        batchMoves.push({
+          id: item.id,
+          prevPosition: { x: item.x, y: item.y },
+          nextPosition: { x: nextPos.x, y: nextPos.y },
+        });
+      }
+    });
+
+    if (batchMoves.length === 0) return false;
+
+    // Record BATCH_MOVE undo action
+    recordUndoAction({
+      type: 'BATCH_MOVE',
+      items: batchMoves,
+    });
+
+    // Update items locally
+    setItems((prev) =>
+      prev.map((item) => {
+        const nextPos = layout.get(item.id);
+        if (!nextPos) return item;
+        return {
+          ...item,
+          x: nextPos.x,
+          y: nextPos.y,
+        };
+      })
+    );
+
+    // Persist changes asynchronously to database
+    for (const move of batchMoves) {
+      const itm = items.find((i) => i.id === move.id);
+      if (itm) {
+        persistItemGeometry(move.id, {
+          x: move.nextPosition.x,
+          y: move.nextPosition.y,
+          width: itm.width,
+          height: itm.height,
+          zIndex: itm.z_index,
+        });
+      }
+    }
+
+    return true;
+  }, [items, recordUndoAction, persistItemGeometry]);
+
   // Viewport Zoom & Pan Helpers
   const zoomIn = () => {
     setViewport((prev) => ({
@@ -708,6 +811,8 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     lastAction,
     recordUndoAction,
     undo,
+    autoArrangeItems,
+    canAutoArrange: items.length >= 2,
     nudgeItem,
     nudgeSelectedItems,
     zoomToFit,

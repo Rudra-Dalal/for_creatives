@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import type { Reference } from '@/features/references/types';
 import type { MoodboardItem } from '../types';
 import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
-import { FolderPlus, Type, Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { FolderPlus, Type, Sparkles, Loader2, AlertCircle, LayoutGrid, X } from 'lucide-react';
 
 // Dynamic Konva Stage import without SSR
 const DynamicMoodboardStage = dynamic(
@@ -54,6 +54,8 @@ export function MoodboardCanvas({
     error,
     canUndo,
     undo,
+    autoArrangeItems,
+    canAutoArrange,
     nudgeItem,
     nudgeSelectedItems,
     zoomToFit,
@@ -82,6 +84,8 @@ export function MoodboardCanvas({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showArrangeToast, setShowArrangeToast] = useState(false);
+  const arrangeToastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Exporter reference
   const exportFnRef = useRef<((name?: string) => Promise<boolean>) | null>(null);
@@ -89,6 +93,47 @@ export function MoodboardCanvas({
   // URL reference capture modal on canvas paste
   const [isAddRefOpen, setIsAddRefOpen] = useState(false);
   const [pendingRefUrl, setPendingRefUrl] = useState<string>('');
+
+  const handleUndo = useCallback(async () => {
+    setShowArrangeToast(false);
+    if (arrangeToastTimerRef.current) {
+      clearTimeout(arrangeToastTimerRef.current);
+    }
+    await undo();
+  }, [undo]);
+
+  const handleAutoArrange = async () => {
+    try {
+      const moved = await autoArrangeItems();
+      if (moved) {
+        setShowArrangeToast(true);
+        if (arrangeToastTimerRef.current) {
+          clearTimeout(arrangeToastTimerRef.current);
+        }
+        arrangeToastTimerRef.current = setTimeout(() => {
+          setShowArrangeToast(false);
+        }, 8000);
+      }
+    } catch (err: unknown) {
+      console.error('Failed to auto-arrange canvas:', err);
+    }
+  };
+
+  const handleRevertArrange = async () => {
+    setShowArrangeToast(false);
+    if (arrangeToastTimerRef.current) {
+      clearTimeout(arrangeToastTimerRef.current);
+    }
+    await undo();
+  };
+
+  useEffect(() => {
+    return () => {
+      if (arrangeToastTimerRef.current) {
+        clearTimeout(arrangeToastTimerRef.current);
+      }
+    };
+  }, []);
 
   const handlePlaceReference = async (reference: Reference) => {
     try {
@@ -328,7 +373,7 @@ export function MoodboardCanvas({
         onDeleteItem={deleteItem}
         onDropReference={handleDropReference}
         onDropFiles={handleDropFiles}
-        onUndo={undo}
+        onUndo={handleUndo}
         onNudge={nudgeItem}
         onZoomToFit={zoomToFit}
         onRecordUndoAction={recordUndoAction}
@@ -390,6 +435,33 @@ export function MoodboardCanvas({
         </div>
       )}
 
+      {/* Auto-arranged Revert Toast */}
+      {showArrangeToast && (
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 rounded-full border border-border bg-surface/95 backdrop-blur-md px-4 py-2 shadow-floating animate-in fade-in slide-in-from-bottom-2 text-xs">
+          <span className="text-foreground font-medium flex items-center gap-1.5">
+            <LayoutGrid className="h-3.5 w-3.5 text-accent" />
+            Canvas auto-arranged
+          </span>
+          <div className="h-3.5 w-px bg-border-subtle" />
+          <button
+            type="button"
+            onClick={handleRevertArrange}
+            className="font-medium text-accent hover:text-accent-hover transition-colors underline-offset-4 hover:underline"
+          >
+            Revert
+          </button>
+          <span className="text-[10px] text-muted-foreground font-mono">(Cmd+Z)</span>
+          <button
+            type="button"
+            onClick={() => setShowArrangeToast(false)}
+            className="text-muted-foreground hover:text-foreground transition-colors ml-0.5"
+            title="Dismiss"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Floating Playground Toolbar */}
       <MoodboardToolbar
         scale={viewport.scale}
@@ -397,7 +469,9 @@ export function MoodboardCanvas({
         selectedCount={selectedIds.length}
         readOnly={readOnly}
         canUndo={canUndo}
-        onUndo={undo}
+        onUndo={handleUndo}
+        canAutoArrange={canAutoArrange}
+        onAutoArrange={handleAutoArrange}
         isLibraryOpen={isLibraryOpen}
         onToggleLibrary={() => setIsLibraryOpen((prev) => !prev)}
         onUploadImageFile={(file) => handleUploadImageFile(file, file.name)}
