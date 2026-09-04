@@ -14,7 +14,7 @@ interface CanvasTransformerProps {
 export function CanvasTransformer({
   selectedNode,
   selectedNodes,
-  keepRatio = true,
+  keepRatio = false,
 }: CanvasTransformerProps) {
   const transformerRef = useRef<Konva.Transformer | null>(null);
 
@@ -43,16 +43,17 @@ export function CanvasTransformer({
         return newBox;
       }}
       keepRatio={keepRatio}
+      shiftBehavior="inverted"
       rotateEnabled={false}
       borderStroke="#f59e0b"
       borderStrokeWidth={1.5}
-      borderDash={[4, 4]}
       anchorFill="#f59e0b"
       anchorStroke="#181816"
       anchorStrokeWidth={1.5}
       anchorSize={8}
       anchorCornerRadius={2}
-      padding={4}
+      padding={0}
+      ignoreStroke={true}
     />
   );
 }
