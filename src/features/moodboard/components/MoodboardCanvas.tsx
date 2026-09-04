@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useMoodboard } from '../hooks/useMoodboard';
 import { MoodboardToolbar } from './MoodboardToolbar';
@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button';
 import type { Reference } from '@/features/references/types';
 import type { MoodboardItem, ColorItemContent } from '../types';
 import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
+import { CanvasDirectionInspector } from './CanvasDirectionInspector';
+import { useProjectDirectionLinks } from '../hooks/useProjectDirectionLinks';
 import { FolderPlus, Type, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 
 // Dynamic Konva Stage import without SSR
@@ -33,6 +35,7 @@ interface MoodboardCanvasProps {
   projectName?: string;
   readOnly?: boolean;
   initialItems?: MoodboardItem[];
+  onNavigateToDirection?: (directionNoteId: string) => void;
 }
 
 export function MoodboardCanvas({
@@ -40,6 +43,7 @@ export function MoodboardCanvas({
   projectName,
   readOnly = false,
   initialItems,
+  onNavigateToDirection,
 }: MoodboardCanvasProps) {
   const {
     items,
@@ -85,6 +89,81 @@ export function MoodboardCanvas({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Creative Direction Links & Idea Promotion
+  const {
+    directionNotes,
+    referenceCounts: referenceDirectionCounts,
+    refetch: refetchDirectionNotes,
+    promoteIdeaToDirection,
+  } = useProjectDirectionLinks(projectId, readOnly);
+
+  const [isDirectionInspectorOpen, setIsDirectionInspectorOpen] = useState(false);
+  const [inspectedReference, setInspectedReference] = useState<Reference | null>(null);
+
+  // Selected item type and reference counts
+  const selectedItem = useMemo(() => {
+    return items.find((i) => i.id === selectedId) || null;
+  }, [items, selectedId]);
+
+  const selectedItemType = selectedItem?.type;
+  const selectedReferenceLinksCount = selectedItem?.reference_id
+    ? referenceDirectionCounts.get(selectedItem.reference_id) || 0
+    : 0;
+
+  const handleInspectReference = useCallback(
+    (referenceId: string) => {
+      const itemWithRef = items.find((i) => i.reference_id === referenceId);
+      if (itemWithRef?.reference) {
+        setInspectedReference(itemWithRef.reference);
+        setIsDirectionInspectorOpen(true);
+      } else {
+        referenceService
+          .getReferenceById(referenceId)
+          .then((ref) => {
+            if (ref) {
+              setInspectedReference(ref);
+              setIsDirectionInspectorOpen(true);
+            }
+          })
+          .catch((err) => {
+            console.error('Failed to load reference for inspector:', err);
+          });
+      }
+    },
+    [items]
+  );
+
+  const handleOpenDirectionInspectorForSelected = useCallback(() => {
+    if (selectedItem?.type === 'reference' && selectedItem.reference_id) {
+      handleInspectReference(selectedItem.reference_id);
+    }
+  }, [selectedItem, handleInspectReference]);
+
+  const handlePromoteIdea = useCallback(
+    async (title: string, notes?: string) => {
+      try {
+        await promoteIdeaToDirection(title, notes);
+        setUploadStatus('Promoted idea to Creative Direction statement');
+        setTimeout(() => setUploadStatus(null), 3500);
+      } catch (err: unknown) {
+        console.error('Failed to promote idea:', err);
+        const msg = err instanceof Error ? err.message : 'Failed to promote idea';
+        setUploadError(msg);
+        setTimeout(() => setUploadError(null), 5000);
+      }
+    },
+    [promoteIdeaToDirection]
+  );
+
+  const handlePromoteSelectedIdea = useCallback(async () => {
+    if (selectedItem?.type === 'idea') {
+      const content = selectedItem.content as { title?: string; notes?: string };
+      if (content?.title) {
+        await handlePromoteIdea(content.title, content.notes);
+      }
+    }
+  }, [selectedItem, handlePromoteIdea]);
 
   // Exporter reference
   const exportFnRef = useRef<((name?: string) => Promise<boolean>) | null>(null);
@@ -326,6 +405,9 @@ export function MoodboardCanvas({
         selectedIds={selectedIds}
         viewport={viewport}
         readOnly={readOnly}
+        referenceDirectionCounts={referenceDirectionCounts}
+        onInspectReferenceDirection={handleInspectReference}
+        onPromoteIdeaToDirection={handlePromoteIdea}
         onViewportChange={setViewport}
         onSelectId={setSelectedId}
         onSelectIds={setSelectedIds}
@@ -426,6 +508,10 @@ export function MoodboardCanvas({
         onResetZoom={resetViewport}
         onZoomToFit={() => zoomToFit()}
         onExportImage={() => exportFnRef.current?.(projectName || 'moodboard')}
+        selectedItemType={selectedItemType}
+        selectedReferenceLinksCount={selectedReferenceLinksCount}
+        onOpenDirectionInspector={handleOpenDirectionInspectorForSelected}
+        onPromoteSelectedIdea={handlePromoteSelectedIdea}
       />
 
       {!readOnly && (
@@ -436,6 +522,21 @@ export function MoodboardCanvas({
             isOpen={isLibraryOpen}
             onClose={() => setIsLibraryOpen(false)}
             onPlaceReference={handlePlaceReference}
+          />
+
+          {/* Creative Direction Inspector Drawer */}
+          <CanvasDirectionInspector
+            projectId={projectId}
+            reference={inspectedReference}
+            isOpen={isDirectionInspectorOpen}
+            onClose={() => {
+              setIsDirectionInspectorOpen(false);
+              setInspectedReference(null);
+            }}
+            availableDirections={directionNotes}
+            onDirectionsChanged={refetchDirectionNotes}
+            onNavigateToDirection={onNavigateToDirection}
+            readOnly={readOnly}
           />
 
           {/* URL Reference Capture Dialog */}

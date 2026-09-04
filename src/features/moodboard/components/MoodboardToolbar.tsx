@@ -23,7 +23,9 @@ import {
   Trash2,
   RotateCcw,
   Download,
+  Compass,
 } from 'lucide-react';
+import type { MoodboardItem } from '../types';
 
 interface MoodboardToolbarProps {
   scale: number;
@@ -45,6 +47,10 @@ interface MoodboardToolbarProps {
   onResetZoom: () => void;
   onZoomToFit?: () => void;
   onExportImage?: () => void;
+  selectedItemType?: MoodboardItem['type'];
+  selectedReferenceLinksCount?: number;
+  onOpenDirectionInspector?: () => void;
+  onPromoteSelectedIdea?: () => void;
 }
 
 export function MoodboardToolbar({
@@ -67,6 +73,10 @@ export function MoodboardToolbar({
   onResetZoom,
   onZoomToFit,
   onExportImage,
+  selectedItemType,
+  selectedReferenceLinksCount,
+  onOpenDirectionInspector,
+  onPromoteSelectedIdea,
 }: MoodboardToolbarProps) {
   const percentage = Math.round(scale * 100);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -231,6 +241,37 @@ export function MoodboardToolbar({
             <span className="font-mono text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-surface-subtle border border-border">
               {selectedCount} selected
             </span>
+          )}
+
+          {/* Reference Direction Inspector Trigger */}
+          {selectedCount <= 1 && selectedItemType === 'reference' && onOpenDirectionInspector && (
+            <button
+              type="button"
+              onClick={onOpenDirectionInspector}
+              className="flex h-7 items-center gap-1.5 px-2.5 rounded-full text-xs font-medium text-foreground bg-surface-subtle hover:bg-surface-hover border border-border transition-colors cursor-pointer"
+              title="Open Creative Direction notes for this reference"
+            >
+              <Compass className="h-3.5 w-3.5 text-accent" />
+              <span className="hidden sm:inline">Directions</span>
+              {selectedReferenceLinksCount !== undefined && selectedReferenceLinksCount > 0 && (
+                <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-full bg-accent/20 text-accent font-semibold">
+                  {selectedReferenceLinksCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Idea Promotion Trigger */}
+          {selectedCount <= 1 && selectedItemType === 'idea' && onPromoteSelectedIdea && (
+            <button
+              type="button"
+              onClick={onPromoteSelectedIdea}
+              className="flex h-7 items-center gap-1.5 px-2.5 rounded-full text-xs font-medium text-foreground bg-surface-subtle hover:bg-surface-hover border border-border transition-colors cursor-pointer"
+              title="Promote this idea to a Creative Direction statement"
+            >
+              <Compass className="h-3.5 w-3.5 text-accent" />
+              <span className="hidden sm:inline">Promote</span>
+            </button>
           )}
 
           <button

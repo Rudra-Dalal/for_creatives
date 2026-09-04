@@ -17,6 +17,7 @@ import { CanvasTextItem } from './CanvasTextItem';
 import { CanvasColorItem } from './CanvasColorItem';
 import { CanvasIdeaItem } from './CanvasIdeaItem';
 import { CanvasTransformer } from './CanvasTransformer';
+import { Compass } from 'lucide-react';
 
 interface MoodboardStageProps {
   items: MoodboardItem[];
@@ -24,6 +25,9 @@ interface MoodboardStageProps {
   selectedIds?: string[];
   viewport: CanvasViewport;
   readOnly?: boolean;
+  referenceDirectionCounts?: Map<string, number>;
+  onInspectReferenceDirection?: (referenceId: string) => void;
+  onPromoteIdeaToDirection?: (title: string, notes?: string) => Promise<void>;
   onViewportChange: (viewport: CanvasViewport) => void;
   onSelectId: (id: string | null) => void;
   onSelectIds?: (ids: string[]) => void;
@@ -60,6 +64,9 @@ export function MoodboardStage({
   selectedIds,
   viewport,
   readOnly = false,
+  referenceDirectionCounts,
+  onInspectReferenceDirection,
+  onPromoteIdeaToDirection,
   onViewportChange,
   onSelectId,
   onSelectIds,
@@ -1099,11 +1106,17 @@ export function MoodboardStage({
             }
 
             // Default: Reference Item
+            const linkedCount = item.reference_id && referenceDirectionCounts
+              ? (referenceDirectionCounts.get(item.reference_id) || 0)
+              : 0;
+
             return (
               <CanvasReferenceItem
                 key={item.id}
                 item={item}
                 isSelected={isSelected}
+                linkedDirectionsCount={linkedCount}
+                onInspectDirection={onInspectReferenceDirection}
                 isDraggable={!readOnly}
                 onPointerDown={(node) => handleItemPointerDown(item.id, node)}
                 onSelect={(node) => handleItemClick(item.id, node)}
@@ -1210,12 +1223,28 @@ export function MoodboardStage({
         >
           <div className="flex items-center justify-between pb-1 border-b border-border text-[11px] text-muted-foreground">
             <span className="font-medium text-foreground">Edit Idea</span>
-            <button
-              onClick={handleSaveIdeaEdit}
-              className="text-xs text-accent hover:underline"
-            >
-              Save
-            </button>
+            <div className="flex items-center gap-2">
+              {onPromoteIdeaToDirection && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!editingIdeaTitle.trim()) return;
+                    await onPromoteIdeaToDirection(editingIdeaTitle, editingIdeaNotes);
+                  }}
+                  className="text-xs text-accent hover:underline flex items-center gap-1 cursor-pointer"
+                  title="Promote to Creative Direction statement"
+                >
+                  <Compass className="h-3 w-3" />
+                  <span>Promote</span>
+                </button>
+              )}
+              <button
+                onClick={handleSaveIdeaEdit}
+                className="text-xs text-accent hover:underline cursor-pointer"
+              >
+                Save
+              </button>
+            </div>
           </div>
           <input
             autoFocus

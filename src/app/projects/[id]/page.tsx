@@ -205,7 +205,12 @@ export default function ProjectWorkspacePage() {
 
           {/* Moodboard Tab: Full Spatial Konva Canvas */}
           <TabsContent value="moodboard" className="flex-1 flex flex-col mt-0">
-            <MoodboardCanvas key={`mb-${refreshKey}`} projectId={project.id} projectName={project.name} />
+            <MoodboardCanvas
+              key={`mb-${refreshKey}`}
+              projectId={project.id}
+              projectName={project.name}
+              onNavigateToDirection={() => handleTabChange('direction')}
+            />
           </TabsContent>
 
           {/* Creative Direction Tab: Fully Functional Statements & Bidirectional Links */}

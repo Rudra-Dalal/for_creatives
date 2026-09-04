@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect } from 'react';
-import { Group, Rect, Image as KonvaImage, Text } from 'react-konva';
+import { Group, Rect, Image as KonvaImage, Text, Path } from 'react-konva';
 import useImage from 'use-image';
 import type Konva from 'konva';
 import type { MoodboardItem, ReferenceItemContent } from '../types';
@@ -9,6 +9,8 @@ import type { MoodboardItem, ReferenceItemContent } from '../types';
 interface CanvasReferenceItemProps {
   item: MoodboardItem;
   isSelected: boolean;
+  linkedDirectionsCount?: number;
+  onInspectDirection?: (referenceId: string) => void;
   onSelect: (node: Konva.Node) => void;
   onPointerDown?: (node: Konva.Node) => void;
   onDragStart: () => void;
@@ -20,6 +22,8 @@ interface CanvasReferenceItemProps {
 export function CanvasReferenceItem({
   item,
   isSelected,
+  linkedDirectionsCount,
+  onInspectDirection,
   onSelect,
   onPointerDown,
   onDragStart,
@@ -191,6 +195,61 @@ export function CanvasReferenceItem({
             fontFamily="monospace"
             ellipsis
             width={item.width - 24}
+          />
+        </Group>
+      )}
+
+      {/* Creative Direction Badge (Lucide Compass vector icon + Numeral badge) */}
+      {linkedDirectionsCount !== undefined && linkedDirectionsCount > 0 && (
+        <Group
+          x={item.width - (linkedDirectionsCount >= 10 ? 38 : 32) - 6}
+          y={6}
+          onClick={(e) => {
+            e.cancelBubble = true;
+            if (item.reference_id && onInspectDirection) {
+              onInspectDirection(item.reference_id);
+            }
+          }}
+          onTap={(e) => {
+            e.cancelBubble = true;
+            if (item.reference_id && onInspectDirection) {
+              onInspectDirection(item.reference_id);
+            }
+          }}
+        >
+          {/* Pill background with subtle accent border */}
+          <Rect
+            width={linkedDirectionsCount >= 10 ? 38 : 32}
+            height={18}
+            fill="#181816"
+            stroke="#d97706"
+            strokeWidth={1}
+            cornerRadius={4}
+            shadowColor="black"
+            shadowBlur={4}
+            shadowOpacity={0.5}
+            shadowOffset={{ x: 0, y: 1 }}
+          />
+
+          {/* Lucide Compass vector path */}
+          <Path
+            data="M 12 2 A 10 10 0 1 0 12 22 A 10 10 0 1 0 12 2 Z M 16.24 7.76 L 14.12 14.12 L 7.76 16.24 L 9.88 9.88 L 16.24 7.76 Z"
+            x={4}
+            y={3}
+            scale={{ x: 0.5, y: 0.5 }}
+            stroke="#d97706"
+            strokeWidth={1.5}
+          />
+
+          {/* Linked count */}
+          <Text
+            text={String(linkedDirectionsCount)}
+            x={18}
+            y={4}
+            fill="#e6e4df"
+            fontSize={10}
+            fontFamily="Inter"
+            fontStyle="600"
           />
         </Group>
       )}
