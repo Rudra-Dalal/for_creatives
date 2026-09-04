@@ -35,7 +35,13 @@ export const playgroundImageService = {
         upsert: false,
       });
 
-    if (uploadError) throw uploadError;
+    if (uploadError) {
+      const errObj = uploadError as { statusCode?: string | number; error?: string; message?: string };
+      const status = errObj.statusCode ? `[${errObj.statusCode}] ` : '';
+      const details = errObj.error ? ` (${errObj.error})` : '';
+      const message = errObj.message || 'Storage upload rejected';
+      throw new Error(`${status}${message}${details}`);
+    }
 
     // 4. Retrieve public URL
     const { data } = supabase.storage.from('thumbnails').getPublicUrl(filePath);

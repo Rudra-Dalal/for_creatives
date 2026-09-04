@@ -249,9 +249,20 @@ export function MoodboardCanvas({
         await addImageItem(uploaded.url, uploaded.width, uploaded.height, uploaded.fileName, position);
       } catch (err: unknown) {
         console.error('Failed to upload image:', err);
-        const msg = err instanceof Error ? err.message : 'Failed to upload image. Please try again.';
-        setUploadError(msg);
-        setTimeout(() => setUploadError(null), 6000);
+        const underlying =
+          err instanceof Error
+            ? err.message
+            : typeof err === 'object' && err !== null
+              ? (err as { message?: string; error?: string }).message ||
+                (err as { message?: string; error?: string }).error ||
+                'Upload failed'
+              : String(err);
+        setUploadError(
+          underlying.toLowerCase().startsWith('failed') || underlying.toLowerCase().startsWith('storage error')
+            ? underlying
+            : `Failed to upload image: ${underlying}`
+        );
+        setTimeout(() => setUploadError(null), 8000);
       } finally {
         setIsUploading(false);
         setUploadStatus(null);
@@ -360,9 +371,16 @@ export function MoodboardCanvas({
 
       {/* Upload Error Banner */}
       {uploadError && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full border border-danger bg-surface px-4 py-1.5 shadow-floating animate-in fade-in-50 text-red-400">
-          <AlertCircle className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">{uploadError}</span>
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 max-w-lg flex items-center gap-2 rounded-lg border border-red-500/40 bg-[#1A1A19]/95 backdrop-blur px-3.5 py-2 shadow-floating animate-in fade-in-50 text-red-400">
+          <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+          <span className="text-xs font-medium flex-1">{uploadError}</span>
+          <button
+            type="button"
+            onClick={() => setUploadError(null)}
+            className="ml-2 text-xs text-muted-foreground hover:text-foreground underline cursor-pointer shrink-0"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 

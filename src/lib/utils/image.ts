@@ -60,73 +60,137 @@ export async function resizeImageForThumbnail(
 
 /**
  * Resizes and compresses an image File or Blob on the client for playground canvas placement,
- * maintaining high visual quality (~1200px max dimension) and returning the natural aspect ratio dimensions.
+ * maintaining high visual quality while strictly guaranteeing the output blob lands under
+ * the Supabase Storage 'thumbnails' bucket limit (1,048,576 bytes).
  */
 export async function resizeImageForPlayground(
   file: File | Blob,
   maxDimension: number = 1200,
-  quality: number = 0.85
+  initialQuality: number = 0.85
 ): Promise<{ blob: Blob; width: number; height: number; naturalWidth: number; naturalHeight: number }> {
+  // 1MB is 1,048,576 bytes. Target 950KB to leave safe headroom under bucket limit.
+  const MAX_TARGET_BYTES = 950 * 1024;
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
     reader.onload = (e) => {
-      const img = new Image();
+      const img = new window.Image();
 
-      img.onload = () => {
-        const naturalWidth = img.width;
-        const naturalHeight = img.height;
-        let width = img.width;
-        let height = img.height;
+      img.onload = async () => {
+        try {
+          const naturalWidth = img.naturalWidth || img.width;
+          const naturalHeight = img.naturalHeight || img.height;
+          let width = naturalWidth;
+          let height = naturalHeight;
 
-        if (width > maxDimension || height > maxDimension) {
-          if (width >= height) {
-            height = Math.round((height * maxDimension) / width);
-            width = maxDimension;
-          } else {
-            width = Math.round((width * maxDimension) / height);
-            height = maxDimension;
-          }
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Canvas 2D context unavailable'));
-          return;
-        }
-
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, width, height);
-
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              resolve({
-                blob,
-                width,
-                height,
-                naturalWidth,
-                naturalHeight,
-              });
+          if (width > maxDimension || height > maxDimension) {
+            if (width >= height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
             } else {
-              reject(new Error('Image compression failed'));
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
             }
-          },
-          'image/webp',
-          quality
-        );
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Canvas 2D context unavailable'));
+            return;
+          }
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Quality steps to try: initial (0.85), then down to 0.72, 0.60, 0.45
+          const qualitySteps = [initialQuality, 0.72, 0.6, 0.45];
+          let bestBlob: Blob | null = null;
+
+          for (const q of qualitySteps) {
+            const blob = await new Promise<Blob | null>((res) =>
+              canvas.toBlob((b) => res(b), 'image/webp', q)
+            );
+            if (blob) {
+              bestBlob = blob;
+              if (blob.size <= MAX_TARGET_BYTES) {
+                resolve({
+                  blob,
+                  width,
+                  height,
+                  naturalWidth,
+                  naturalHeight,
+                });
+                return;
+              }
+            }
+          }
+
+          // If still over 950KB, reduce dimensions in steps (900, 750, 600)
+          for (const targetDim of [900, 750, 600]) {
+            if (Math.max(width, height) > targetDim) {
+              if (naturalWidth >= naturalHeight) {
+                width = targetDim;
+                height = Math.round((naturalHeight * targetDim) / naturalWidth);
+              } else {
+                height = targetDim;
+                width = Math.round((naturalWidth * targetDim) / naturalHeight);
+              }
+
+              canvas.width = width;
+              canvas.height = height;
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
+              ctx.drawImage(img, 0, 0, width, height);
+
+              for (const q of [0.75, 0.6, 0.45]) {
+                const blob = await new Promise<Blob | null>((res) =>
+                  canvas.toBlob((b) => res(b), 'image/webp', q)
+                );
+                if (blob) {
+                  bestBlob = blob;
+                  if (blob.size <= MAX_TARGET_BYTES) {
+                    resolve({
+                      blob,
+                      width,
+                      height,
+                      naturalWidth,
+                      naturalHeight,
+                    });
+                    return;
+                  }
+                }
+              }
+            }
+          }
+
+          if (bestBlob) {
+            resolve({
+              blob: bestBlob,
+              width,
+              height,
+              naturalWidth,
+              naturalHeight,
+            });
+          } else {
+            reject(new Error('Image compression failed to produce a valid image file.'));
+          }
+        } catch (compErr) {
+          reject(compErr instanceof Error ? compErr : new Error('Image compression failed.'));
+        }
       };
 
-      img.onerror = () => reject(new Error('Failed to load image'));
+      img.onerror = () =>
+        reject(new Error('Failed to load image for compression. Format may not be supported.'));
       img.src = e.target?.result as string;
     };
 
-    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.onerror = () => reject(new Error('Failed to read image file.'));
     reader.readAsDataURL(file);
   });
 }
