@@ -43,7 +43,21 @@ export function CanvasTransformer({
         return newBox;
       }}
       keepRatio={keepRatio}
-      shiftBehavior="inverted"
+      enabledAnchors={
+        keepRatio
+          ? ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+          : [
+              'top-left',
+              'top-center',
+              'top-right',
+              'middle-right',
+              'middle-left',
+              'bottom-left',
+              'bottom-center',
+              'bottom-right',
+            ]
+      }
+      shiftBehavior={keepRatio ? 'none' : 'inverted'}
       rotateEnabled={false}
       borderStroke="#f59e0b"
       borderStrokeWidth={1.5}

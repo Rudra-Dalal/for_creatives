@@ -16,6 +16,7 @@ interface CanvasReferenceItemProps {
   onDragStart: () => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onTransformEnd: (id: string, x: number, y: number, width: number, height: number) => void;
+  onDimensionsCorrected?: (id: string, width: number, height: number) => void;
   isDraggable?: boolean;
 }
 
@@ -29,9 +30,11 @@ export function CanvasReferenceItem({
   onDragStart,
   onDragEnd,
   onTransformEnd,
+  onDimensionsCorrected,
   isDraggable = true,
 }: CanvasReferenceItemProps) {
   const groupRef = useRef<Konva.Group | null>(null);
+  const correctedRef = useRef(false);
 
   const content = (item.content as ReferenceItemContent) || {};
   const imageUrl = item.reference?.thumbnail_url || content.thumbnail_url || '';
@@ -40,6 +43,21 @@ export function CanvasReferenceItem({
 
   const [image, imageStatus] = useImage(imageUrl, 'anonymous');
 
+  useEffect(() => {
+    if (correctedRef.current) return;
+    if (imageStatus === 'loaded' && image && image.width > 0 && image.height > 0) {
+      const naturalRatio = image.height / image.width;
+      const currentRatio = item.height / item.width;
+      if (Math.abs(currentRatio - naturalRatio) > 0.03) {
+        correctedRef.current = true;
+        const correctHeight = Math.max(40, Math.round(item.width * naturalRatio));
+        if (groupRef.current) {
+          groupRef.current.height(correctHeight);
+        }
+        onDimensionsCorrected?.(item.id, item.width, correctHeight);
+      }
+    }
+  }, [imageStatus, image, item.id, item.width, item.height, onDimensionsCorrected]);
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;
@@ -57,7 +75,17 @@ export function CanvasReferenceItem({
     node.scaleY(1);
 
     const newWidth = Math.max(80, Math.round(node.width() * scaleX));
-    const newHeight = Math.max(60, Math.round(node.height() * scaleY));
+    let newHeight = Math.max(60, Math.round(node.height() * scaleY));
+
+    // Lock strictly to natural aspect ratio based on image dimensions
+    const naturalRatio =
+      image && image.width > 0 && image.height > 0
+        ? image.height / image.width
+        : null;
+
+    if (naturalRatio) {
+      newHeight = Math.max(40, Math.round(newWidth * naturalRatio));
+    }
 
     node.width(newWidth);
     node.height(newHeight);

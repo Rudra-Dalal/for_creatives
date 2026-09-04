@@ -130,3 +130,66 @@ export async function resizeImageForPlayground(
     reader.readAsDataURL(file);
   });
 }
+
+/**
+ * Probes the natural width and height of an image URL.
+ * Resolves within timeoutMs (default 1500ms) or falls back to null.
+ */
+export function getImageNaturalDimensions(
+  url: string,
+  timeoutMs = 1500
+): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !url) {
+      resolve(null);
+      return;
+    }
+
+    const img = new window.Image();
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(null);
+      }
+    }, timeoutMs);
+
+    img.onload = () => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (w > 0 && h > 0) {
+          resolve({ width: w, height: h });
+        } else {
+          resolve(null);
+        }
+      }
+    };
+
+    img.onerror = () => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        resolve(null);
+      }
+    };
+
+    img.src = url;
+
+    // In case image was already cached by browser
+    if (img.complete && (img.naturalWidth || img.width) > 0) {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        resolve({
+          width: img.naturalWidth || img.width,
+          height: img.naturalHeight || img.height,
+        });
+      }
+    }
+  });
+}
+

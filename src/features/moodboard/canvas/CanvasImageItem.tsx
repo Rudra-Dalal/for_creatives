@@ -14,6 +14,7 @@ interface CanvasImageItemProps {
   onDragStart: () => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onTransformEnd: (id: string, x: number, y: number, width: number, height: number) => void;
+  onDimensionsCorrected?: (id: string, width: number, height: number) => void;
   isDraggable?: boolean;
 }
 
@@ -25,9 +26,11 @@ export function CanvasImageItem({
   onDragStart,
   onDragEnd,
   onTransformEnd,
+  onDimensionsCorrected,
   isDraggable = true,
 }: CanvasImageItemProps) {
   const groupRef = useRef<Konva.Group | null>(null);
+  const correctedRef = useRef(false);
 
   const content = (item.content as ImageItemContent) || {};
   const imageUrl = content.imageUrl || '';
@@ -35,6 +38,32 @@ export function CanvasImageItem({
 
   const [image, imageStatus] = useImage(imageUrl, 'anonymous');
 
+  useEffect(() => {
+    if (correctedRef.current) return;
+    const naturalW = image && image.width > 0 ? image.width : content.originalWidth;
+    const naturalH = image && image.height > 0 ? image.height : content.originalHeight;
+    if (naturalW && naturalH && naturalW > 0 && naturalH > 0) {
+      const naturalRatio = naturalH / naturalW;
+      const currentRatio = item.height / item.width;
+      if (Math.abs(currentRatio - naturalRatio) > 0.03) {
+        correctedRef.current = true;
+        const correctHeight = Math.max(40, Math.round(item.width * naturalRatio));
+        if (groupRef.current) {
+          groupRef.current.height(correctHeight);
+        }
+        onDimensionsCorrected?.(item.id, item.width, correctHeight);
+      }
+    }
+  }, [
+    imageStatus,
+    image,
+    content.originalWidth,
+    content.originalHeight,
+    item.id,
+    item.width,
+    item.height,
+    onDimensionsCorrected,
+  ]);
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;
@@ -51,7 +80,15 @@ export function CanvasImageItem({
     node.scaleY(1);
 
     const newWidth = Math.max(60, Math.round(node.width() * scaleX));
-    const newHeight = Math.max(60, Math.round(node.height() * scaleY));
+    let newHeight = Math.max(40, Math.round(node.height() * scaleY));
+
+    const naturalW = image && image.width > 0 ? image.width : content.originalWidth;
+    const naturalH = image && image.height > 0 ? image.height : content.originalHeight;
+
+    if (naturalW && naturalH && naturalW > 0 && naturalH > 0) {
+      const naturalRatio = naturalH / naturalW;
+      newHeight = Math.max(40, Math.round(newWidth * naturalRatio));
+    }
 
     node.width(newWidth);
     node.height(newHeight);

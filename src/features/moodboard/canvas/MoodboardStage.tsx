@@ -100,6 +100,14 @@ export function MoodboardStage({
     return [];
   }, [selectedIds, selectedId]);
 
+  const isImageOrReferenceSelected = React.useMemo(() => {
+    return items.some(
+      (item) =>
+        effectiveSelectedIds.includes(item.id) &&
+        (item.type === 'reference' || item.type === 'image')
+    );
+  }, [items, effectiveSelectedIds]);
+
   const sortedItems = React.useMemo(() => {
     return [...items].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
   }, [items]);
@@ -621,6 +629,15 @@ export function MoodboardStage({
     onPersistGeometry(id, { x, y, width, height, zIndex: item.z_index });
   };
 
+  // Auto-correction of dimensions to match natural aspect ratio without undo pollution
+  const handleDimensionsCorrected = (id: string, width: number, height: number) => {
+    onUpdateItemLocal(id, { width, height });
+    const item = items.find((i) => i.id === id);
+    if (item) {
+      onPersistGeometry(id, { x: item.x, y: item.y, width, height, zIndex: item.z_index });
+    }
+  };
+
   // Mouse wheel zoom centered on cursor
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
@@ -1067,6 +1084,7 @@ export function MoodboardStage({
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
+                  onDimensionsCorrected={handleDimensionsCorrected}
                 />
               );
             }
@@ -1123,6 +1141,7 @@ export function MoodboardStage({
                 onDragStart={() => handleItemDragStart(item)}
                 onDragEnd={handleItemDragEnd}
                 onTransformEnd={handleItemTransformEnd}
+                onDimensionsCorrected={handleDimensionsCorrected}
               />
             );
           })}
@@ -1132,6 +1151,7 @@ export function MoodboardStage({
             <CanvasTransformer
               selectedNode={selectedNode}
               selectedNodes={selectedNodes.length > 0 ? selectedNodes : (selectedNode ? [selectedNode] : [])}
+              keepRatio={isImageOrReferenceSelected}
             />
           )}
         </Layer>

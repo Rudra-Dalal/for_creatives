@@ -12,6 +12,7 @@ import type {
 } from '../types';
 import type { Json } from '@/types/database.types';
 import type { Reference } from '@/features/references/types';
+import { getImageNaturalDimensions } from '@/lib/utils/image';
 
 export type UndoAction =
   | {
@@ -258,8 +259,29 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     canvasPosition?: { x: number; y: number }
   ): Promise<MoodboardItem> => {
     const nextZ = getMaxZIndex() + 1;
-    const defaultWidth = 300;
-    const defaultHeight = 220;
+
+    let itemWidth = 300;
+    let itemHeight = 220;
+
+    if (reference.thumbnail_url) {
+      const dims = await getImageNaturalDimensions(reference.thumbnail_url);
+      if (dims && dims.width > 0 && dims.height > 0) {
+        const aspect = dims.height / dims.width;
+        itemWidth = 300;
+        itemHeight = Math.round(itemWidth * aspect);
+
+        // Clamp bounds while strictly preserving natural aspect ratio
+        const maxHeight = 400;
+        const minHeight = 120;
+        if (itemHeight > maxHeight) {
+          itemHeight = maxHeight;
+          itemWidth = Math.round(itemHeight / aspect);
+        } else if (itemHeight < minHeight) {
+          itemHeight = minHeight;
+          itemWidth = Math.round(itemHeight / aspect);
+        }
+      }
+    }
 
     const x = canvasPosition ? canvasPosition.x : -viewport.x / viewport.scale + 200 + (items.length % 5) * 30;
     const y = canvasPosition ? canvasPosition.y : -viewport.y / viewport.scale + 150 + (items.length % 5) * 30;
@@ -276,8 +298,8 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
       } as unknown as Json,
       x,
       y,
-      width: defaultWidth,
-      height: defaultHeight,
+      width: itemWidth,
+      height: itemHeight,
       zIndex: nextZ,
     });
 
@@ -338,9 +360,20 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
   ): Promise<MoodboardItem> => {
     const nextZ = getMaxZIndex() + 1;
 
-    const targetWidth = Math.min(360, Math.max(160, naturalWidth));
     const aspectRatio = naturalHeight > 0 && naturalWidth > 0 ? naturalHeight / naturalWidth : 0.75;
-    const targetHeight = Math.round(targetWidth * aspectRatio);
+    let targetWidth = 300;
+    let targetHeight = Math.round(targetWidth * aspectRatio);
+
+    // Clamp bounds while strictly preserving natural aspect ratio
+    const maxHeight = 400;
+    const minHeight = 120;
+    if (targetHeight > maxHeight) {
+      targetHeight = maxHeight;
+      targetWidth = Math.round(targetHeight / aspectRatio);
+    } else if (targetHeight < minHeight) {
+      targetHeight = minHeight;
+      targetWidth = Math.round(targetHeight / aspectRatio);
+    }
 
     const x = canvasPosition ? canvasPosition.x : -viewport.x / viewport.scale + 200 + (items.length % 5) * 30;
     const y = canvasPosition ? canvasPosition.y : -viewport.y / viewport.scale + 140 + (items.length % 5) * 30;
@@ -514,6 +547,24 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
       pendingUpdatesRef.current.set(id, timer);
     },
     [beginSave, endSave]
+  );
+
+  // Adjust item dimensions to natural aspect ratio (e.g. legacy items) without polluting undo history
+  const correctItemDimensions = useCallback(
+    (id: string, width: number, height: number) => {
+      updateItemLocal(id, { width, height });
+      const item = items.find((i) => i.id === id);
+      if (item) {
+        persistItemGeometry(id, {
+          x: item.x,
+          y: item.y,
+          width,
+          height,
+          zIndex: item.z_index,
+        });
+      }
+    },
+    [items, updateItemLocal, persistItemGeometry]
   );
 
   // Nudge item position with keyboard arrow keys
@@ -820,6 +871,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     duplicateItem,
     duplicateSelectedItems,
     updateItemLocal,
+    correctItemDimensions,
     persistItemGeometry,
     updateTextContent,
     updateColorContent,
