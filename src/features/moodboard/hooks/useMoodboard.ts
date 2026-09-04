@@ -13,6 +13,13 @@ import type {
 import type { Json } from '@/types/database.types';
 import type { Reference } from '@/features/references/types';
 import { getImageNaturalDimensions } from '@/lib/utils/image';
+import {
+  calculateAlignment,
+  calculateDistribution,
+  calculateAutoArrange,
+  type AlignmentType,
+  type DistributionType,
+} from '../utils/layoutUtils';
 
 export type UndoAction =
   | {
@@ -787,6 +794,88 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     );
   }, [selectedIds, persistItemGeometry]);
 
+  // Batch move items with single undo step (used by Align, Distribute, Auto-Arrange)
+  const batchMoveItems = useCallback(
+    (updates: Array<{ id: string; x: number; y: number }>) => {
+      if (updates.length === 0) return;
+
+      const undoItems: Array<{
+        id: string;
+        prevPosition: { x: number; y: number };
+        nextPosition: { x: number; y: number };
+      }> = [];
+
+      const updateMap = new Map(updates.map((u) => [u.id, { x: u.x, y: u.y }]));
+
+      setItems((prev) =>
+        prev.map((item) => {
+          const nextPos = updateMap.get(item.id);
+          if (!nextPos) return item;
+          undoItems.push({
+            id: item.id,
+            prevPosition: { x: item.x, y: item.y },
+            nextPosition: { x: nextPos.x, y: nextPos.y },
+          });
+          return {
+            ...item,
+            x: nextPos.x,
+            y: nextPos.y,
+          };
+        })
+      );
+
+      if (undoItems.length > 0) {
+        recordUndoAction({
+          type: 'BATCH_MOVE',
+          items: undoItems,
+        });
+
+        for (const update of updates) {
+          const itm = items.find((i) => i.id === update.id);
+          if (itm) {
+            persistItemGeometry(update.id, {
+              x: update.x,
+              y: update.y,
+              width: itm.width,
+              height: itm.height,
+              zIndex: itm.z_index,
+            });
+          }
+        }
+      }
+    },
+    [items, persistItemGeometry, recordUndoAction]
+  );
+
+  // Align selected items (Left, Center-H, Right, Top, Center-V, Bottom)
+  const alignSelectedItems = useCallback(
+    (alignment: AlignmentType) => {
+      const activeIds = selectedIds.length > 0 ? selectedIds : (selectedId ? [selectedId] : []);
+      if (activeIds.length < 2) return;
+      const updates = calculateAlignment(items, activeIds, alignment);
+      batchMoveItems(updates);
+    },
+    [items, selectedIds, selectedId, batchMoveItems]
+  );
+
+  // Distribute selected items (Horizontal or Vertical)
+  const distributeSelectedItems = useCallback(
+    (direction: DistributionType) => {
+      const activeIds = selectedIds.length > 0 ? selectedIds : (selectedId ? [selectedId] : []);
+      if (activeIds.length < 3) return;
+      const updates = calculateDistribution(items, activeIds, direction);
+      batchMoveItems(updates);
+    },
+    [items, selectedIds, selectedId, batchMoveItems]
+  );
+
+  // Auto-arrange items into an organized grid
+  const autoArrange = useCallback(() => {
+    const activeIds = selectedIds.length > 1 ? selectedIds : undefined;
+    const updates = calculateAutoArrange(items, activeIds);
+    batchMoveItems(updates);
+  }, [items, selectedIds, batchMoveItems]);
+
   // Viewport Zoom & Pan Helpers
   const zoomIn = () => {
     setViewport((prev) => ({
@@ -861,6 +950,9 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     undo,
     nudgeItem,
     nudgeSelectedItems,
+    alignSelectedItems,
+    distributeSelectedItems,
+    autoArrange,
     zoomToFit,
     refetch: fetchItems,
     addReferenceItem,

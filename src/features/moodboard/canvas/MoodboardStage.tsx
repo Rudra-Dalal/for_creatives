@@ -17,6 +17,7 @@ import { CanvasTextItem } from './CanvasTextItem';
 import { CanvasColorItem } from './CanvasColorItem';
 import { CanvasIdeaItem } from './CanvasIdeaItem';
 import { CanvasTransformer } from './CanvasTransformer';
+import { HexColorPicker } from 'react-colorful';
 import { Compass } from 'lucide-react';
 
 interface MoodboardStageProps {
@@ -1194,27 +1195,31 @@ export function MoodboardStage({
       {!readOnly && editingColorItem && (
         <div
           style={getEditingOverlayStyle(editingColorItem)}
-          className="absolute z-30 p-3 bg-surface border border-accent/60 rounded-lg shadow-floating flex flex-col gap-2 min-w-[220px]"
+          className="absolute z-30 p-3 bg-surface border border-accent/60 rounded-lg shadow-floating flex flex-col gap-2.5 w-[220px]"
         >
           <div className="flex items-center justify-between pb-1 border-b border-border text-[11px] text-muted-foreground">
             <span className="font-medium text-foreground">Edit Color Swatch</span>
             <button
               onClick={handleSaveColorEdit}
-              className="text-xs text-accent hover:underline"
+              className="text-xs text-accent hover:underline font-medium cursor-pointer"
             >
-              Save
+              Done
             </button>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={editingColorHex.startsWith('#') && editingColorHex.length === 7 ? editingColorHex : '#D97706'}
-              onChange={(e) => {
-                const nextHex = e.target.value.toUpperCase();
-                setEditingColorHex(nextHex);
-                onUpdateColor(editingColorItem.id, nextHex, editingColorLabel);
+          <div className="flex justify-center [&_.react-colorful]:w-full [&_.react-colorful]:h-[130px] [&_.react-colorful]:rounded">
+            <HexColorPicker
+              color={editingColorHex.startsWith('#') && editingColorHex.length === 7 ? editingColorHex : '#D97706'}
+              onChange={(nextHex) => {
+                const hexVal = nextHex.toUpperCase();
+                setEditingColorHex(hexVal);
+                onUpdateColor(editingColorItem.id, hexVal, editingColorLabel);
               }}
-              className="h-8 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <div
+              className="h-6 w-6 shrink-0 rounded border border-border/80 shadow-sm"
+              style={{ backgroundColor: editingColorHex }}
             />
             <input
               type="text"
@@ -1225,6 +1230,7 @@ export function MoodboardStage({
                 onUpdateColor(editingColorItem.id, nextHex, editingColorLabel);
               }}
               placeholder="#D97706"
+              maxLength={7}
               className="flex-1 rounded bg-surface-subtle px-2 py-1 font-mono text-xs text-foreground border border-border outline-none focus:border-accent"
             />
           </div>

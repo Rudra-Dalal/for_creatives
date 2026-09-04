@@ -59,15 +59,18 @@ provisional. This does not retroactively bless how it landed: it was built
 on the agent's own initiative, without a proposed plan or a flagged schema
 change. That is why the hard rule below exists and is non-negotiable.
 
-Subsequent unapproved canvas additions were audited and decided by the owner:
+Subsequent canvas additions audited and approved by the owner:
 - **Adopted & kept**: Marquee multi-selection (drag on empty canvas, shift-toggle),
   desktop file drag-and-drop for images (compressed client-side before upload),
   trimmed clipboard paste (plain text -> text note, valid URL -> reference capture
   dialog; image auto-upload from clipboard is stripped), and middle-mouse pan.
-- **Removed entirely**: Floating color picker popover (replaced with lightweight
-  native swatch input) and auto-arrange grid layout (clustering remains spatial
-  and manual, preserving designer intent).
-- **Bugfix against core rules**: Moodboard saves now surface visible saving,
+- **Color swatch picker (reinstated by owner)**: Integrated via `react-colorful`
+  (lightweight modal dialog for swatch creation with presets and hex input;
+  double-click on canvas swatch reopens inline editor for color and label adjustments).
+- **Arrange & Align (adopted by owner)**: Non-destructive multi-selection alignment
+  and distribution (align left/center/right/top/middle/bottom, distribute H/V)
+  with single-step batch undo, plus a manual toolbar auto-arrange grid button.
+- **Bugfix against core rules**: Moodboard saves surface visible saving,
   saved, and error banner feedback in compliance with the "no silent failures" rule.
 
 ## Tech stack

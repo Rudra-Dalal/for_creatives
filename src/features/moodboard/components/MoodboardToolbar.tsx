@@ -24,8 +24,18 @@ import {
   RotateCcw,
   Download,
   Compass,
+  LayoutGrid,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignStartVertical,
+  AlignCenterVertical,
+  AlignEndVertical,
+  Columns,
+  Rows,
 } from 'lucide-react';
 import type { MoodboardItem } from '../types';
+import type { AlignmentType, DistributionType } from '../utils/layoutUtils';
 
 interface MoodboardToolbarProps {
   scale: number;
@@ -51,6 +61,9 @@ interface MoodboardToolbarProps {
   selectedReferenceLinksCount?: number;
   onOpenDirectionInspector?: () => void;
   onPromoteSelectedIdea?: () => void;
+  onAlign?: (alignment: AlignmentType) => void;
+  onDistribute?: (direction: DistributionType) => void;
+  onAutoArrange?: () => void;
 }
 
 export function MoodboardToolbar({
@@ -77,6 +90,9 @@ export function MoodboardToolbar({
   selectedReferenceLinksCount,
   onOpenDirectionInspector,
   onPromoteSelectedIdea,
+  onAlign,
+  onDistribute,
+  onAutoArrange,
 }: MoodboardToolbarProps) {
   const percentage = Math.round(scale * 100);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -167,6 +183,19 @@ export function MoodboardToolbar({
             </button>
           )}
 
+          {/* Auto-Arrange Grid Button */}
+          {onAutoArrange && (
+            <button
+              type="button"
+              onClick={onAutoArrange}
+              className="flex h-7 items-center gap-1.5 px-2.5 rounded-full text-xs text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors cursor-pointer"
+              title="Auto-arrange items into an organized grid"
+            >
+              <LayoutGrid className="h-3.5 w-3.5 text-accent" />
+              <span>Arrange</span>
+            </button>
+          )}
+
           <div className="h-4 w-px bg-border-subtle mx-1" />
         </>
       )}
@@ -241,6 +270,66 @@ export function MoodboardToolbar({
             <span className="font-mono text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-surface-subtle border border-border">
               {selectedCount} selected
             </span>
+          )}
+
+          {/* Align & Distribute Menu for Multi-Selection */}
+          {selectedCount > 1 && onAlign && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-7 items-center gap-1 px-2.5 rounded-full text-xs font-medium text-foreground bg-surface-subtle hover:bg-surface-hover border border-border transition-colors cursor-pointer"
+                  title="Align and distribute selected items"
+                >
+                  <AlignLeft className="h-3.5 w-3.5 text-accent" />
+                  <span>Align</span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="center"
+                side="top"
+                className="w-48 bg-[#181816] border-[#2A2A26] p-1 shadow-floating text-foreground"
+              >
+                <DropdownMenuItem onClick={() => onAlign('left')} className="gap-2 text-xs cursor-pointer">
+                  <AlignLeft className="h-3.5 w-3.5 text-accent" />
+                  <span>Align Left</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onAlign('center-h')} className="gap-2 text-xs cursor-pointer">
+                  <AlignCenter className="h-3.5 w-3.5 text-accent" />
+                  <span>Align Center (H)</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onAlign('right')} className="gap-2 text-xs cursor-pointer">
+                  <AlignRight className="h-3.5 w-3.5 text-accent" />
+                  <span>Align Right</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-[#2A2A26]" />
+                <DropdownMenuItem onClick={() => onAlign('top')} className="gap-2 text-xs cursor-pointer">
+                  <AlignStartVertical className="h-3.5 w-3.5 text-accent" />
+                  <span>Align Top</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onAlign('center-v')} className="gap-2 text-xs cursor-pointer">
+                  <AlignCenterVertical className="h-3.5 w-3.5 text-accent" />
+                  <span>Align Middle (V)</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onAlign('bottom')} className="gap-2 text-xs cursor-pointer">
+                  <AlignEndVertical className="h-3.5 w-3.5 text-accent" />
+                  <span>Align Bottom</span>
+                </DropdownMenuItem>
+                {selectedCount >= 3 && onDistribute && (
+                  <>
+                    <DropdownMenuSeparator className="bg-[#2A2A26]" />
+                    <DropdownMenuItem onClick={() => onDistribute('horizontal')} className="gap-2 text-xs cursor-pointer">
+                      <Columns className="h-3.5 w-3.5 text-accent" />
+                      <span>Distribute Horizontally</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onDistribute('vertical')} className="gap-2 text-xs cursor-pointer">
+                      <Rows className="h-3.5 w-3.5 text-accent" />
+                      <span>Distribute Vertically</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           {/* Reference Direction Inspector Trigger */}

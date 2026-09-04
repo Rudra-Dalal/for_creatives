@@ -14,8 +14,9 @@ import type { Reference } from '@/features/references/types';
 import type { MoodboardItem, ColorItemContent } from '../types';
 import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
 import { CanvasDirectionInspector } from './CanvasDirectionInspector';
+import { ColorSwatchDialog } from './ColorSwatchDialog';
 import { useProjectDirectionLinks } from '../hooks/useProjectDirectionLinks';
-import { FolderPlus, Type, Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { FolderPlus, Type, Sparkles, Palette, Loader2, AlertCircle } from 'lucide-react';
 
 // Dynamic Konva Stage import without SSR
 const DynamicMoodboardStage = dynamic(
@@ -80,6 +81,9 @@ export function MoodboardCanvas({
     bringToFront,
     deleteItem,
     deleteSelectedItems,
+    alignSelectedItems,
+    distributeSelectedItems,
+    autoArrange,
     zoomIn,
     zoomOut,
     resetViewport,
@@ -89,6 +93,21 @@ export function MoodboardCanvas({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Color Swatch Dialog state (react-colorful)
+  const [isColorDialogOpen, setIsColorDialogOpen] = useState(false);
+  const [colorDialogProps, setColorDialogProps] = useState<{
+    id?: string;
+    hex: string;
+    label: string;
+    title: string;
+    confirmLabel: string;
+  }>({
+    hex: '#D97706',
+    label: 'Primary Amber',
+    title: 'Add Color Swatch',
+    confirmLabel: 'Place Swatch',
+  });
 
   // Creative Direction Links & Idea Promotion
   const {
@@ -200,12 +219,26 @@ export function MoodboardCanvas({
     }
   };
 
-  const handleAddColor = async () => {
+  const handleAddColor = () => {
+    setColorDialogProps({
+      hex: '#D97706',
+      label: 'Primary Amber',
+      title: 'Add Color Swatch',
+      confirmLabel: 'Place Swatch',
+    });
+    setIsColorDialogOpen(true);
+  };
+
+  const handleConfirmColor = async (hex: string, label: string) => {
     try {
-      await addColorItem('#D97706', 'Primary Amber');
+      if (colorDialogProps.id) {
+        updateColorContent(colorDialogProps.id, hex, label);
+      } else {
+        await addColorItem(hex, label);
+      }
     } catch (err: unknown) {
-      console.error('Failed to add color swatch:', err);
-      const msg = err instanceof Error ? err.message : 'Failed to add color swatch';
+      console.error('Failed to save color swatch:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to save color swatch';
       setUploadError(msg);
       setTimeout(() => setUploadError(null), 6000);
     }
@@ -493,6 +526,15 @@ export function MoodboardCanvas({
                 <Button
                   size="sm"
                   variant="secondary"
+                  onClick={handleAddColor}
+                  className="gap-1.5 text-xs font-medium"
+                >
+                  <Palette className="h-3.5 w-3.5 text-accent" />
+                  <span>Add Swatch</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
                   onClick={() => addTextNote('Initial thought...')}
                   className="gap-1.5 text-xs font-medium"
                 >
@@ -530,10 +572,24 @@ export function MoodboardCanvas({
         selectedReferenceLinksCount={selectedReferenceLinksCount}
         onOpenDirectionInspector={handleOpenDirectionInspectorForSelected}
         onPromoteSelectedIdea={handlePromoteSelectedIdea}
+        onAlign={alignSelectedItems}
+        onDistribute={distributeSelectedItems}
+        onAutoArrange={autoArrange}
       />
 
       {!readOnly && (
         <>
+          {/* Color Swatch Creation & Editing Dialog (react-colorful) */}
+          <ColorSwatchDialog
+            open={isColorDialogOpen}
+            onOpenChange={setIsColorDialogOpen}
+            initialHex={colorDialogProps.hex}
+            initialLabel={colorDialogProps.label}
+            title={colorDialogProps.title}
+            confirmLabel={colorDialogProps.confirmLabel}
+            onConfirm={handleConfirmColor}
+          />
+
           {/* Reference Library Drawer */}
           <MoodboardLibraryDrawer
             projectId={projectId}
