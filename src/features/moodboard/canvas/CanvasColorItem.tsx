@@ -32,11 +32,6 @@ export function CanvasColorItem({
   const hex = content.hex || '#D97706';
   const label = content.label || hex.toUpperCase();
 
-  useEffect(() => {
-    if (isSelected && groupRef.current) {
-      onSelect(groupRef.current);
-    }
-  }, [isSelected, onSelect]);
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;

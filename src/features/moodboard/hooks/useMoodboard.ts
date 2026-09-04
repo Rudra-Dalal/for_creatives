@@ -23,24 +23,44 @@ export interface UndoAction {
 
 export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], readOnly?: boolean) {
   const [items, setItems] = useState<MoodboardItem[]>(initialItems || []);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedIds, _setSelectedIds] = useState<string[]>([]);
   const selectedId = selectedIds[0] ?? null;
 
-  const setSelectedId = useCallback((id: string | null) => {
-    setSelectedIds(id ? [id] : []);
-  }, []);
-
-  const toggleSelectedId = useCallback((id: string, isMulti = false) => {
-    setSelectedIds((prev) => {
-      if (!isMulti) {
-        return prev.includes(id) && prev.length === 1 ? [] : [id];
+  const setSelectedIds = useCallback((nextOrUpdater: string[] | ((prev: string[]) => string[])) => {
+    _setSelectedIds((prev) => {
+      const next = typeof nextOrUpdater === 'function' ? nextOrUpdater(prev) : nextOrUpdater;
+      if (prev.length === next.length && prev.every((val, index) => val === next[index])) {
+        return prev;
       }
-      if (prev.includes(id)) {
-        return prev.filter((i) => i !== id);
-      }
-      return [...prev, id];
+      return next;
     });
   }, []);
+
+  const setSelectedId = useCallback(
+    (id: string | null) => {
+      setSelectedIds((prev) => {
+        if (id === null) return prev.length === 0 ? prev : [];
+        if (prev.length === 1 && prev[0] === id) return prev;
+        return [id];
+      });
+    },
+    [setSelectedIds]
+  );
+
+  const toggleSelectedId = useCallback(
+    (id: string, isMulti = false) => {
+      setSelectedIds((prev) => {
+        if (!isMulti) {
+          return prev.includes(id) && prev.length === 1 ? [] : [id];
+        }
+        if (prev.includes(id)) {
+          return prev.filter((i) => i !== id);
+        }
+        return [...prev, id];
+      });
+    },
+    [setSelectedIds]
+  );
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 0, y: 0, scale: 1 });
   const [isLoading, setIsLoading] = useState(!initialItems);
   const [error, setError] = useState<string | null>(null);

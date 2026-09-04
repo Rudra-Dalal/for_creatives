@@ -32,11 +32,6 @@ export function CanvasIdeaItem({
   const title = content.title || 'Creative Idea';
   const notes = content.notes || '';
 
-  useEffect(() => {
-    if (isSelected && groupRef.current) {
-      onSelect(groupRef.current);
-    }
-  }, [isSelected, onSelect]);
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;

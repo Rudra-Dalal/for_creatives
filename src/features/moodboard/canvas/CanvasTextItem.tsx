@@ -31,11 +31,6 @@ export function CanvasTextItem({
   const content = (item.content as TextItemContent) || { text: 'Creative Note' };
   const text = content.text || 'Add thought...';
 
-  useEffect(() => {
-    if (isSelected && groupRef.current) {
-      onSelect(groupRef.current);
-    }
-  }, [isSelected, onSelect]);
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;

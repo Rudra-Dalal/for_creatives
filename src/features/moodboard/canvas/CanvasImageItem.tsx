@@ -33,11 +33,6 @@ export function CanvasImageItem({
 
   const [image, imageStatus] = useImage(imageUrl, 'anonymous');
 
-  useEffect(() => {
-    if (isSelected && groupRef.current) {
-      onSelect(groupRef.current);
-    }
-  }, [isSelected, onSelect]);
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;

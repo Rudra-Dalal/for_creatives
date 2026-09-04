@@ -114,6 +114,7 @@ export function MoodboardStage({
   } | null>(null);
   const isMarqueeSelectingRef = useRef(false);
   const marqueeStartPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const lastMarqueeHitIdsRef = useRef<string[]>([]);
 
   // Middle-mouse drag panning state
   const isMiddlePanningRef = useRef(false);
@@ -644,6 +645,7 @@ export function MoodboardStage({
 
     isMarqueeSelectingRef.current = true;
     marqueeStartPointerRef.current = { x: canvasX, y: canvasY };
+    lastMarqueeHitIdsRef.current = [];
     setSelectionBox({
       startX: canvasX,
       startY: canvasY,
@@ -707,15 +709,25 @@ export function MoodboardStage({
       })
       .map((i) => i.id);
 
-    if (onSelectIds) {
-      if ('shiftKey' in e.evt && e.evt.shiftKey) {
-        const combined = Array.from(new Set([...effectiveSelectedIds, ...hitItemIds]));
-        onSelectIds(combined);
+    const targetIds =
+      'shiftKey' in e.evt && e.evt.shiftKey
+        ? Array.from(new Set([...effectiveSelectedIds, ...hitItemIds]))
+        : hitItemIds;
+
+    const prev = lastMarqueeHitIdsRef.current;
+    const isDifferent =
+      prev.length !== targetIds.length ||
+      prev.some((id, idx) => id !== targetIds[idx]);
+
+    if (isDifferent) {
+      lastMarqueeHitIdsRef.current = targetIds;
+      if (onSelectIds) {
+        onSelectIds(targetIds);
+      } else if (targetIds.length > 0) {
+        onSelectId(targetIds[0]);
       } else {
-        onSelectIds(hitItemIds);
+        onSelectId(null);
       }
-    } else if (hitItemIds.length > 0) {
-      onSelectId(hitItemIds[0]);
     }
   };
 
@@ -724,6 +736,7 @@ export function MoodboardStage({
     if (isMarqueeSelectingRef.current) {
       isMarqueeSelectingRef.current = false;
       marqueeStartPointerRef.current = null;
+      lastMarqueeHitIdsRef.current = [];
       setSelectionBox(null);
     }
   };
@@ -841,6 +854,23 @@ export function MoodboardStage({
 
   const selectedItem = items.find((i) => i.id === selectedId);
 
+  const handleItemSelect = useCallback(
+    (id: string, node: Konva.Node) => {
+      if (isShiftPressed && onToggleSelectId) {
+        onToggleSelectId(id, true);
+      } else {
+        if (effectiveSelectedIds.length > 1 && effectiveSelectedIds.includes(id)) {
+          // Keep multi-selection intact for group dragging
+        } else {
+          if (onSelectIds) onSelectIds([id]);
+          else onSelectId(id);
+        }
+      }
+      setSelectedNode(node);
+    },
+    [isShiftPressed, onToggleSelectId, effectiveSelectedIds, onSelectIds, onSelectId]
+  );
+
   return (
     <div
       ref={containerRef}
@@ -925,20 +955,6 @@ export function MoodboardStage({
           {items.map((item) => {
             const isSelected = effectiveSelectedIds.includes(item.id);
 
-            const handleItemSelect = (node: Konva.Node) => {
-              if (isShiftPressed && onToggleSelectId) {
-                onToggleSelectId(item.id, true);
-              } else {
-                if (effectiveSelectedIds.length > 1 && effectiveSelectedIds.includes(item.id)) {
-                  // Keep multi-selection intact for group dragging
-                } else {
-                  if (onSelectIds) onSelectIds([item.id]);
-                  else onSelectId(item.id);
-                }
-              }
-              setSelectedNode(node);
-            };
-
             if (item.type === 'text') {
               return (
                 <CanvasTextItem
@@ -946,7 +962,7 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={handleItemSelect}
+                  onSelect={(node) => handleItemSelect(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -962,7 +978,7 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={handleItemSelect}
+                  onSelect={(node) => handleItemSelect(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -977,7 +993,7 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={handleItemSelect}
+                  onSelect={(node) => handleItemSelect(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -993,7 +1009,7 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={handleItemSelect}
+                  onSelect={(node) => handleItemSelect(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -1009,7 +1025,7 @@ export function MoodboardStage({
                 item={item}
                 isSelected={isSelected}
                 isDraggable={!readOnly}
-                onSelect={handleItemSelect}
+                onSelect={(node) => handleItemSelect(item.id, node)}
                 onDragStart={() => handleItemDragStart(item)}
                 onDragEnd={handleItemDragEnd}
                 onTransformEnd={handleItemTransformEnd}
