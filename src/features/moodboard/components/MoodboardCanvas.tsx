@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import type { Reference } from '@/features/references/types';
 import type { MoodboardItem } from '../types';
 import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
-import { FolderPlus, Type, Sparkles, Loader2 } from 'lucide-react';
+import { FolderPlus, Type, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 
 // Dynamic Konva Stage import without SSR
 const DynamicMoodboardStage = dynamic(
@@ -75,6 +75,7 @@ export function MoodboardCanvas({
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Exporter reference
   const exportFnRef = useRef<((name?: string) => Promise<boolean>) | null>(null);
@@ -99,6 +100,7 @@ export function MoodboardCanvas({
       if (readOnly) return;
       setIsUploading(true);
       setUploadStatus('Compressing & uploading image...');
+      setUploadError(null);
       try {
         const uploaded = await playgroundImageService.uploadPlaygroundImage(
           projectId,
@@ -108,6 +110,9 @@ export function MoodboardCanvas({
         await addImageItem(uploaded.url, uploaded.width, uploaded.height, uploaded.fileName, position);
       } catch (err: unknown) {
         console.error('Failed to upload image:', err);
+        const msg = err instanceof Error ? err.message : 'Failed to upload image. Please try again.';
+        setUploadError(msg);
+        setTimeout(() => setUploadError(null), 6000);
       } finally {
         setIsUploading(false);
         setUploadStatus(null);
@@ -235,6 +240,14 @@ export function MoodboardCanvas({
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full border border-border bg-surface px-4 py-1.5 shadow-floating animate-in fade-in-50">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
           <span className="text-xs font-medium text-foreground">{uploadStatus || 'Processing...'}</span>
+        </div>
+      )}
+
+      {/* Upload Error Banner */}
+      {uploadError && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full border border-danger bg-surface px-4 py-1.5 shadow-floating animate-in fade-in-50 text-red-400">
+          <AlertCircle className="h-3.5 w-3.5" />
+          <span className="text-xs font-medium">{uploadError}</span>
         </div>
       )}
 

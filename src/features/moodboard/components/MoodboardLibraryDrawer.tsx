@@ -87,6 +87,7 @@ export function MoodboardLibraryDrawer({
 
   const handleDragStart = (e: React.DragEvent, ref: Reference) => {
     e.dataTransfer.setData('application/json', JSON.stringify(ref));
+    e.dataTransfer.setData('text/plain', JSON.stringify(ref));
     e.dataTransfer.effectAllowed = 'copy';
   };
 
@@ -198,7 +199,7 @@ export function MoodboardLibraryDrawer({
                   className="group relative flex items-center gap-2.5 rounded-lg border border-border bg-surface-subtle p-2 cursor-grab active:cursor-grabbing hover:border-border-strong hover:bg-surface transition-all"
                 >
                   {/* Thumbnail */}
-                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded bg-surface-hover/50 flex items-center justify-center">
+                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded bg-surface-hover/50 flex items-center justify-center pointer-events-none select-none">
                     {ref.thumbnail_url ? (
                       <Image
                         src={ref.thumbnail_url}

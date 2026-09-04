@@ -524,7 +524,7 @@ export function MoodboardStage({
     }
 
     // Check for Reference Library drawer drop
-    const rawData = e.dataTransfer.getData('application/json');
+    const rawData = e.dataTransfer.getData('application/json') || e.dataTransfer.getData('text/plain');
     if (rawData) {
       try {
         const refData = JSON.parse(rawData);
