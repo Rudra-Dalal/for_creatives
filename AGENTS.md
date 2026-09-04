@@ -70,6 +70,11 @@ Subsequent canvas additions audited and approved by the owner:
 - **Arrange & Align (adopted by owner)**: Non-destructive multi-selection alignment
   and distribution (align left/center/right/top/middle/bottom, distribute H/V)
   with single-step batch undo, plus a manual toolbar auto-arrange grid button.
+- **Node & Arrow Connections (adopted by owner)**: Directed cubic bezier arrows connecting
+  cards via 4 cardinal magnetic anchor nodes. Persisted via schema-free jsonb item content.
+  Seamlessly integrated with Creative Direction: promoting a canvas idea with connected
+  references automatically links them into `direction_reference_links`. Includes single-step
+  undo and midpoint relationship labels.
 - **Bugfix against core rules**: Moodboard saves surface visible saving,
   saved, and error banner feedback in compliance with the "no silent failures" rule.
 

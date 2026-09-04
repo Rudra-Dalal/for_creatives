@@ -7,21 +7,44 @@ export type MoodboardItemUpdate = Database['public']['Tables']['moodboard_items'
 
 export type MoodboardItemType = 'reference' | 'image' | 'text' | 'color' | 'idea';
 
-export interface ReferenceItemContent {
+export type AnchorPosition = 'top' | 'right' | 'bottom' | 'left';
+
+export interface ItemConnection {
+  id: string;
+  targetId: string;
+  fromAnchor?: AnchorPosition;
+  toAnchor?: AnchorPosition;
+  label?: string;
+}
+
+export interface ResolvedConnection {
+  id: string;
+  fromId: string;
+  targetId: string;
+  fromAnchor: AnchorPosition;
+  toAnchor: AnchorPosition;
+  label?: string;
+}
+
+export interface BaseItemContent {
+  connections?: ItemConnection[];
+}
+
+export interface ReferenceItemContent extends BaseItemContent {
   url?: string;
   title?: string;
   thumbnail_url?: string;
   source_domain?: string;
 }
 
-export interface ImageItemContent {
+export interface ImageItemContent extends BaseItemContent {
   imageUrl: string;
   fileName?: string;
   originalWidth?: number;
   originalHeight?: number;
 }
 
-export interface TextItemContent {
+export interface TextItemContent extends BaseItemContent {
   text: string;
   fontSize?: number;
   fontFamily?: string;
@@ -29,12 +52,12 @@ export interface TextItemContent {
   backgroundColor?: string;
 }
 
-export interface ColorItemContent {
+export interface ColorItemContent extends BaseItemContent {
   hex: string;
   label?: string;
 }
 
-export interface IdeaItemContent {
+export interface IdeaItemContent extends BaseItemContent {
   title: string;
   notes?: string;
 }

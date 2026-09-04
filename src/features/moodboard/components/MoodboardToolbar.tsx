@@ -64,6 +64,8 @@ interface MoodboardToolbarProps {
   onAlign?: (alignment: AlignmentType) => void;
   onDistribute?: (direction: DistributionType) => void;
   onAutoArrange?: () => void;
+  selectedConnectionId?: string | null;
+  onDeleteSelectedConnection?: () => void;
 }
 
 export function MoodboardToolbar({
@@ -93,6 +95,8 @@ export function MoodboardToolbar({
   onAlign,
   onDistribute,
   onAutoArrange,
+  selectedConnectionId,
+  onDeleteSelectedConnection,
 }: MoodboardToolbarProps) {
   const percentage = Math.round(scale * 100);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -380,6 +384,26 @@ export function MoodboardToolbar({
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
+        </>
+      )}
+
+      {/* Contextual Connection Actions */}
+      {selectedConnectionId && !readOnly && (
+        <>
+          <div className="h-4 w-px bg-border-subtle mx-1" />
+          <span className="font-mono text-[10px] text-accent px-2 py-0.5 rounded bg-accent/10 border border-accent/30">
+            Arrow Selected
+          </span>
+          {onDeleteSelectedConnection && (
+            <button
+              type="button"
+              onClick={onDeleteSelectedConnection}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-red-400 hover:bg-danger/10 hover:text-red-300 transition-colors cursor-pointer"
+              title="Delete Arrow (Backspace)"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
         </>
       )}
     </div>

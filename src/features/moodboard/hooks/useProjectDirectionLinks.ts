@@ -49,7 +49,11 @@ export function useProjectDirectionLinks(projectId: string, readOnly?: boolean) 
    * reusing the exact same createDirectionSchema validation.
    */
   const promoteIdeaToDirection = useCallback(
-    async (title: string, notes?: string): Promise<DirectionNoteWithReferences> => {
+    async (
+      title: string,
+      notes?: string,
+      connectedReferenceIds: string[] = []
+    ): Promise<DirectionNoteWithReferences> => {
       if (readOnly) {
         throw new Error('Cannot create direction note in read-only mode');
       }
@@ -58,7 +62,7 @@ export function useProjectDirectionLinks(projectId: string, readOnly?: boolean) 
         projectId,
         title: title.trim(),
         description: (notes || '').trim(),
-        referenceIds: [],
+        referenceIds: connectedReferenceIds,
       };
 
       const validation = createDirectionSchema.safeParse(payload);

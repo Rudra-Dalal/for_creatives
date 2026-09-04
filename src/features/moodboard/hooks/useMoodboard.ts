@@ -1,14 +1,18 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { moodboardService } from '../services/moodboardService';
 import type {
   MoodboardItem,
+  MoodboardItemContent,
   CanvasViewport,
   TextItemContent,
   ImageItemContent,
   ColorItemContent,
   IdeaItemContent,
+  ItemConnection,
+  AnchorPosition,
+  ResolvedConnection,
 } from '../types';
 import type { Json } from '@/types/database.types';
 import type { Reference } from '@/features/references/types';
@@ -20,6 +24,7 @@ import {
   type AlignmentType,
   type DistributionType,
 } from '../utils/layoutUtils';
+import { extractActiveConnections } from '../canvas/connectorUtils';
 
 export type UndoAction =
   | {
@@ -36,6 +41,23 @@ export type UndoAction =
         prevPosition: { x: number; y: number };
         nextPosition: { x: number; y: number };
       }>;
+    }
+  | {
+      type: 'CONNECT_ITEMS';
+      fromId: string;
+      connection: ItemConnection;
+    }
+  | {
+      type: 'DISCONNECT_ITEMS';
+      fromId: string;
+      connection: ItemConnection;
+    }
+  | {
+      type: 'UPDATE_CONNECTION_LABEL';
+      fromId: string;
+      connectionId: string;
+      prevLabel?: string;
+      nextLabel?: string;
     };
 
 export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], readOnly?: boolean) {
@@ -253,6 +275,50 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
               zIndex: itm.z_index,
             });
           }
+        }
+      } else if (actionToRevert.type === 'CONNECT_ITEMS') {
+        // Undo Connect -> remove the connection from source item
+        const fromItem = items.find((i) => i.id === actionToRevert.fromId);
+        if (fromItem) {
+          const rawConns = (fromItem.content as { connections?: ItemConnection[] })?.connections || [];
+          const updatedConns = rawConns.filter((c) => c.id !== actionToRevert.connection.id);
+          const updatedContent = { ...(fromItem.content as object), connections: updatedConns };
+          setItems((prev) =>
+            prev.map((i) => (i.id === actionToRevert.fromId ? { ...i, content: updatedContent as unknown as MoodboardItemContent } : i))
+          );
+          await moodboardService.updateItem(actionToRevert.fromId, {
+            content: updatedContent as unknown as Json,
+          });
+        }
+      } else if (actionToRevert.type === 'DISCONNECT_ITEMS') {
+        // Undo Disconnect -> restore the connection on source item
+        const fromItem = items.find((i) => i.id === actionToRevert.fromId);
+        if (fromItem) {
+          const rawConns = (fromItem.content as { connections?: ItemConnection[] })?.connections || [];
+          const updatedConns = [...rawConns, actionToRevert.connection];
+          const updatedContent = { ...(fromItem.content as object), connections: updatedConns };
+          setItems((prev) =>
+            prev.map((i) => (i.id === actionToRevert.fromId ? { ...i, content: updatedContent as unknown as MoodboardItemContent } : i))
+          );
+          await moodboardService.updateItem(actionToRevert.fromId, {
+            content: updatedContent as unknown as Json,
+          });
+        }
+      } else if (actionToRevert.type === 'UPDATE_CONNECTION_LABEL') {
+        // Undo Label Edit -> revert label
+        const fromItem = items.find((i) => i.id === actionToRevert.fromId);
+        if (fromItem) {
+          const rawConns = (fromItem.content as { connections?: ItemConnection[] })?.connections || [];
+          const updatedConns = rawConns.map((c) =>
+            c.id === actionToRevert.connectionId ? { ...c, label: actionToRevert.prevLabel } : c
+          );
+          const updatedContent = { ...(fromItem.content as object), connections: updatedConns };
+          setItems((prev) =>
+            prev.map((i) => (i.id === actionToRevert.fromId ? { ...i, content: updatedContent as unknown as MoodboardItemContent } : i))
+          );
+          await moodboardService.updateItem(actionToRevert.fromId, {
+            content: updatedContent as unknown as Json,
+          });
         }
       }
     } catch (err) {
@@ -632,6 +698,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     if (!item || item.type !== 'color') return;
 
     const updatedContent: ColorItemContent = {
+      ...(item.content as ColorItemContent),
       hex: hex.toUpperCase(),
       label: label || hex.toUpperCase(),
     };
@@ -655,6 +722,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     if (!item || item.type !== 'idea') return;
 
     const updatedContent: IdeaItemContent = {
+      ...(item.content as IdeaItemContent),
       title,
       notes: notes !== undefined ? notes : (item.content as IdeaItemContent).notes,
     };
@@ -930,6 +998,208 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     [items]
   );
 
+  // Selected Connection Arrow State
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+
+  // Resolved flat list of all active connections on the board
+  const connections: ResolvedConnection[] = useMemo(() => {
+    return extractActiveConnections(items);
+  }, [items]);
+
+  // Add connection from one item to another
+  const addConnection = useCallback(
+    async (
+      fromId: string,
+      targetId: string,
+      fromAnchor?: AnchorPosition,
+      toAnchor?: AnchorPosition,
+      label?: string
+    ): Promise<ItemConnection | null> => {
+      if (fromId === targetId) return null;
+      const source = items.find((i) => i.id === fromId);
+      const target = items.find((i) => i.id === targetId);
+      if (!source || !target) return null;
+
+      const newConnection: ItemConnection = {
+        id: typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `conn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        targetId,
+        fromAnchor,
+        toAnchor,
+        label: label?.trim() || undefined,
+      };
+
+      const existingConnections = (source.content as { connections?: ItemConnection[] })?.connections || [];
+      // Prevent duplicate connection between exact same endpoints
+      if (existingConnections.some((c) => c.targetId === targetId && c.fromAnchor === fromAnchor && c.toAnchor === toAnchor)) {
+        return null;
+      }
+
+      const updatedConnections = [...existingConnections, newConnection];
+      const updatedContent = {
+        ...(source.content as object),
+        connections: updatedConnections,
+      };
+
+      setItems((prev) =>
+        prev.map((i) => (i.id === fromId ? { ...i, content: updatedContent as unknown as MoodboardItemContent } : i))
+      );
+
+      recordUndoAction({
+        type: 'CONNECT_ITEMS',
+        fromId,
+        connection: newConnection,
+      });
+
+      beginSave();
+      try {
+        await moodboardService.updateItem(fromId, {
+          content: updatedContent as unknown as Json,
+        });
+        endSave();
+      } catch (err) {
+        endSave(err);
+      }
+
+      return newConnection;
+    },
+    [items, recordUndoAction, beginSave, endSave]
+  );
+
+  // Remove connection by its ID
+  const removeConnection = useCallback(
+    async (connectionId: string) => {
+      let sourceItem: MoodboardItem | undefined;
+      let removedConnection: ItemConnection | undefined;
+
+      for (const item of items) {
+        const conns = (item.content as { connections?: ItemConnection[] })?.connections;
+        const found = conns?.find((c) => c.id === connectionId);
+        if (found) {
+          sourceItem = item;
+          removedConnection = found;
+          break;
+        }
+      }
+
+      if (!sourceItem || !removedConnection) return;
+
+      const fromId = sourceItem.id;
+      const existingConnections = (sourceItem.content as { connections?: ItemConnection[] })?.connections || [];
+      const updatedConnections = existingConnections.filter((c) => c.id !== connectionId);
+      const updatedContent = {
+        ...(sourceItem.content as object),
+        connections: updatedConnections,
+      };
+
+      setItems((prev) =>
+        prev.map((i) => (i.id === fromId ? { ...i, content: updatedContent as unknown as MoodboardItemContent } : i))
+      );
+
+      setSelectedConnectionId((prev) => (prev === connectionId ? null : prev));
+
+      recordUndoAction({
+        type: 'DISCONNECT_ITEMS',
+        fromId,
+        connection: removedConnection,
+      });
+
+      beginSave();
+      try {
+        await moodboardService.updateItem(fromId, {
+          content: updatedContent as unknown as Json,
+        });
+        endSave();
+      } catch (err) {
+        endSave(err);
+      }
+    },
+    [items, recordUndoAction, beginSave, endSave]
+  );
+
+  // Update connection label
+  const updateConnectionLabel = useCallback(
+    async (connectionId: string, label: string) => {
+      let sourceItem: MoodboardItem | undefined;
+      let targetConnection: ItemConnection | undefined;
+
+      for (const item of items) {
+        const conns = (item.content as { connections?: ItemConnection[] })?.connections;
+        const found = conns?.find((c) => c.id === connectionId);
+        if (found) {
+          sourceItem = item;
+          targetConnection = found;
+          break;
+        }
+      }
+
+      if (!sourceItem || !targetConnection) return;
+
+      const fromId = sourceItem.id;
+      const prevLabel = targetConnection.label;
+      const nextLabel = label.trim() || undefined;
+
+      const existingConnections = (sourceItem.content as { connections?: ItemConnection[] })?.connections || [];
+      const updatedConnections = existingConnections.map((c) =>
+        c.id === connectionId ? { ...c, label: nextLabel } : c
+      );
+      const updatedContent = {
+        ...(sourceItem.content as object),
+        connections: updatedConnections,
+      };
+
+      setItems((prev) =>
+        prev.map((i) => (i.id === fromId ? { ...i, content: updatedContent as unknown as MoodboardItemContent } : i))
+      );
+
+      recordUndoAction({
+        type: 'UPDATE_CONNECTION_LABEL',
+        fromId,
+        connectionId,
+        prevLabel,
+        nextLabel,
+      });
+
+      beginSave();
+      try {
+        await moodboardService.updateItem(fromId, {
+          content: updatedContent as unknown as Json,
+        });
+        endSave();
+      } catch (err) {
+        endSave(err);
+      }
+    },
+    [items, recordUndoAction, beginSave, endSave]
+  );
+
+  // Helper to get all reference IDs connected to an item (used for Idea -> Direction promotion)
+  const getConnectedReferenceIds = useCallback(
+    (itemId: string): string[] => {
+      const activeConns = extractActiveConnections(items);
+      const connectedItemIds = new Set<string>();
+
+      for (const conn of activeConns) {
+        if (conn.fromId === itemId) {
+          connectedItemIds.add(conn.targetId);
+        } else if (conn.targetId === itemId) {
+          connectedItemIds.add(conn.fromId);
+        }
+      }
+
+      const referenceIds: string[] = [];
+      for (const id of connectedItemIds) {
+        const itm = items.find((i) => i.id === id);
+        if (itm && itm.type === 'reference' && itm.reference_id) {
+          referenceIds.push(itm.reference_id);
+        }
+      }
+      return referenceIds;
+    },
+    [items]
+  );
+
   return {
     items,
     selectedId,
@@ -975,5 +1245,12 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     zoomOut,
     resetViewport,
     screenToCanvasCoords,
+    connections,
+    selectedConnectionId,
+    setSelectedConnectionId,
+    addConnection,
+    removeConnection,
+    updateConnectionLabel,
+    getConnectedReferenceIds,
   };
 }

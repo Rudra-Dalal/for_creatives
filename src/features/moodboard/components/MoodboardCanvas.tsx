@@ -87,6 +87,13 @@ export function MoodboardCanvas({
     zoomIn,
     zoomOut,
     resetViewport,
+    connections,
+    selectedConnectionId,
+    setSelectedConnectionId,
+    addConnection,
+    removeConnection,
+    updateConnectionLabel,
+    getConnectedReferenceIds,
   } = useMoodboard(projectId, initialItems, readOnly);
 
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -160,10 +167,16 @@ export function MoodboardCanvas({
   }, [selectedItem, handleInspectReference]);
 
   const handlePromoteIdea = useCallback(
-    async (title: string, notes?: string) => {
+    async (title: string, notes?: string, itemId?: string) => {
       try {
-        await promoteIdeaToDirection(title, notes);
-        setUploadStatus('Promoted idea to Creative Direction statement');
+        const connectedRefIds = itemId ? getConnectedReferenceIds(itemId) : [];
+        await promoteIdeaToDirection(title, notes, connectedRefIds);
+        const count = connectedRefIds.length;
+        setUploadStatus(
+          count > 0
+            ? `Promoted idea to Creative Direction (linked ${count} connected reference${count > 1 ? 's' : ''})`
+            : 'Promoted idea to Creative Direction statement'
+        );
         setTimeout(() => setUploadStatus(null), 3500);
       } catch (err: unknown) {
         console.error('Failed to promote idea:', err);
@@ -172,14 +185,14 @@ export function MoodboardCanvas({
         setTimeout(() => setUploadError(null), 5000);
       }
     },
-    [promoteIdeaToDirection]
+    [promoteIdeaToDirection, getConnectedReferenceIds]
   );
 
   const handlePromoteSelectedIdea = useCallback(async () => {
     if (selectedItem?.type === 'idea') {
       const content = selectedItem.content as { title?: string; notes?: string };
       if (content?.title) {
-        await handlePromoteIdea(content.title, content.notes);
+        await handlePromoteIdea(content.title, content.notes, selectedItem.id);
       }
     }
   }, [selectedItem, handlePromoteIdea]);
@@ -456,6 +469,12 @@ export function MoodboardCanvas({
         selectedIds={selectedIds}
         viewport={viewport}
         readOnly={readOnly}
+        connections={connections}
+        selectedConnectionId={selectedConnectionId}
+        onSelectConnection={setSelectedConnectionId}
+        onAddConnection={addConnection}
+        onDeleteConnection={removeConnection}
+        onUpdateConnectionLabel={updateConnectionLabel}
         referenceDirectionCounts={referenceDirectionCounts}
         onInspectReferenceDirection={handleInspectReference}
         onPromoteIdeaToDirection={handlePromoteIdea}
@@ -575,6 +594,12 @@ export function MoodboardCanvas({
         onAlign={alignSelectedItems}
         onDistribute={distributeSelectedItems}
         onAutoArrange={autoArrange}
+        selectedConnectionId={selectedConnectionId}
+        onDeleteSelectedConnection={() => {
+          if (selectedConnectionId) {
+            removeConnection(selectedConnectionId);
+          }
+        }}
       />
 
       {!readOnly && (

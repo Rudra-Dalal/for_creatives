@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Stage, Layer, Rect } from 'react-konva';
+import { Stage, Layer, Rect, Arrow } from 'react-konva';
 import Konva from 'konva';
 import type {
   MoodboardItem,
@@ -9,6 +9,8 @@ import type {
   TextItemContent,
   ColorItemContent,
   IdeaItemContent,
+  ResolvedConnection,
+  AnchorPosition,
 } from '../types';
 import type { UndoAction } from '../hooks/useMoodboard';
 import { CanvasReferenceItem } from './CanvasReferenceItem';
@@ -17,6 +19,9 @@ import { CanvasTextItem } from './CanvasTextItem';
 import { CanvasColorItem } from './CanvasColorItem';
 import { CanvasIdeaItem } from './CanvasIdeaItem';
 import { CanvasTransformer } from './CanvasTransformer';
+import { CanvasConnectorItem } from './CanvasConnectorItem';
+import { CanvasItemAnchors } from './CanvasItemAnchors';
+import { getAnchorPoint, calculateBezierCurve } from './connectorUtils';
 import { HexColorPicker } from 'react-colorful';
 import { Compass } from 'lucide-react';
 
@@ -26,6 +31,18 @@ interface MoodboardStageProps {
   selectedIds?: string[];
   viewport: CanvasViewport;
   readOnly?: boolean;
+  connections?: ResolvedConnection[];
+  selectedConnectionId?: string | null;
+  onSelectConnection?: (connectionId: string | null) => void;
+  onAddConnection?: (
+    fromId: string,
+    targetId: string,
+    fromAnchor?: AnchorPosition,
+    toAnchor?: AnchorPosition,
+    label?: string
+  ) => Promise<unknown>;
+  onDeleteConnection?: (connectionId: string) => Promise<void>;
+  onUpdateConnectionLabel?: (connectionId: string, label: string) => Promise<void>;
   referenceDirectionCounts?: Map<string, number>;
   onInspectReferenceDirection?: (referenceId: string) => void;
   onPromoteIdeaToDirection?: (title: string, notes?: string) => Promise<void>;
@@ -65,6 +82,12 @@ export function MoodboardStage({
   selectedIds,
   viewport,
   readOnly = false,
+  connections = [],
+  selectedConnectionId = null,
+  onSelectConnection,
+  onAddConnection,
+  onDeleteConnection,
+  onUpdateConnectionLabel,
   referenceDirectionCounts,
   onInspectReferenceDirection,
   onPromoteIdeaToDirection,
@@ -94,6 +117,22 @@ export function MoodboardStage({
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
   const initialGeometryRef = useRef<Map<string, { x: number; y: number; width: number; height: number; zIndex?: number }>>(new Map());
+
+  // Connection drag state
+  const [connectingFrom, setConnectingFrom] = useState<{
+    itemId: string;
+    anchor: AnchorPosition;
+    startPoint: { x: number; y: number };
+  } | null>(null);
+  const [connectingPointerPos, setConnectingPointerPos] = useState<{ x: number; y: number } | null>(null);
+  const [connectingTarget, setConnectingTarget] = useState<{
+    itemId: string;
+    anchor: AnchorPosition;
+  } | null>(null);
+
+  // Connection label editing state
+  const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
+  const [connectionLabelInput, setConnectionLabelInput] = useState('');
 
   const effectiveSelectedIds = React.useMemo(() => {
     if (selectedIds && selectedIds.length > 0) return selectedIds;
@@ -331,8 +370,21 @@ export function MoodboardStage({
         return;
       }
 
-      // Escape: Clear selection
+      // Escape: Clear selection & cancel connection drag
       if (e.key === 'Escape') {
+        if (connectingFrom) {
+          setConnectingFrom(null);
+          setConnectingPointerPos(null);
+          setConnectingTarget(null);
+          return;
+        }
+        if (editingConnectionId) {
+          setEditingConnectionId(null);
+          return;
+        }
+        if (selectedConnectionId && onSelectConnection) {
+          onSelectConnection(null);
+        }
         if (onSelectIds) onSelectIds([]);
         else onSelectId(null);
         return;
@@ -351,16 +403,24 @@ export function MoodboardStage({
       }
 
       // Delete: Delete or Backspace
-      if ((e.key === 'Delete' || e.key === 'Backspace') && effectiveSelectedIds.length > 0) {
-        e.preventDefault();
-        if (onDeleteSelected) {
-          onDeleteSelected();
-        } else if (onDeleteItem && effectiveSelectedIds[0]) {
-          onDeleteItem(effectiveSelectedIds[0]);
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedConnectionId && onDeleteConnection) {
+          e.preventDefault();
+          onDeleteConnection(selectedConnectionId);
+          onSelectConnection?.(null);
+          return;
         }
-        if (onSelectIds) onSelectIds([]);
-        else onSelectId(null);
-        return;
+        if (effectiveSelectedIds.length > 0) {
+          e.preventDefault();
+          if (onDeleteSelected) {
+            onDeleteSelected();
+          } else if (onDeleteItem && effectiveSelectedIds[0]) {
+            onDeleteItem(effectiveSelectedIds[0]);
+          }
+          if (onSelectIds) onSelectIds([]);
+          else onSelectId(null);
+          return;
+        }
       }
 
       // Duplicate: Cmd/Ctrl + D
@@ -426,6 +486,11 @@ export function MoodboardStage({
     onNudge,
     onNudgeSelected,
     onZoomToFit,
+    connectingFrom,
+    editingConnectionId,
+    selectedConnectionId,
+    onSelectConnection,
+    onDeleteConnection,
   ]);
 
   // Export stage to PNG
@@ -772,6 +837,10 @@ export function MoodboardStage({
       visible: false,
     });
 
+    if (selectedConnectionId && onSelectConnection) {
+      onSelectConnection(null);
+    }
+
     if (!('shiftKey' in e.evt && e.evt.shiftKey)) {
       if (onSelectIds) onSelectIds([]);
       else onSelectId(null);
@@ -780,8 +849,50 @@ export function MoodboardStage({
     }
   };
 
-  // Handle Stage Mouse Move for Marquee selection
+  // Handle Stage Mouse Move for Marquee selection & connection drag
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    // Handle active connection drag
+    if (connectingFrom) {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const currentCanvasX = (pointer.x - stage.x()) / stage.scaleX();
+      const currentCanvasY = (pointer.y - stage.y()) / stage.scaleY();
+      setConnectingPointerPos({ x: currentCanvasX, y: currentCanvasY });
+
+      // Check if pointer is hovering over another candidate item
+      let foundTarget: { itemId: string; anchor: AnchorPosition } | null = null;
+      for (const item of items) {
+        if (item.id === connectingFrom.itemId) continue;
+        const padding = 20;
+        if (
+          currentCanvasX >= item.x - padding &&
+          currentCanvasX <= item.x + item.width + padding &&
+          currentCanvasY >= item.y - padding &&
+          currentCanvasY <= item.y + item.height + padding
+        ) {
+          const anchors: AnchorPosition[] = ['top', 'right', 'bottom', 'left'];
+          let bestAnchor: AnchorPosition = 'left';
+          let minDistance = Infinity;
+
+          for (const a of anchors) {
+            const pt = getAnchorPoint(item, a);
+            const dist = Math.hypot(currentCanvasX - pt.x, currentCanvasY - pt.y);
+            if (dist < minDistance) {
+              minDistance = dist;
+              bestAnchor = a;
+            }
+          }
+          foundTarget = { itemId: item.id, anchor: bestAnchor };
+          break;
+        }
+      }
+      setConnectingTarget(foundTarget);
+      return;
+    }
+
     if (!isMarqueeSelectingRef.current || !marqueeStartPointerRef.current) return;
 
     const stage = stageRef.current;
@@ -854,13 +965,52 @@ export function MoodboardStage({
     }
   };
 
-  // Handle Stage Mouse Up for Marquee selection
+  // Handle Stage Mouse Up for Marquee selection & connection drag finish
   const handleStageMouseUp = () => {
+    if (connectingFrom) {
+      if (connectingTarget && onAddConnection) {
+        onAddConnection(
+          connectingFrom.itemId,
+          connectingTarget.itemId,
+          connectingFrom.anchor,
+          connectingTarget.anchor
+        );
+      }
+      setConnectingFrom(null);
+      setConnectingPointerPos(null);
+      setConnectingTarget(null);
+      return;
+    }
+
     if (isMarqueeSelectingRef.current) {
       isMarqueeSelectingRef.current = false;
       marqueeStartPointerRef.current = null;
       lastMarqueeHitIdsRef.current = [];
       setSelectionBox(null);
+    }
+  };
+
+  // Connection label editing helpers
+  const editingConnection = React.useMemo(() => {
+    if (!editingConnectionId) return null;
+    return connections.find((c) => c.id === editingConnectionId) || null;
+  }, [editingConnectionId, connections]);
+
+  const editingConnectionMidpoint = React.useMemo(() => {
+    if (!editingConnection) return { x: 0, y: 0 };
+    const source = items.find((i) => i.id === editingConnection.fromId);
+    const target = items.find((i) => i.id === editingConnection.targetId);
+    if (!source || !target) return { x: 0, y: 0 };
+    const start = getAnchorPoint(source, editingConnection.fromAnchor);
+    const end = getAnchorPoint(target, editingConnection.toAnchor);
+    return calculateBezierCurve(start, end, editingConnection.fromAnchor, editingConnection.toAnchor).midpoint;
+  }, [editingConnection, items]);
+
+  const handleSaveConnectionLabel = () => {
+    if (editingConnectionId && onUpdateConnectionLabel) {
+      onUpdateConnectionLabel(editingConnectionId, connectionLabelInput.trim());
+      setEditingConnectionId(null);
+      setConnectionLabelInput('');
     }
   };
 
@@ -1061,6 +1211,65 @@ export function MoodboardStage({
             />
           )}
 
+          {/* Active Canvas Connectors (rendered beneath cards for clean layering) */}
+          {connections.map((conn) => {
+            const source = items.find((i) => i.id === conn.fromId);
+            const target = items.find((i) => i.id === conn.targetId);
+            if (!source || !target) return null;
+            return (
+              <CanvasConnectorItem
+                key={conn.id}
+                connection={conn}
+                sourceItem={source}
+                targetItem={target}
+                isSelected={selectedConnectionId === conn.id}
+                scale={viewport.scale}
+                onSelect={(id) => {
+                  onSelectConnection?.(id);
+                  if (onSelectIds) onSelectIds([]);
+                  else onSelectId(null);
+                }}
+                onDelete={(id) => onDeleteConnection?.(id)}
+                onDoubleClick={(id) => {
+                  setEditingConnectionId(id);
+                  setConnectionLabelInput(conn.label || '');
+                }}
+              />
+            );
+          })}
+
+          {/* Live Elastic Drag-to-Connect Arrow */}
+          {connectingFrom && connectingPointerPos && (
+            <Arrow
+              points={
+                connectingTarget
+                  ? calculateBezierCurve(
+                      connectingFrom.startPoint,
+                      getAnchorPoint(
+                        items.find((i) => i.id === connectingTarget.itemId)!,
+                        connectingTarget.anchor
+                      ),
+                      connectingFrom.anchor,
+                      connectingTarget.anchor
+                    ).points
+                  : [
+                      connectingFrom.startPoint.x,
+                      connectingFrom.startPoint.y,
+                      connectingPointerPos.x,
+                      connectingPointerPos.y,
+                    ]
+              }
+              bezier={!!connectingTarget}
+              stroke="#D97706"
+              fill="#D97706"
+              strokeWidth={2 / Math.max(0.4, viewport.scale)}
+              dash={[6 / Math.max(0.4, viewport.scale), 4 / Math.max(0.4, viewport.scale)]}
+              pointerLength={8 / Math.max(0.4, viewport.scale)}
+              pointerWidth={6 / Math.max(0.4, viewport.scale)}
+              listening={false}
+            />
+          )}
+
           {/* Render All 5 Playground Objects in strict z-index order */}
           {sortedItems.map((item) => {
             const isSelected = effectiveSelectedIds.includes(item.id);
@@ -1155,6 +1364,29 @@ export function MoodboardStage({
               />
             );
           })}
+
+          {/* Cardinal Anchor Handles on Selected or Candidate Items */}
+          {!readOnly &&
+            sortedItems.map((item) => {
+              const isSelected = effectiveSelectedIds.includes(item.id);
+              const isConnectingTarget = connectingTarget?.itemId === item.id;
+              const isCandidate = connectingFrom !== null && connectingFrom.itemId !== item.id;
+
+              if (!isSelected && !isConnectingTarget && !isCandidate) return null;
+
+              return (
+                <CanvasItemAnchors
+                  key={`anchors-${item.id}`}
+                  item={item}
+                  scale={viewport.scale}
+                  onStartConnect={(itemId, anchor, pt) => {
+                    setConnectingFrom({ itemId, anchor, startPoint: pt });
+                    setConnectingPointerPos(pt);
+                    setConnectingTarget(null);
+                  }}
+                />
+              );
+            })}
 
           {/* Konva Transformer for resize (hidden in read-only mode) */}
           {!readOnly && (selectedNodes.length > 0 || selectedNode) && (
@@ -1298,6 +1530,38 @@ export function MoodboardStage({
               if (e.key === 'Escape') handleSaveIdeaEdit();
             }}
           />
+        </div>
+      )}
+
+      {/* Floating Modal / Input for Editing Connection Label */}
+      {!readOnly && editingConnection && (
+        <div
+          style={{
+            left: `${editingConnectionMidpoint.x * viewport.scale + viewport.x}px`,
+            top: `${editingConnectionMidpoint.y * viewport.scale + viewport.y}px`,
+            transform: 'translate(-50%, -50%)',
+          }}
+          className="absolute z-30 p-2.5 bg-surface border border-accent/60 rounded-lg shadow-floating flex items-center gap-2 min-w-[220px]"
+        >
+          <input
+            autoFocus
+            type="text"
+            value={connectionLabelInput}
+            onChange={(e) => setConnectionLabelInput(e.target.value)}
+            placeholder="Relationship label (e.g. Inspires)..."
+            className="flex-1 rounded bg-surface-subtle px-2.5 py-1 text-xs text-foreground border border-border outline-none focus:border-accent"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaveConnectionLabel();
+              if (e.key === 'Escape') setEditingConnectionId(null);
+            }}
+          />
+          <button
+            type="button"
+            onClick={handleSaveConnectionLabel}
+            className="text-xs font-medium text-accent hover:underline px-1 cursor-pointer"
+          >
+            Save
+          </button>
         </div>
       )}
     </div>
