@@ -45,6 +45,9 @@ export function MoodboardCanvas({
     items,
     selectedId,
     setSelectedId,
+    selectedIds,
+    setSelectedIds,
+    toggleSelectedId,
     viewport,
     setViewport,
     isLoading,
@@ -52,6 +55,7 @@ export function MoodboardCanvas({
     canUndo,
     undo,
     nudgeItem,
+    nudgeSelectedItems,
     zoomToFit,
     recordUndoAction,
     addReferenceItem,
@@ -60,6 +64,7 @@ export function MoodboardCanvas({
     addColorItem,
     addIdeaItem,
     duplicateItem,
+    duplicateSelectedItems,
     updateItemLocal,
     persistItemGeometry,
     updateTextContent,
@@ -67,6 +72,7 @@ export function MoodboardCanvas({
     updateIdeaContent,
     bringToFront,
     deleteItem,
+    deleteSelectedItems,
     zoomIn,
     zoomOut,
     resetViewport,
@@ -302,10 +308,16 @@ export function MoodboardCanvas({
       <DynamicMoodboardStage
         items={items}
         selectedId={selectedId}
+        selectedIds={selectedIds}
         viewport={viewport}
         readOnly={readOnly}
         onViewportChange={setViewport}
         onSelectId={setSelectedId}
+        onSelectIds={setSelectedIds}
+        onToggleSelectId={toggleSelectedId}
+        onDeleteSelected={deleteSelectedItems}
+        onDuplicateSelected={duplicateSelectedItems}
+        onNudgeSelected={nudgeSelectedItems}
         onUpdateItemLocal={updateItemLocal}
         onPersistGeometry={persistItemGeometry}
         onBringToFront={bringToFront}
@@ -382,6 +394,7 @@ export function MoodboardCanvas({
       <MoodboardToolbar
         scale={viewport.scale}
         selectedId={selectedId}
+        selectedCount={selectedIds.length}
         readOnly={readOnly}
         canUndo={canUndo}
         onUndo={undo}
@@ -391,12 +404,8 @@ export function MoodboardCanvas({
         onAddTextNote={handleAddTextNote}
         onAddColor={handleAddColor}
         onAddIdea={handleAddIdea}
-        onDuplicateSelected={() => {
-          if (selectedId) duplicateItem(selectedId);
-        }}
-        onDeleteSelected={() => {
-          if (selectedId) deleteItem(selectedId);
-        }}
+        onDuplicateSelected={duplicateSelectedItems}
+        onDeleteSelected={deleteSelectedItems}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onResetZoom={resetViewport}

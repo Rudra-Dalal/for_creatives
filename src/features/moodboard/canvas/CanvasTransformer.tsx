@@ -5,29 +5,32 @@ import { Transformer } from 'react-konva';
 import type Konva from 'konva';
 
 interface CanvasTransformerProps {
-  selectedNode: Konva.Node | null;
+  selectedNode?: Konva.Node | null;
+  selectedNodes?: Konva.Node[];
   keepRatio?: boolean;
   onTransformEnd?: () => void;
 }
 
 export function CanvasTransformer({
   selectedNode,
+  selectedNodes,
   keepRatio = true,
 }: CanvasTransformerProps) {
   const transformerRef = useRef<Konva.Transformer | null>(null);
 
+  const activeNodes = React.useMemo(() => {
+    if (selectedNodes && selectedNodes.length > 0) return selectedNodes;
+    if (selectedNode) return [selectedNode];
+    return [];
+  }, [selectedNode, selectedNodes]);
+
   useEffect(() => {
     if (!transformerRef.current) return;
-    if (selectedNode) {
-      transformerRef.current.nodes([selectedNode]);
-      transformerRef.current.getLayer()?.batchDraw();
-    } else {
-      transformerRef.current.nodes([]);
-      transformerRef.current.getLayer()?.batchDraw();
-    }
-  }, [selectedNode]);
+    transformerRef.current.nodes(activeNodes);
+    transformerRef.current.getLayer()?.batchDraw();
+  }, [activeNodes]);
 
-  if (!selectedNode) return null;
+  if (activeNodes.length === 0) return null;
 
   return (
     <Transformer

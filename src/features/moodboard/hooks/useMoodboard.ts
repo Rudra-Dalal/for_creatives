@@ -23,7 +23,24 @@ export interface UndoAction {
 
 export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], readOnly?: boolean) {
   const [items, setItems] = useState<MoodboardItem[]>(initialItems || []);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedId = selectedIds[0] ?? null;
+
+  const setSelectedId = useCallback((id: string | null) => {
+    setSelectedIds(id ? [id] : []);
+  }, []);
+
+  const toggleSelectedId = useCallback((id: string, isMulti = false) => {
+    setSelectedIds((prev) => {
+      if (!isMulti) {
+        return prev.includes(id) && prev.length === 1 ? [] : [id];
+      }
+      if (prev.includes(id)) {
+        return prev.filter((i) => i !== id);
+      }
+      return [...prev, id];
+    });
+  }, []);
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 0, y: 0, scale: 1 });
   const [isLoading, setIsLoading] = useState(!initialItems);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +154,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     } catch (err) {
       console.error('Failed to execute undo:', err);
     }
-  }, [lastAction, selectedId]);
+  }, [lastAction, selectedId, setSelectedId]);
 
   // Add reference item to canvas
   const addReferenceItem = async (
@@ -508,7 +525,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
   const deleteItem = async (id: string) => {
     const targetItem = items.find((i) => i.id === id);
     setItems((prev) => prev.filter((item) => item.id !== id));
-    if (selectedId === id) setSelectedId(null);
+    setSelectedIds((prev) => prev.filter((i) => i !== id));
 
     if (targetItem) {
       recordUndoAction({ type: 'DELETE', itemId: id, item: targetItem });
@@ -520,6 +537,87 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
       // Handled
     }
   };
+
+  // Bulk delete all selected items
+  const deleteSelectedItems = async () => {
+    if (selectedIds.length === 0) return;
+    const idsToDelete = [...selectedIds];
+    const targets = items.filter((i) => idsToDelete.includes(i.id));
+
+    setItems((prev) => prev.filter((item) => !idsToDelete.includes(item.id)));
+    setSelectedIds([]);
+
+    for (const target of targets) {
+      recordUndoAction({ type: 'DELETE', itemId: target.id, item: target });
+      try {
+        await moodboardService.deleteItem(target.id);
+      } catch {
+        // Handled
+      }
+    }
+  };
+
+  // Bulk duplicate all selected items
+  const duplicateSelectedItems = async (): Promise<MoodboardItem[]> => {
+    if (selectedIds.length === 0) return [];
+    const duplicated: MoodboardItem[] = [];
+    const newSelectedIds: string[] = [];
+
+    for (const id of selectedIds) {
+      const source = items.find((i) => i.id === id);
+      if (!source) continue;
+
+      const nextZ = getMaxZIndex() + 1;
+      const created = await moodboardService.createItem({
+        projectId,
+        referenceId: source.reference_id,
+        type: source.type,
+        content: source.content as unknown as Json,
+        x: source.x + 30,
+        y: source.y + 30,
+        width: source.width,
+        height: source.height,
+        zIndex: nextZ,
+      });
+
+      const itemWithRef: MoodboardItem = {
+        ...created,
+        reference: source.reference,
+      };
+      duplicated.push(itemWithRef);
+      newSelectedIds.push(created.id);
+      recordUndoAction({ type: 'DUPLICATE', itemId: created.id, item: itemWithRef });
+    }
+
+    if (duplicated.length > 0) {
+      setItems((prev) => [...prev, ...duplicated]);
+      setSelectedIds(newSelectedIds);
+    }
+    return duplicated;
+  };
+
+  // Bulk nudge all selected items
+  const nudgeSelectedItems = useCallback((dx: number, dy: number) => {
+    if (selectedIds.length === 0) return;
+    setItems((prev) =>
+      prev.map((item) => {
+        if (!selectedIds.includes(item.id)) return item;
+        const newX = Math.round(item.x + dx);
+        const newY = Math.round(item.y + dy);
+        persistItemGeometry(item.id, {
+          x: newX,
+          y: newY,
+          width: item.width,
+          height: item.height,
+        });
+        return {
+          ...item,
+          x: newX,
+          y: newY,
+        };
+      })
+    );
+  }, [selectedIds, persistItemGeometry]);
 
   // Viewport Zoom & Pan Helpers
   const zoomIn = () => {
@@ -579,6 +677,9 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     items,
     selectedId,
     setSelectedId,
+    selectedIds,
+    setSelectedIds,
+    toggleSelectedId,
     viewport,
     setViewport,
     isLoading,
@@ -588,6 +689,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     recordUndoAction,
     undo,
     nudgeItem,
+    nudgeSelectedItems,
     zoomToFit,
     refetch: fetchItems,
     addReferenceItem,
@@ -596,6 +698,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     addColorItem,
     addIdeaItem,
     duplicateItem,
+    duplicateSelectedItems,
     updateItemLocal,
     persistItemGeometry,
     updateTextContent,
@@ -603,6 +706,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     updateIdeaContent,
     bringToFront,
     deleteItem,
+    deleteSelectedItems,
     zoomIn,
     zoomOut,
     resetViewport,

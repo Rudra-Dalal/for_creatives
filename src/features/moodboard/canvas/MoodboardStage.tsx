@@ -17,14 +17,21 @@ import { CanvasTextItem } from './CanvasTextItem';
 import { CanvasColorItem } from './CanvasColorItem';
 import { CanvasIdeaItem } from './CanvasIdeaItem';
 import { CanvasTransformer } from './CanvasTransformer';
+import { ColorPickerPopover } from '../components/ColorPickerPopover';
 
 interface MoodboardStageProps {
   items: MoodboardItem[];
   selectedId: string | null;
+  selectedIds?: string[];
   viewport: CanvasViewport;
   readOnly?: boolean;
   onViewportChange: (viewport: CanvasViewport) => void;
   onSelectId: (id: string | null) => void;
+  onSelectIds?: (ids: string[]) => void;
+  onToggleSelectId?: (id: string, isMulti?: boolean) => void;
+  onDeleteSelected?: () => void;
+  onDuplicateSelected?: () => void;
+  onNudgeSelected?: (dx: number, dy: number) => void;
   onUpdateItemLocal: (
     id: string,
     updates: Partial<Pick<MoodboardItem, 'x' | 'y' | 'width' | 'height' | 'z_index' | 'content'>>
@@ -51,10 +58,16 @@ interface MoodboardStageProps {
 export function MoodboardStage({
   items,
   selectedId,
+  selectedIds,
   viewport,
   readOnly = false,
   onViewportChange,
   onSelectId,
+  onSelectIds,
+  onToggleSelectId,
+  onDeleteSelected,
+  onDuplicateSelected,
+  onNudgeSelected,
   onUpdateItemLocal,
   onPersistGeometry,
   onBringToFront,
@@ -75,10 +88,32 @@ export function MoodboardStage({
   const stageRef = useRef<Konva.Stage | null>(null);
   const initialGeometryRef = useRef<Map<string, { x: number; y: number; width: number; height: number; zIndex?: number }>>(new Map());
 
+  const effectiveSelectedIds = React.useMemo(() => {
+    if (selectedIds && selectedIds.length > 0) return selectedIds;
+    if (selectedId) return [selectedId];
+    return [];
+  }, [selectedIds, selectedId]);
+
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [selectedNodes, setSelectedNodes] = useState<Konva.Node[]>([]);
   const [selectedNode, setSelectedNode] = useState<Konva.Node | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
+  const dragStartPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+
+  // Marquee selection box state (Windows desktop / Figma style)
+  const [selectionBox, setSelectionBox] = useState<{
+    startX: number;
+    startY: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    visible: boolean;
+  } | null>(null);
+  const isMarqueeSelectingRef = useRef(false);
+  const marqueeStartPointerRef = useRef<{ x: number; y: number } | null>(null);
 
   // Middle-mouse drag panning state
   const isMiddlePanningRef = useRef(false);
@@ -188,19 +223,20 @@ export function MoodboardStage({
     return () => window.removeEventListener('resize', updateSize);
   }, []);
 
-  // Update selectedNode when selectedId changes
+  // Update selectedNodes and selectedNode when selection changes
   useEffect(() => {
-    if (!selectedId || !stageRef.current) {
+    if (effectiveSelectedIds.length === 0 || !stageRef.current) {
+      setSelectedNodes([]);
       setSelectedNode(null);
       return;
     }
-    const node = stageRef.current.findOne(`#${selectedId}`);
-    if (node) {
-      setSelectedNode(node);
-    } else {
-      setSelectedNode(null);
-    }
-  }, [selectedId, items]);
+    const nodes = effectiveSelectedIds
+      .map((id) => stageRef.current?.findOne(`#${id}`))
+      .filter((n): n is Konva.Node => !!n);
+
+    setSelectedNodes(nodes);
+    setSelectedNode(nodes[0] ?? null);
+  }, [effectiveSelectedIds, items]);
 
   // Keyboard shortcut listener (Undo, Delete, Escape, Duplicate, Nudge, Zoom-to-fit, Spacebar-pan)
   useEffect(() => {
@@ -226,6 +262,11 @@ export function MoodboardStage({
         return;
       }
 
+      // Track Shift key for multi-select
+      if (e.key === 'Shift') {
+        setIsShiftPressed(true);
+      }
+
       // Zoom to Fit: Cmd/Ctrl + 0
       if ((e.metaKey || e.ctrlKey) && e.key === '0') {
         e.preventDefault();
@@ -235,7 +276,8 @@ export function MoodboardStage({
 
       // Escape: Clear selection
       if (e.key === 'Escape') {
-        onSelectId(null);
+        if (onSelectIds) onSelectIds([]);
+        else onSelectId(null);
         return;
       }
 
@@ -252,22 +294,31 @@ export function MoodboardStage({
       }
 
       // Delete: Delete or Backspace
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && effectiveSelectedIds.length > 0) {
         e.preventDefault();
-        onDeleteItem(selectedId);
-        onSelectId(null);
+        if (onDeleteSelected) {
+          onDeleteSelected();
+        } else if (onDeleteItem && effectiveSelectedIds[0]) {
+          onDeleteItem(effectiveSelectedIds[0]);
+        }
+        if (onSelectIds) onSelectIds([]);
+        else onSelectId(null);
         return;
       }
 
       // Duplicate: Cmd/Ctrl + D
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd' && selectedId) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd' && effectiveSelectedIds.length > 0) {
         e.preventDefault();
-        onDuplicateItem(selectedId);
+        if (onDuplicateSelected) {
+          onDuplicateSelected();
+        } else if (onDuplicateItem && effectiveSelectedIds[0]) {
+          onDuplicateItem(effectiveSelectedIds[0]);
+        }
         return;
       }
 
       // Arrow keys nudge: 1px normal, 10px shift
-      if (selectedId && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      if (effectiveSelectedIds.length > 0 && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;
         let dx = 0;
@@ -277,7 +328,11 @@ export function MoodboardStage({
         if (e.key === 'ArrowUp') dy = -step;
         if (e.key === 'ArrowDown') dy = step;
 
-        onNudge?.(selectedId, dx, dy);
+        if (onNudgeSelected) {
+          onNudgeSelected(dx, dy);
+        } else if (onNudge && effectiveSelectedIds[0]) {
+          onNudge(effectiveSelectedIds[0], dx, dy);
+        }
         return;
       }
     };
@@ -285,6 +340,9 @@ export function MoodboardStage({
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
         setIsSpacePressed(false);
+      }
+      if (e.key === 'Shift') {
+        setIsShiftPressed(false);
       }
     };
 
@@ -295,7 +353,7 @@ export function MoodboardStage({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [
-    selectedId,
+    effectiveSelectedIds,
     dimensions,
     readOnly,
     editingTextItem,
@@ -303,9 +361,13 @@ export function MoodboardStage({
     editingIdeaItem,
     onUndo,
     onDeleteItem,
+    onDeleteSelected,
     onDuplicateItem,
+    onDuplicateSelected,
     onSelectId,
+    onSelectIds,
     onNudge,
+    onNudgeSelected,
     onZoomToFit,
   ]);
 
@@ -369,44 +431,124 @@ export function MoodboardStage({
     }
   }, [onRegisterExport, handleExportPNG]);
 
-  // Track initial geometry before drag
+  // Track initial geometry before drag with multi-selection support
   const handleItemDragStart = (item: MoodboardItem) => {
     if (readOnly) return;
-    initialGeometryRef.current.set(item.id, {
-      x: item.x,
-      y: item.y,
-      width: item.width,
-      height: item.height,
-      zIndex: item.z_index,
-    });
-    onBringToFront(item.id);
-    onSelectId(item.id);
-  };
 
-  // Handle item drag end with undo tracking
-  const handleItemDragEnd = (id: string, x: number, y: number) => {
-    if (readOnly) return;
-    const item = items.find((i) => i.id === id);
-    if (!item) return;
-
-    const initial = initialGeometryRef.current.get(id);
-    if (initial && (initial.x !== x || initial.y !== y)) {
-      onRecordUndoAction?.({
-        type: 'MOVE',
-        itemId: id,
-        prevGeometry: initial,
-        nextGeometry: { x, y, width: item.width, height: item.height, zIndex: item.z_index },
-      });
+    let currentSelection = effectiveSelectedIds;
+    if (!currentSelection.includes(item.id)) {
+      currentSelection = [item.id];
+      if (onSelectIds) onSelectIds([item.id]);
+      else onSelectId(item.id);
     }
 
-    onUpdateItemLocal(id, { x, y });
-    onPersistGeometry(id, {
-      x,
-      y,
-      width: item.width,
-      height: item.height,
-      zIndex: item.z_index,
+    dragStartPositionsRef.current.clear();
+    currentSelection.forEach((id) => {
+      const itm = items.find((i) => i.id === id);
+      if (itm) {
+        dragStartPositionsRef.current.set(id, { x: itm.x, y: itm.y });
+        initialGeometryRef.current.set(id, {
+          x: itm.x,
+          y: itm.y,
+          width: itm.width,
+          height: itm.height,
+          zIndex: itm.z_index,
+        });
+        onBringToFront(itm.id);
+      }
     });
+  };
+
+  // Synchronized drag move for all selected items
+  const handleStageDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
+    if (e.target === stageRef.current) return;
+
+    const draggedNode = e.target;
+    const draggedId = draggedNode.id();
+    if (!draggedId || effectiveSelectedIds.length <= 1 || !effectiveSelectedIds.includes(draggedId)) {
+      return;
+    }
+
+    const startPos = dragStartPositionsRef.current.get(draggedId);
+    if (!startPos) return;
+
+    const dx = draggedNode.x() - startPos.x;
+    const dy = draggedNode.y() - startPos.y;
+
+    effectiveSelectedIds.forEach((id) => {
+      if (id === draggedId) return;
+      const node = stageRef.current?.findOne(`#${id}`);
+      const otherStart = dragStartPositionsRef.current.get(id);
+      if (node && otherStart) {
+        node.x(otherStart.x + dx);
+        node.y(otherStart.y + dy);
+      }
+    });
+  };
+
+  // Handle item drag end with group move & undo tracking
+  const handleItemDragEnd = (id: string, x: number, y: number) => {
+    if (readOnly) return;
+
+    if (effectiveSelectedIds.length > 1 && effectiveSelectedIds.includes(id)) {
+      const startPos = dragStartPositionsRef.current.get(id);
+      const dx = startPos ? x - startPos.x : 0;
+      const dy = startPos ? y - startPos.y : 0;
+
+      effectiveSelectedIds.forEach((selectedItemId) => {
+        const item = items.find((i) => i.id === selectedItemId);
+        if (!item) return;
+        const initial = initialGeometryRef.current.get(selectedItemId);
+        const finalX = selectedItemId === id ? x : Math.round(item.x + dx);
+        const finalY = selectedItemId === id ? y : Math.round(item.y + dy);
+
+        onUpdateItemLocal(selectedItemId, { x: finalX, y: finalY });
+        onPersistGeometry(selectedItemId, {
+          x: finalX,
+          y: finalY,
+          width: item.width,
+          height: item.height,
+          zIndex: item.z_index,
+        });
+
+        if (initial && (initial.x !== finalX || initial.y !== finalY)) {
+          onRecordUndoAction?.({
+            type: 'MOVE',
+            itemId: selectedItemId,
+            prevGeometry: initial,
+            nextGeometry: {
+              x: finalX,
+              y: finalY,
+              width: item.width,
+              height: item.height,
+              zIndex: item.z_index,
+            },
+          });
+        }
+      });
+    } else {
+      const item = items.find((i) => i.id === id);
+      if (!item) return;
+
+      const initial = initialGeometryRef.current.get(id);
+      if (initial && (initial.x !== x || initial.y !== y)) {
+        onRecordUndoAction?.({
+          type: 'MOVE',
+          itemId: id,
+          prevGeometry: initial,
+          nextGeometry: { x, y, width: item.width, height: item.height, zIndex: item.z_index },
+        });
+      }
+
+      onUpdateItemLocal(id, { x, y });
+      onPersistGeometry(id, {
+        x,
+        y,
+        width: item.width,
+        height: item.height,
+        zIndex: item.z_index,
+      });
+    }
   };
 
   // Handle item transform end with undo tracking
@@ -480,14 +622,109 @@ export function MoodboardStage({
     }
   };
 
-  // Background click deselect
-  const handleBackgroundClick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    if (e.target === e.target.getStage() || e.target.name() === 'canvas-background') {
-      onSelectId(null);
+  // Handle Stage Mouse Down for Marquee selection
+  const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if ('button' in e.evt && e.evt.button === 1) return;
+    if (isSpacePressed) return;
+
+    const isBackground = e.target === stageRef.current || e.target.name() === 'canvas-background';
+    if (!isBackground) return;
+
+    if (editingTextItem) handleSaveTextEdit();
+    if (editingColorItem) handleSaveColorEdit();
+    if (editingIdeaItem) handleSaveIdeaEdit();
+
+    const stage = stageRef.current;
+    if (!stage) return;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+
+    const canvasX = (pointer.x - stage.x()) / stage.scaleX();
+    const canvasY = (pointer.y - stage.y()) / stage.scaleY();
+
+    isMarqueeSelectingRef.current = true;
+    marqueeStartPointerRef.current = { x: canvasX, y: canvasY };
+    setSelectionBox({
+      startX: canvasX,
+      startY: canvasY,
+      x: canvasX,
+      y: canvasY,
+      width: 0,
+      height: 0,
+      visible: true,
+    });
+
+    if (!('shiftKey' in e.evt && e.evt.shiftKey)) {
+      if (onSelectIds) onSelectIds([]);
+      else onSelectId(null);
       setSelectedNode(null);
-      if (editingTextItem) handleSaveTextEdit();
-      if (editingColorItem) handleSaveColorEdit();
-      if (editingIdeaItem) handleSaveIdeaEdit();
+    }
+  };
+
+  // Handle Stage Mouse Move for Marquee selection
+  const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if (!isMarqueeSelectingRef.current || !marqueeStartPointerRef.current) return;
+
+    const stage = stageRef.current;
+    if (!stage) return;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+
+    const currentCanvasX = (pointer.x - stage.x()) / stage.scaleX();
+    const currentCanvasY = (pointer.y - stage.y()) / stage.scaleY();
+
+    const startX = marqueeStartPointerRef.current.x;
+    const startY = marqueeStartPointerRef.current.y;
+
+    const boxX = Math.min(startX, currentCanvasX);
+    const boxY = Math.min(startY, currentCanvasY);
+    const boxWidth = Math.abs(currentCanvasX - startX);
+    const boxHeight = Math.abs(currentCanvasY - startY);
+
+    setSelectionBox({
+      startX,
+      startY,
+      x: boxX,
+      y: boxY,
+      width: boxWidth,
+      height: boxHeight,
+      visible: true,
+    });
+
+    const boxRight = boxX + boxWidth;
+    const boxBottom = boxY + boxHeight;
+
+    const hitItemIds = items
+      .filter((item) => {
+        const itemRight = item.x + item.width;
+        const itemBottom = item.y + item.height;
+        return (
+          item.x < boxRight &&
+          itemRight > boxX &&
+          item.y < boxBottom &&
+          itemBottom > boxY
+        );
+      })
+      .map((i) => i.id);
+
+    if (onSelectIds) {
+      if ('shiftKey' in e.evt && e.evt.shiftKey) {
+        const combined = Array.from(new Set([...effectiveSelectedIds, ...hitItemIds]));
+        onSelectIds(combined);
+      } else {
+        onSelectIds(hitItemIds);
+      }
+    } else if (hitItemIds.length > 0) {
+      onSelectId(hitItemIds[0]);
+    }
+  };
+
+  // Handle Stage Mouse Up for Marquee selection
+  const handleStageMouseUp = () => {
+    if (isMarqueeSelectingRef.current) {
+      isMarqueeSelectingRef.current = false;
+      marqueeStartPointerRef.current = null;
+      setSelectionBox(null);
     }
   };
 
@@ -635,11 +872,16 @@ export function MoodboardStage({
         y={viewport.y}
         scaleX={viewport.scale}
         scaleY={viewport.scale}
-        draggable={isSpacePressed || !selectedId}
+        draggable={isSpacePressed}
         onWheel={handleWheel}
         onDragEnd={handleStageDragEnd}
-        onClick={handleBackgroundClick}
-        onTap={handleBackgroundClick}
+        onDragMove={handleStageDragMove}
+        onMouseDown={handleStageMouseDown}
+        onMouseMove={handleStageMouseMove}
+        onMouseUp={handleStageMouseUp}
+        onTouchStart={handleStageMouseDown}
+        onTouchMove={handleStageMouseMove}
+        onTouchEnd={handleStageMouseUp}
       >
         <Layer>
           {/* Dotted Infinite Playground Canvas Background */}
@@ -664,9 +906,38 @@ export function MoodboardStage({
             />
           )}
 
+          {/* Marquee Selection Rectangle (Windows desktop / Figma style) */}
+          {selectionBox && selectionBox.visible && (selectionBox.width > 2 || selectionBox.height > 2) && (
+            <Rect
+              x={selectionBox.x}
+              y={selectionBox.y}
+              width={selectionBox.width}
+              height={selectionBox.height}
+              fill="rgba(217, 119, 6, 0.12)"
+              stroke="#d97706"
+              strokeWidth={1.5 / viewport.scale}
+              dash={[4 / viewport.scale, 4 / viewport.scale]}
+              listening={false}
+            />
+          )}
+
           {/* Render All 5 Playground Objects */}
           {items.map((item) => {
-            const isSelected = item.id === selectedId;
+            const isSelected = effectiveSelectedIds.includes(item.id);
+
+            const handleItemSelect = (node: Konva.Node) => {
+              if (isShiftPressed && onToggleSelectId) {
+                onToggleSelectId(item.id, true);
+              } else {
+                if (effectiveSelectedIds.length > 1 && effectiveSelectedIds.includes(item.id)) {
+                  // Keep multi-selection intact for group dragging
+                } else {
+                  if (onSelectIds) onSelectIds([item.id]);
+                  else onSelectId(item.id);
+                }
+              }
+              setSelectedNode(node);
+            };
 
             if (item.type === 'text') {
               return (
@@ -675,10 +946,7 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={(node) => {
-                    onSelectId(item.id);
-                    setSelectedNode(node);
-                  }}
+                  onSelect={handleItemSelect}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -694,10 +962,7 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={(node) => {
-                    onSelectId(item.id);
-                    setSelectedNode(node);
-                  }}
+                  onSelect={handleItemSelect}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -712,10 +977,7 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={(node) => {
-                    onSelectId(item.id);
-                    setSelectedNode(node);
-                  }}
+                  onSelect={handleItemSelect}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -731,10 +993,7 @@ export function MoodboardStage({
                   item={item}
                   isSelected={isSelected}
                   isDraggable={!readOnly}
-                  onSelect={(node) => {
-                    onSelectId(item.id);
-                    setSelectedNode(node);
-                  }}
+                  onSelect={handleItemSelect}
                   onDragStart={() => handleItemDragStart(item)}
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
@@ -750,10 +1009,7 @@ export function MoodboardStage({
                 item={item}
                 isSelected={isSelected}
                 isDraggable={!readOnly}
-                onSelect={(node) => {
-                  onSelectId(item.id);
-                  setSelectedNode(node);
-                }}
+                onSelect={handleItemSelect}
                 onDragStart={() => handleItemDragStart(item)}
                 onDragEnd={handleItemDragEnd}
                 onTransformEnd={handleItemTransformEnd}
@@ -762,9 +1018,9 @@ export function MoodboardStage({
           })}
 
           {/* Konva Transformer for resize (hidden in read-only mode) */}
-          {!readOnly && selectedNode && selectedItem && (
+          {!readOnly && selectedNodes.length > 0 && (
             <CanvasTransformer
-              selectedNode={selectedNode}
+              selectedNodes={selectedNodes}
             />
           )}
         </Layer>
@@ -794,47 +1050,32 @@ export function MoodboardStage({
         </div>
       )}
 
-      {/* Floating Editing Overlay for Color Item */}
+      {/* Figma-Style Color Selection Tool Popover */}
       {!readOnly && editingColorItem && (
-        <div
-          style={getEditingOverlayStyle(editingColorItem)}
-          className="absolute z-30 p-3 bg-surface border border-accent/60 rounded-lg shadow-floating flex flex-col gap-2.5 max-w-[220px]"
-        >
-          <div className="flex items-center justify-between pb-1 border-b border-border text-[11px] text-muted-foreground">
-            <span className="font-medium text-foreground">Edit Swatch</span>
-            <button
-              onClick={handleSaveColorEdit}
-              className="text-xs text-accent hover:underline"
-            >
-              Done
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={editingColorHex.startsWith('#') ? editingColorHex : `#${editingColorHex}`}
-              onChange={(e) => setEditingColorHex(e.target.value.toUpperCase())}
-              className="h-8 w-8 rounded cursor-pointer border border-border bg-transparent p-0"
-            />
-            <input
-              type="text"
-              value={editingColorHex}
-              onChange={(e) => setEditingColorHex(e.target.value.toUpperCase())}
-              placeholder="#D97706"
-              className="flex-1 rounded bg-surface-subtle px-2 py-1 font-mono text-xs text-foreground border border-border outline-none focus:border-accent"
-            />
-          </div>
-          <input
-            type="text"
-            value={editingColorLabel}
-            onChange={(e) => setEditingColorLabel(e.target.value)}
-            placeholder="Color label (optional)"
-            className="w-full rounded bg-surface-subtle px-2 py-1 text-xs text-foreground border border-border outline-none focus:border-accent"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === 'Escape') handleSaveColorEdit();
-            }}
-          />
-        </div>
+        <ColorPickerPopover
+          initialHex={editingColorHex}
+          initialLabel={editingColorLabel}
+          documentColors={
+            items
+              .filter((i) => i.type === 'color')
+              .map((i) => (i.content as ColorItemContent)?.hex)
+              .filter(Boolean) as string[]
+          }
+          onChange={(nextHex, nextLabel) => {
+            setEditingColorHex(nextHex);
+            setEditingColorLabel(nextLabel);
+            onUpdateColor(editingColorItem.id, nextHex, nextLabel);
+          }}
+          onClose={handleSaveColorEdit}
+          anchorPosition={{
+            left:
+              editingColorItem.x * viewport.scale +
+              viewport.x +
+              editingColorItem.width * viewport.scale +
+              16,
+            top: editingColorItem.y * viewport.scale + viewport.y,
+          }}
+        />
       )}
 
       {/* Floating Editing Overlay for Idea Item */}

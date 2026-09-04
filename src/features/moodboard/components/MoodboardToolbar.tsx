@@ -28,6 +28,7 @@ import {
 interface MoodboardToolbarProps {
   scale: number;
   selectedId: string | null;
+  selectedCount?: number;
   readOnly?: boolean;
   canUndo?: boolean;
   onUndo?: () => void;
@@ -49,6 +50,7 @@ interface MoodboardToolbarProps {
 export function MoodboardToolbar({
   scale,
   selectedId,
+  selectedCount = 0,
   readOnly = false,
   canUndo,
   onUndo,
@@ -221,15 +223,21 @@ export function MoodboardToolbar({
       )}
 
       {/* Contextual Item Actions (Duplicate / Delete) */}
-      {selectedId && !readOnly && (
+      {(selectedId || selectedCount > 0) && !readOnly && (
         <>
           <div className="h-4 w-px bg-border-subtle mx-1" />
+
+          {selectedCount > 1 && (
+            <span className="font-mono text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-surface-subtle border border-border">
+              {selectedCount} selected
+            </span>
+          )}
 
           <button
             type="button"
             onClick={onDuplicateSelected}
             className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors"
-            title="Duplicate (Cmd+D)"
+            title={selectedCount > 1 ? `Duplicate ${selectedCount} items (Cmd+D)` : 'Duplicate (Cmd+D)'}
           >
             <Copy className="h-3.5 w-3.5" />
           </button>
@@ -238,7 +246,7 @@ export function MoodboardToolbar({
             type="button"
             onClick={onDeleteSelected}
             className="flex h-7 w-7 items-center justify-center rounded-full text-red-400 hover:bg-danger/10 hover:text-red-300 transition-colors"
-            title="Delete (Backspace)"
+            title={selectedCount > 1 ? `Delete ${selectedCount} items (Backspace)` : 'Delete (Backspace)'}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
