@@ -8,20 +8,19 @@ drop policy if exists "Anyone can view shared project moodboard items" on public
 drop policy if exists "Anyone can view shared project direction notes" on public.direction_notes;
 drop policy if exists "Anyone can view shared project direction links" on public.direction_reference_links;
 
--- 2. Storage policy for shared project thumbnails
--- Allows reads on 'thumbnails' bucket ONLY for folders belonging to a project with an active share_token
+-- 2. Storage security for shared project thumbnails
+-- Drop the over-permissive storage policy that allowed listing thumbnails whenever share_token is not null.
+-- RLS policies on storage.objects cannot receive token parameters. Leaving an anon SELECT policy with
+-- `share_token is not null` enabled unauthenticated enumeration of shared project folders.
+-- By dropping this policy, anonymous users cannot list or query storage.objects via the Storage API.
+-- The thumbnails bucket is set to public = true so that specific thumbnail assets (whose unguessable paths
+-- are only disclosed to legitimate recipients via get_shared_project_bundle(p_token)) can be rendered
+-- directly by the browser without exposing bucket listing to anonymous users.
 drop policy if exists "Anyone can view thumbnails of shared projects" on storage.objects;
 
-create policy "Anyone can view thumbnails of shared projects"
-  on storage.objects for select
-  using (
-    bucket_id = 'thumbnails'
-    and exists (
-      select 1 from public.projects
-      where projects.id::text = (storage.foldername(name))[1]
-      and projects.share_token is not null
-    )
-  );
+update storage.buckets
+  set public = true
+  where id = 'thumbnails';
 
 -- 3. Token-scoped Secure RPC function
 -- Fetches project and child data strictly by exact token match, eliminating project enumeration
