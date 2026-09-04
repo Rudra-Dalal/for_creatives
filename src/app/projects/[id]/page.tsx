@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useProject } from '@/features/projects/hooks/useProject';
 import { ProjectHeader } from '@/features/projects/components/ProjectHeader';
@@ -20,13 +20,75 @@ import { AddReferenceDialog } from '@/features/references/components/AddReferenc
 import { referenceService } from '@/features/references/services/referenceService';
 import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
 
+type TabType = 'references' | 'moodboard' | 'direction';
+
+function isValidTab(val: unknown): val is TabType {
+  return val === 'references' || val === 'moodboard' || val === 'direction';
+}
+
 export default function ProjectWorkspacePage() {
   const params = useParams();
   const router = useRouter();
   const projectId = typeof params.id === 'string' ? params.id : '';
   const { project, isLoading, error } = useProject(projectId);
-  const [activeTab, setActiveTab] = useState<'references' | 'moodboard' | 'direction'>('references');
+
+  // Initialize activeTab from URL search param or localStorage
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (typeof window !== 'undefined') {
+      const urlTab = new URLSearchParams(window.location.search).get('tab');
+      if (isValidTab(urlTab)) return urlTab;
+      if (projectId) {
+        const savedTab = localStorage.getItem(`project_tab_${projectId}`);
+        if (isValidTab(savedTab)) return savedTab;
+      }
+    }
+    return 'references';
+  });
+
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Tab change handler that keeps URL query param and localStorage synchronized
+  const handleTabChange = useCallback(
+    (newTab: TabType) => {
+      setActiveTab(newTab);
+      if (typeof window !== 'undefined') {
+        if (projectId) {
+          localStorage.setItem(`project_tab_${projectId}`, newTab);
+        }
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', newTab);
+        window.history.replaceState(null, '', url.toString());
+      }
+    },
+    [projectId]
+  );
+
+  // Sync tab from URL or localStorage on mount/navigation
+  useEffect(() => {
+    if (typeof window === 'undefined' || !projectId) return;
+
+    const syncTabFromUrlOrStorage = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlTab = urlParams.get('tab');
+      if (isValidTab(urlTab)) {
+        setActiveTab(urlTab);
+        localStorage.setItem(`project_tab_${projectId}`, urlTab);
+      } else {
+        const savedTab = localStorage.getItem(`project_tab_${projectId}`);
+        if (isValidTab(savedTab)) {
+          setActiveTab(savedTab);
+          const url = new URL(window.location.href);
+          url.searchParams.set('tab', savedTab);
+          window.history.replaceState(null, '', url.toString());
+        }
+      }
+    };
+
+    syncTabFromUrlOrStorage();
+
+    window.addEventListener('popstate', syncTabFromUrlOrStorage);
+    return () => window.removeEventListener('popstate', syncTabFromUrlOrStorage);
+  }, [projectId]);
 
   // Command Palette & Modal States
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -111,7 +173,7 @@ export default function ProjectWorkspacePage() {
       <ProjectHeader
         project={project}
         activeTab={activeTab}
-        onTabChange={(tab) => setActiveTab(tab as 'references' | 'moodboard' | 'direction')}
+        onTabChange={(tab) => handleTabChange(tab as TabType)}
         onItemRestored={handleItemRestored}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onOpenTrash={() => setIsTrashOpen(true)}
@@ -140,7 +202,7 @@ export default function ProjectWorkspacePage() {
           <div className="sm:hidden flex items-center gap-1 rounded-md bg-surface p-1 border border-border mt-2">
             <button
               type="button"
-              onClick={() => setActiveTab('references')}
+              onClick={() => handleTabChange('references')}
               className={`flex-1 rounded py-1 text-xs font-medium text-center ${
                 activeTab === 'references'
                   ? 'bg-muted text-foreground'
@@ -151,7 +213,7 @@ export default function ProjectWorkspacePage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('moodboard')}
+              onClick={() => handleTabChange('moodboard')}
               className={`flex-1 rounded py-1 text-xs font-medium text-center ${
                 activeTab === 'moodboard'
                   ? 'bg-muted text-foreground'
@@ -162,7 +224,7 @@ export default function ProjectWorkspacePage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('direction')}
+              onClick={() => handleTabChange('direction')}
               className={`flex-1 rounded py-1 text-xs font-medium text-center ${
                 activeTab === 'direction'
                   ? 'bg-muted text-foreground'
@@ -179,7 +241,7 @@ export default function ProjectWorkspacePage() {
       <main className="flex-1 flex flex-col">
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as 'references' | 'moodboard' | 'direction')}
+          onValueChange={(v) => handleTabChange(v as TabType)}
           className="flex-1 flex flex-col"
         >
           {/* References Tab: Fully Functional Library */}
@@ -203,7 +265,7 @@ export default function ProjectWorkspacePage() {
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
-        onNavigate={(tab) => setActiveTab(tab)}
+        onNavigate={(tab) => handleTabChange(tab)}
         onAddReference={() => setIsAddRefOpen(true)}
         onOpenTrash={() => setIsTrashOpen(true)}
         onOpenShare={() => setIsShareOpen(true)}

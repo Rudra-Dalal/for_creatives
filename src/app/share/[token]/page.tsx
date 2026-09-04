@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { projectService } from '@/features/projects/services/projectService';
 import type { Project, SharedProjectBundle } from '@/features/projects/types';
@@ -14,6 +14,12 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Globe, Shield, ArrowRight, Lock } from 'lucide-react';
 import Link from 'next/link';
 
+type TabType = 'references' | 'moodboard' | 'direction';
+
+function isValidTab(val: unknown): val is TabType {
+  return val === 'references' || val === 'moodboard' || val === 'direction';
+}
+
 export default function SharedProjectPage() {
   const params = useParams();
   const router = useRouter();
@@ -23,7 +29,59 @@ export default function SharedProjectPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'references' | 'moodboard' | 'direction'>('references');
+
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (typeof window !== 'undefined') {
+      const urlTab = new URLSearchParams(window.location.search).get('tab');
+      if (isValidTab(urlTab)) return urlTab;
+      if (token) {
+        const saved = localStorage.getItem(`shared_tab_${token}`);
+        if (isValidTab(saved)) return saved;
+      }
+    }
+    return 'references';
+  });
+
+  const handleTabChange = useCallback(
+    (newTab: TabType) => {
+      setActiveTab(newTab);
+      if (typeof window !== 'undefined') {
+        if (token) {
+          localStorage.setItem(`shared_tab_${token}`, newTab);
+        }
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', newTab);
+        window.history.replaceState(null, '', url.toString());
+      }
+    },
+    [token]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !token) return;
+
+    const syncTabFromUrlOrStorage = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlTab = urlParams.get('tab');
+      if (isValidTab(urlTab)) {
+        setActiveTab(urlTab);
+        localStorage.setItem(`shared_tab_${token}`, urlTab);
+      } else {
+        const savedTab = localStorage.getItem(`shared_tab_${token}`);
+        if (isValidTab(savedTab)) {
+          setActiveTab(savedTab);
+          const url = new URL(window.location.href);
+          url.searchParams.set('tab', savedTab);
+          window.history.replaceState(null, '', url.toString());
+        }
+      }
+    };
+
+    syncTabFromUrlOrStorage();
+
+    window.addEventListener('popstate', syncTabFromUrlOrStorage);
+    return () => window.removeEventListener('popstate', syncTabFromUrlOrStorage);
+  }, [token]);
 
   useEffect(() => {
     async function loadSharedProject() {
@@ -107,7 +165,7 @@ export default function SharedProjectPage() {
         <nav className="hidden sm:flex items-center gap-1 rounded-md bg-surface p-1 border border-border">
           <button
             type="button"
-            onClick={() => setActiveTab('references')}
+            onClick={() => handleTabChange('references')}
             className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
               activeTab === 'references'
                 ? 'bg-muted text-foreground shadow-sm'
@@ -118,7 +176,7 @@ export default function SharedProjectPage() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('moodboard')}
+            onClick={() => handleTabChange('moodboard')}
             className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
               activeTab === 'moodboard'
                 ? 'bg-muted text-foreground shadow-sm'
@@ -129,7 +187,7 @@ export default function SharedProjectPage() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('direction')}
+            onClick={() => handleTabChange('direction')}
             className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
               activeTab === 'direction'
                 ? 'bg-muted text-foreground shadow-sm'
@@ -167,7 +225,7 @@ export default function SharedProjectPage() {
           <div className="sm:hidden flex items-center gap-1 rounded-md bg-surface p-1 border border-border mt-2">
             <button
               type="button"
-              onClick={() => setActiveTab('references')}
+              onClick={() => handleTabChange('references')}
               className={`flex-1 rounded py-1 text-xs font-medium text-center ${
                 activeTab === 'references' ? 'bg-muted text-foreground' : 'text-muted-foreground'
               }`}
@@ -176,7 +234,7 @@ export default function SharedProjectPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('moodboard')}
+              onClick={() => handleTabChange('moodboard')}
               className={`flex-1 rounded py-1 text-xs font-medium text-center ${
                 activeTab === 'moodboard' ? 'bg-muted text-foreground' : 'text-muted-foreground'
               }`}
@@ -185,7 +243,7 @@ export default function SharedProjectPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('direction')}
+              onClick={() => handleTabChange('direction')}
               className={`flex-1 rounded py-1 text-xs font-medium text-center ${
                 activeTab === 'direction' ? 'bg-muted text-foreground' : 'text-muted-foreground'
               }`}
@@ -200,7 +258,7 @@ export default function SharedProjectPage() {
       <main className="flex-1 flex flex-col">
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as 'references' | 'moodboard' | 'direction')}
+          onValueChange={(v) => handleTabChange(v as TabType)}
           className="flex-1 flex flex-col"
         >
           <TabsContent value="references" className="flex-1 flex flex-col mt-0">
