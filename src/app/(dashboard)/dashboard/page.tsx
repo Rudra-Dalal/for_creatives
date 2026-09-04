@@ -42,7 +42,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Top Header */}
-      <header className="sticky top-0 z-40 flex h-14 w-full items-center justify-between border-b border-border bg-background/95 px-6 backdrop-blur-none">
+      <header className="sticky top-0 z-40 flex h-14 w-full items-center justify-between border-b border-border bg-background px-6">
         <div className="flex items-center gap-2">
           <span className="font-display text-base font-medium tracking-tight text-foreground">
             Creative Workspace

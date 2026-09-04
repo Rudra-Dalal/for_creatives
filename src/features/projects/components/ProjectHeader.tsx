@@ -51,7 +51,7 @@ export function ProjectHeader({
 
   return (
     <>
-      <header className="sticky top-0 z-40 flex h-14 w-full items-center justify-between border-b border-border bg-background/95 px-6 backdrop-blur-none">
+      <header className="sticky top-0 z-40 flex h-14 w-full items-center justify-between border-b border-border bg-background px-6">
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard"

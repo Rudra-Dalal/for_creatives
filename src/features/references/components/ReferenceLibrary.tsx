@@ -330,7 +330,7 @@ export function ReferenceLibrary({
 
       {/* Floating Multi-Select Bulk Action Toolbar */}
       {!readOnly && selectedIds.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full border border-border bg-surface/95 backdrop-blur-md px-4 py-2 shadow-floating animate-in fade-in-50 slide-in-from-bottom-2">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full border border-border bg-surface px-4 py-2 shadow-floating animate-in fade-in-50 slide-in-from-bottom-2">
           <span className="text-xs font-medium text-foreground pr-2 border-r border-border">
             {selectedIds.length} selected
           </span>

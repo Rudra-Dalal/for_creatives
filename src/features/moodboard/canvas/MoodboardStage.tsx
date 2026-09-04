@@ -621,7 +621,7 @@ export function MoodboardStage({
       {/* Subtle Drag Over Indicator */}
       {isDragOver && (
         <div className="absolute inset-4 z-40 pointer-events-none rounded-xl border-2 border-dashed border-accent/60 bg-accent/5 flex items-center justify-center">
-          <div className="rounded-lg bg-surface/90 border border-border px-4 py-2 text-xs font-medium text-foreground shadow-floating backdrop-blur-sm">
+          <div className="rounded-lg bg-surface border border-border px-4 py-2 text-xs font-medium text-foreground shadow-floating">
             Drop image onto creative playground
           </div>
         </div>

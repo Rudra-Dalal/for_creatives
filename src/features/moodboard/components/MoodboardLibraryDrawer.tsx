@@ -102,7 +102,7 @@ export function MoodboardLibraryDrawer({
 
       {/* Drawer Panel */}
       <aside
-        className="absolute left-4 top-4 bottom-20 z-30 flex w-80 flex-col rounded-xl border border-border bg-surface/95 backdrop-blur-lg shadow-floating animate-in slide-in-from-left-4 duration-200"
+        className="absolute left-4 top-4 bottom-20 z-30 flex w-80 flex-col rounded-xl border border-border bg-surface shadow-floating animate-in slide-in-from-left-4 duration-200"
         aria-label="Reference Library Drawer"
       >
         {/* Header */}
