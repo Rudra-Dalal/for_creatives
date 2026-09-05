@@ -314,5 +314,11 @@ once real functionality exists.
 
 ## Git discipline
 
-Commit after each individually verified step, not per whole phase — this is
+Commit and push after each individually verified step, not per whole phase — this is
 the rollback safety net for a solo, zero-budget build.
+
+**Standing rule for reporting**: Work is never done until pushed to the remote. Before
+writing any "walkthrough" or "implementation summary" for the owner, always push the
+commits, fetch origin/main (`git fetch && git log origin/main -n 1 --oneline`), and
+include that exact output at the top of the report as verified confirmation that origin/main
+matches local.
