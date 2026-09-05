@@ -295,3 +295,125 @@ export async function safeFetchHtml(
     req.end();
   });
 }
+
+/**
+ * Safely fetches an image from an external URL while pinning the TCP/TLS connection
+ * directly to the pre-validated IP address. Validates image MIME type, enforces a 5MB
+ * maximum payload ceiling, and applies a 4-second socket timeout.
+ */
+export async function safeFetchImage(
+  targetUrl: string,
+  maxHops: number = 3
+): Promise<{ buffer: Buffer; contentType: string }> {
+  if (maxHops <= 0) {
+    throw new SSRFValidationError('Too many redirects');
+  }
+
+  const validated = await validateSafeUrl(targetUrl);
+  const { url, ip, family } = validated;
+
+  return new Promise((resolve, reject) => {
+    const isHttps = url.protocol === 'https:';
+    const clientModule = isHttps ? https : http;
+    const defaultPort = isHttps ? 443 : 80;
+    const port = url.port ? parseInt(url.port, 10) : defaultPort;
+
+    // Pinned DNS lookup agent prevents DNS rebinding
+    const agent = new clientModule.Agent({
+      lookup: (_hostname, options, callback) => {
+        const cb = (typeof options === 'function' ? options : callback) as (
+          err: Error | null,
+          address: string | Array<{ address: string; family: number }>,
+          family?: number
+        ) => void;
+        const opts = (typeof options === 'object' ? options : {}) as { all?: boolean };
+        if (opts?.all) {
+          cb(null, [{ address: ip, family }]);
+        } else {
+          cb(null, ip, family);
+        }
+      },
+    });
+
+    const requestOptions: https.RequestOptions = {
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port,
+      path: `${url.pathname}${url.search}`,
+      method: 'GET',
+      agent,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 CreativeWorkspace/1.0',
+        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      servername: url.hostname,
+      timeout: 4000,
+    };
+
+    const req = clientModule.request(requestOptions, (res) => {
+      // Handle 3xx Redirects
+      if (
+        res.statusCode &&
+        res.statusCode >= 300 &&
+        res.statusCode < 400 &&
+        res.headers.location
+      ) {
+        const redirectUrl = new URL(res.headers.location, url.href).href;
+        req.destroy();
+        safeFetchImage(redirectUrl, maxHops - 1)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+
+      if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+        req.destroy();
+        reject(new Error(`Upstream server returned HTTP status ${res.statusCode}`));
+        return;
+      }
+
+      const rawContentType = res.headers['content-type'] || '';
+      const contentType = rawContentType.split(';')[0].trim().toLowerCase();
+
+      // Guard: strictly enforce image MIME type
+      if (!contentType.startsWith('image/')) {
+        req.destroy();
+        reject(new Error(`Invalid upstream content-type: expected image/*, received '${rawContentType}'`));
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+      const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB max ceiling
+
+      res.on('data', (chunk: Buffer) => {
+        totalBytes += chunk.length;
+        if (totalBytes > MAX_IMAGE_BYTES) {
+          req.destroy();
+          reject(new Error('Image payload exceeded maximum size limit (5MB)'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+
+      res.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        resolve({ buffer, contentType });
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Connection timed out'));
+    });
+
+    req.on('error', (err) => {
+      reject(err);
+    });
+
+    req.end();
+  });
+}
+

@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { Group, Rect, Image as KonvaImage, Text, Path } from 'react-konva';
 import useImage from 'use-image';
 import type Konva from 'konva';
 import type { MoodboardItem, ReferenceItemContent } from '../types';
+import { getCanvasSafeImageUrl } from '../utils/canvasImageUtils';
 
 interface CanvasReferenceItemProps {
   item: MoodboardItem;
@@ -18,6 +19,7 @@ interface CanvasReferenceItemProps {
   onTransformEnd: (id: string, x: number, y: number, width: number, height: number) => void;
   onDimensionsCorrected?: (id: string, width: number, height: number) => void;
   isDraggable?: boolean;
+  shareToken?: string;
 }
 
 export function CanvasReferenceItem({
@@ -32,12 +34,17 @@ export function CanvasReferenceItem({
   onTransformEnd,
   onDimensionsCorrected,
   isDraggable = true,
+  shareToken,
 }: CanvasReferenceItemProps) {
   const groupRef = useRef<Konva.Group | null>(null);
   const correctedRef = useRef(false);
 
   const content = (item.content as ReferenceItemContent) || {};
-  const imageUrl = item.reference?.thumbnail_url || content.thumbnail_url || '';
+  const rawImageUrl = item.reference?.thumbnail_url || content.thumbnail_url || '';
+  const imageUrl = useMemo(
+    () => getCanvasSafeImageUrl(rawImageUrl, shareToken),
+    [rawImageUrl, shareToken]
+  );
   const title = item.reference?.title || content.title || 'Reference';
   const domain = item.reference?.source_domain || content.source_domain || '';
 

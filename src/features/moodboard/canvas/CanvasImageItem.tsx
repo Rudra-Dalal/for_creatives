@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { Group, Rect, Image as KonvaImage, Text } from 'react-konva';
 import useImage from 'use-image';
 import type Konva from 'konva';
 import type { MoodboardItem, ImageItemContent } from '../types';
+import { getCanvasSafeImageUrl } from '../utils/canvasImageUtils';
 
 interface CanvasImageItemProps {
   item: MoodboardItem;
@@ -16,6 +17,7 @@ interface CanvasImageItemProps {
   onTransformEnd: (id: string, x: number, y: number, width: number, height: number) => void;
   onDimensionsCorrected?: (id: string, width: number, height: number) => void;
   isDraggable?: boolean;
+  shareToken?: string;
 }
 
 export function CanvasImageItem({
@@ -28,12 +30,17 @@ export function CanvasImageItem({
   onTransformEnd,
   onDimensionsCorrected,
   isDraggable = true,
+  shareToken,
 }: CanvasImageItemProps) {
   const groupRef = useRef<Konva.Group | null>(null);
   const correctedRef = useRef(false);
 
   const content = (item.content as ImageItemContent) || {};
-  const imageUrl = content.imageUrl || '';
+  const rawImageUrl = content.imageUrl || '';
+  const imageUrl = useMemo(
+    () => getCanvasSafeImageUrl(rawImageUrl, shareToken),
+    [rawImageUrl, shareToken]
+  );
   const fileName = content.fileName || 'Image';
 
   const [image, imageStatus] = useImage(imageUrl, 'anonymous');

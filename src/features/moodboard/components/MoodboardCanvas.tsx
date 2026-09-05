@@ -35,6 +35,7 @@ interface MoodboardCanvasProps {
   projectId: string;
   projectName?: string;
   readOnly?: boolean;
+  shareToken?: string;
   initialItems?: MoodboardItem[];
   onNavigateToDirection?: (directionNoteId: string) => void;
 }
@@ -43,6 +44,7 @@ export function MoodboardCanvas({
   projectId,
   projectName,
   readOnly = false,
+  shareToken,
   initialItems,
   onNavigateToDirection,
 }: MoodboardCanvasProps) {
@@ -493,6 +495,7 @@ export function MoodboardCanvas({
         selectedIds={selectedIds}
         viewport={viewport}
         readOnly={readOnly}
+        shareToken={shareToken}
         activeTool={activeTool}
         penColor={penColor}
         penWidth={penWidth}

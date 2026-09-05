@@ -33,6 +33,7 @@ interface MoodboardStageProps {
   selectedIds?: string[];
   viewport: CanvasViewport;
   readOnly?: boolean;
+  shareToken?: string;
   activeTool?: 'select' | 'pen' | 'eraser';
   penColor?: string;
   penWidth?: number;
@@ -95,6 +96,7 @@ export function MoodboardStage({
   selectedIds,
   viewport,
   readOnly = false,
+  shareToken,
   activeTool = 'select',
   penColor = '#D97706',
   penWidth = 4,
@@ -1637,6 +1639,7 @@ export function MoodboardStage({
                   onDragEnd={handleItemDragEnd}
                   onTransformEnd={handleItemTransformEnd}
                   onDimensionsCorrected={handleDimensionsCorrected}
+                  shareToken={shareToken}
                 />
               );
             }
@@ -1694,6 +1697,7 @@ export function MoodboardStage({
                 onDragEnd={handleItemDragEnd}
                 onTransformEnd={handleItemTransformEnd}
                 onDimensionsCorrected={handleDimensionsCorrected}
+                shareToken={shareToken}
               />
             );
           })}

@@ -75,6 +75,24 @@ Subsequent canvas additions audited and approved by the owner:
   Seamlessly integrated with Creative Direction: promoting a canvas idea with connected
   references automatically links them into `direction_reference_links`. Includes single-step
   undo and midpoint relationship labels.
+- **Freehand Pen Scribble Tool (`stroke` type)**: Freehand vector pen tool with configurable
+  stroke width (2, 4, 8px) and palette/hex color selection. Employs Douglas-Peucker point
+  decimation and radial filtering (`strokeUtils.ts`) to compress point data, normalizes relative
+  coordinates to bounding boxes to reduce jsonb storage bloat, and directly mutates the Konva
+  Line node ref during drag to eliminate React re-renders. Persisted in `moodboard_items` with
+  `type: 'stroke'`.
+- **Whole-Stroke Eraser Tool**: Dedicated eraser tool (`E` or `Shift+P` toggle) detecting stroke
+  intersections (`isPathIntersectingStroke` / `isPointIntersectingStroke`) to soft-delete entire
+  strokes upon contact, commits batch deletions on mouseup, and integrates with single-step batch
+  undo (`BATCH_DELETE`) to restore deleted strokes simultaneously.
+- **Canvas Direction Inspector Drawer**: Slide-over inspector panel (`CanvasDirectionInspector.tsx`)
+  providing instant details for any selected canvas item, inline promotion of Idea cards into
+  creative direction notes with connected references auto-linked, and bidirectional linking/unlinking
+  of references directly from the canvas.
+- **Card Constraints & Compression**: Locked aspect ratio during reference and image item placement
+  and resizing; client-side image compression strictly bounded under 1MB storage bucket limits.
+- **Zoom-Crisp Dotted Grid**: Dynamic background canvas redraw ensuring background grid dots
+  remain sharp at any zoom level.
 - **Bugfix against core rules**: Moodboard saves surface visible saving,
   saved, and error banner feedback in compliance with the "no silent failures" rule.
 
@@ -130,29 +148,42 @@ file needs an obvious reason to exist.
   disallowed) is also in place — do not remove it.
 - **Storage bucket policies too, not just tables** — same per-user,
   per-project rule applies to the `thumbnails` bucket.
-- **SSRF protection on `/api/metadata`** (`src/lib/security/ssrf.ts`):
+- **SSRF protection on `/api/metadata` and `/api/proxy-image`** (`src/lib/security/ssrf.ts`):
   scheme allowlist, DNS pre-resolution, private/loopback/link-local IP
   blocklist, and — critically — the outgoing fetch is pinned to the
   validated IP via a custom `lookup` on the HTTP(S) agent, preventing DNS
   rebinding between check and fetch. Do not weaken this, and do not
   re-resolve the hostname at fetch time.
+- **Per-IP Rate Limiting on public endpoints** (`src/lib/security/rateLimit.ts`):
+  In-memory sliding-window limiter on `/api/metadata` (25 req/min) and
+  `/api/proxy-image` (75 req/min). Plainly stated trade-off: this in-memory
+  limiter is per-instance on serverless (Vercel), not a globally coordinated
+  distributed cap across the whole app — an intentional zero-cost trade-off
+  that throttles burst abuse without paid infrastructure or external databases,
+  not a hard global guarantee.
 - **Never commit secrets.** Keys live in `.env.local` (gitignored) and in
   Vercel's environment settings — never hardcoded, never committed.
 
 ## Database schema (as built)
 
     users              id, email, created_at
-    projects           id, user_id, name, description, created_at, updated_at
+    projects           id, user_id, name, description, share_token (nullable),
+                        created_at, updated_at
     references         id, project_id, url, title, thumbnail_url,
-                        source_domain, note, tags, created_at
+                        source_domain, note, tags, created_at, deleted_at (nullable)
     moodboard_items    id, project_id, reference_id (nullable), type,
                         content (jsonb), x, y, width, height, z_index,
-                        created_at, updated_at
-                        -- type in ('reference', 'text', 'image', 'color', 'idea')
-    direction_notes    id, project_id, title, description, created_at, updated_at
+                        created_at, updated_at, deleted_at (nullable)
+                        -- type in ('reference', 'text', 'image', 'color', 'idea', 'stroke')
+    direction_notes    id, project_id, title, description,
+                        created_at, updated_at, deleted_at (nullable)
     direction_reference_links
                         id, direction_note_id, reference_id, created_at
                         -- unique(direction_note_id, reference_id)
+
+    Functions / RPCs:
+    get_shared_project_bundle(p_token text)
+                        -- security definer, token-scoped read-only project bundle fetch
 
 `direction_reference_links` is the core architectural requirement — many-to-
 many in both directions. Do not simplify it. All schema changes go through
@@ -172,7 +203,7 @@ usable thumbnail exists or the user manually uploads one — resize/compress
 ## Moodboard canvas
 
 react-konva, full-bleed, pan/zoom/drag/resize, persisted x/y/width/height/
-z-index per item. Item types: reference, text, image, color, idea (see
+z-index per item. Item types: reference, text, image, color, idea, stroke (see
 "Scope adopted mid-build" above). References drag in from a collapsible
 library drawer that never permanently consumes significant screen space.
 Visual grouping by proximity is enough — no formal container/group system.
@@ -209,27 +240,33 @@ slide and ease. Canvas pan/zoom/drag feels inertial, never robotic.
 Are.na, Cosmos, Milanote for reference-workflow thinking. Build an original
 visual system.
 
-## V1 Definition of Done — met
+## V1 Definition of Done — code complete, live owner verification pending
 
 Create a project, save 15 real references (including one hitting the manual
 fallback), arrange 2+ moodboard clusters, create a direction note, link 3
 references, confirm the link both directions, refresh, confirm everything
-persists. This must be personally re-run against live data by the owner
-before any release is considered trustworthy — an agent-reported pass alone
-is not sufficient evidence.
+persists. All features are built and passing automated builds, but this
+must be personally re-run against live data by the owner before any release
+is considered trustworthy — an agent-reported pass alone is not sufficient
+evidence. As of this audit, owner verification against live data has not
+been recorded.
 
-## Phase 2 scope — approved, in progress
+## Phase 2 scope — fully implemented in codebase (owner live verification pending)
 
 1. **Trust & safety:** soft delete (`deleted_at` column) + restore/Trash
-   view for references, direction notes, and moodboard items. One-level
-   undo for the last canvas action.
+   view (`TrashModal`) for references, direction notes, and moodboard items.
+   One-level undo for canvas actions (`ADD`, `DELETE`, `MOVE`, `RESIZE`,
+   `DUPLICATE`, `BATCH_MOVE`, `BATCH_DELETE`).
 2. **Quality of life:** command palette (Cmd/Ctrl+K) for navigation and
    creation; multi-select + bulk tag/delete in the reference library;
    canvas keyboard shortcuts (delete, duplicate, arrow-key nudge,
    zoom-to-fit, spacebar-pan); client-side color palette extraction from
    reference thumbnails (algorithmic, in-browser, no external API).
-3. **Export:** moodboard-as-PNG, direction-note-as-PDF.
-4. **Light sharing:** single read-only, revocable share link per project.
+3. **Export:** moodboard-as-PNG (`stage.toDataURL`), direction-note-as-PDF
+   (`DirectionExportPdfModal` with clean `@media print` layout).
+4. **Light sharing:** single read-only, revocable share link per project
+   using token-scoped `get_shared_project_bundle` RPC (bypasses RLS securely
+   without leaking project listings or requiring service role keys).
    No comments or approval workflows yet — that's explicitly deferred
    until real usage asks for it.
 
@@ -245,6 +282,10 @@ see Phase 3), design version uploads, teams/roles/collaboration,
 notifications, dashboard analytics, browser extension, mobile app, offline
 mode. These are deliberately deferred, not forgotten — see the Master
 Project Document for the reasoning behind each.
+
+## Technical debt & architecture backlog
+
+- **`MoodboardStage.tsx` & `useMoodboard.ts` modularization**: `MoodboardStage.tsx` (~68 KB / 1,700 lines) and `useMoodboard.ts` (~42 KB / 1,100 lines) have concentrated multiple canvas responsibilities (Konva stage management, marquee math, gesture handlers, connector arrows, pen drawing, eraser math, keyboard shortcuts, drawer/file drag-and-drop, PNG serialization). Flagged for future refactoring once live verification and immediate bugfixes (PNG export CORS-taint proxy) are resolved. Target: decompose into focused custom hooks (`useCanvasGestures`, `useCanvasKeyboardShortcuts`, `useConnectorTopology`) and modular stage layers without altering visual behavior.
 
 ## Hard rule — effective since the mid-build scope incident, still in force
 

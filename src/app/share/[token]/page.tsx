@@ -274,6 +274,7 @@ export default function SharedProjectPage() {
               projectId={project.id}
               projectName={project.name}
               readOnly={true}
+              shareToken={token}
               initialItems={bundle?.moodboard_items}
             />
           </TabsContent>

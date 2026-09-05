@@ -2,9 +2,38 @@ import { NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 import { safeFetchHtml, SSRFValidationError } from '@/lib/security/ssrf';
 import { extractDomain, normalizeUrl } from '@/lib/utils/url';
+import { checkRateLimit, getClientIp } from '@/lib/security/rateLimit';
 import type { ScrapedMetadata } from '@/types/common';
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+
+  // Per-IP Rate Limiting (25 requests / min per IP)
+  const rateLimit = checkRateLimit(`metadata:${ip}`, {
+    limit: 25,
+    windowMs: 60 * 1000,
+  });
+
+  const rateLimitHeaders = {
+    'X-RateLimit-Limit': String(rateLimit.limit),
+    'X-RateLimit-Remaining': String(rateLimit.remaining),
+    'X-RateLimit-Reset': String(rateLimit.reset),
+  };
+
+  if (!rateLimit.success) {
+    const retryAfter = Math.max(1, rateLimit.reset - Math.ceil(Date.now() / 1000));
+    return NextResponse.json(
+      { error: 'Too many requests, please try again later.' },
+      {
+        status: 429,
+        headers: {
+          ...rateLimitHeaders,
+          'Retry-After': String(retryAfter),
+        },
+      }
+    );
+  }
+
   try {
     const body = await request.json();
     const rawUrl = body?.url;
@@ -12,7 +41,7 @@ export async function POST(request: Request) {
     if (!rawUrl || typeof rawUrl !== 'string') {
       return NextResponse.json(
         { error: 'A valid url string is required' },
-        { status: 400 }
+        { status: 400, headers: rateLimitHeaders }
       );
     }
 
