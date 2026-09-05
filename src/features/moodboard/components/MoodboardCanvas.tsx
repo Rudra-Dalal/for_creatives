@@ -81,6 +81,7 @@ export function MoodboardCanvas({
     bringToFront,
     deleteItem,
     deleteSelectedItems,
+    addStrokeItem,
     alignSelectedItems,
     distributeSelectedItems,
     autoArrange,
@@ -101,6 +102,11 @@ export function MoodboardCanvas({
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // Pen / Scribble tool state
+  const [activeTool, setActiveTool] = useState<'select' | 'pen'>('select');
+  const [penColor, setPenColor] = useState<string>('#D97706');
+  const [penWidth, setPenWidth] = useState<number>(4);
+
   // Color Swatch Dialog state (react-colorful)
   const [isColorDialogOpen, setIsColorDialogOpen] = useState(false);
   const [colorDialogProps, setColorDialogProps] = useState<{
@@ -109,6 +115,7 @@ export function MoodboardCanvas({
     label: string;
     title: string;
     confirmLabel: string;
+    isPen?: boolean;
   }>({
     hex: '#D97706',
     label: 'Primary Amber',
@@ -238,12 +245,28 @@ export function MoodboardCanvas({
       label: 'Primary Amber',
       title: 'Add Color Swatch',
       confirmLabel: 'Place Swatch',
+      isPen: false,
+    });
+    setIsColorDialogOpen(true);
+  };
+
+  const handleOpenPenColorDialog = () => {
+    setColorDialogProps({
+      hex: penColor,
+      label: 'Stroke Color',
+      title: 'Pen Stroke Color',
+      confirmLabel: 'Set Color',
+      isPen: true,
     });
     setIsColorDialogOpen(true);
   };
 
   const handleConfirmColor = async (hex: string, label: string) => {
     try {
+      if (colorDialogProps.isPen) {
+        setPenColor(hex);
+        return;
+      }
       if (colorDialogProps.id) {
         updateColorContent(colorDialogProps.id, hex, label);
       } else {
@@ -469,6 +492,11 @@ export function MoodboardCanvas({
         selectedIds={selectedIds}
         viewport={viewport}
         readOnly={readOnly}
+        activeTool={activeTool}
+        penColor={penColor}
+        penWidth={penWidth}
+        onChangeActiveTool={setActiveTool}
+        onAddStroke={addStrokeItem}
         connections={connections}
         selectedConnectionId={selectedConnectionId}
         onSelectConnection={setSelectedConnectionId}
@@ -572,6 +600,12 @@ export function MoodboardCanvas({
         selectedId={selectedId}
         selectedCount={selectedIds.length}
         readOnly={readOnly}
+        activeTool={activeTool}
+        onTogglePenTool={() => setActiveTool((prev) => (prev === 'pen' ? 'select' : 'pen'))}
+        penColor={penColor}
+        onOpenPenColorPicker={handleOpenPenColorDialog}
+        penWidth={penWidth}
+        onChangePenWidth={setPenWidth}
         canUndo={canUndo}
         onUndo={handleUndo}
         isLibraryOpen={isLibraryOpen}

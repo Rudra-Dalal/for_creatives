@@ -385,6 +385,9 @@ export function TrashModal({
                     title = `Color: ${(item.content as { hex?: string })?.hex || 'Swatch'}`;
                   } else if (item.type === 'image') {
                     title = (item.content as { fileName?: string })?.fileName || 'Canvas Image';
+                  } else if (item.type === 'stroke') {
+                    const strokeColor = (item.content as { color?: string })?.color || '#D97706';
+                    title = `Drawing / Scribble (${strokeColor})`;
                   }
 
                   return (

@@ -33,6 +33,7 @@ import {
   AlignEndVertical,
   Columns,
   Rows,
+  PenTool,
 } from 'lucide-react';
 import type { MoodboardItem } from '../types';
 import type { AlignmentType, DistributionType } from '../utils/layoutUtils';
@@ -42,6 +43,12 @@ interface MoodboardToolbarProps {
   selectedId: string | null;
   selectedCount?: number;
   readOnly?: boolean;
+  activeTool?: 'select' | 'pen';
+  onTogglePenTool?: () => void;
+  penColor?: string;
+  onOpenPenColorPicker?: () => void;
+  penWidth?: number;
+  onChangePenWidth?: (width: number) => void;
   canUndo?: boolean;
   onUndo?: () => void;
   isLibraryOpen: boolean;
@@ -73,6 +80,12 @@ export function MoodboardToolbar({
   selectedId,
   selectedCount = 0,
   readOnly = false,
+  activeTool = 'select',
+  onTogglePenTool,
+  penColor = '#D97706',
+  onOpenPenColorPicker,
+  penWidth = 4,
+  onChangePenWidth,
   canUndo,
   onUndo,
   isLibraryOpen,
@@ -173,6 +186,70 @@ export function MoodboardToolbar({
             <FolderPlus className="h-3.5 w-3.5 text-muted-foreground" />
             <span>Library</span>
           </Button>
+
+          {/* Pen / Scribble Drawing Tool Toggle */}
+          <Button
+            variant={activeTool === 'pen' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={onTogglePenTool}
+            className={`h-8 rounded-full gap-1.5 px-3 text-xs font-medium transition-colors ${
+              activeTool === 'pen'
+                ? 'bg-accent/15 text-accent border border-accent/40 hover:bg-accent/20'
+                : 'text-foreground hover:bg-surface-hover'
+            }`}
+            title="Pen / Scribble Drawing Tool (P)"
+          >
+            <PenTool className="h-3.5 w-3.5" />
+            <span>Draw</span>
+            <span className="text-[10px] font-mono opacity-60 ml-0.5">P</span>
+          </Button>
+
+          {/* When Pen Mode is active, reveal restrained styling controls: Color swatch & 3-step width toggle */}
+          {activeTool === 'pen' && (
+            <div className="flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-full bg-surface-subtle/80 border border-border/70">
+              {/* Color Swatch Trigger */}
+              <button
+                type="button"
+                onClick={onOpenPenColorPicker}
+                className="flex items-center justify-center h-6 w-6 rounded-full hover:bg-surface-hover transition-colors"
+                title="Change Pen Color"
+              >
+                <span
+                  className="h-3.5 w-3.5 rounded-full border border-border/80 shadow-sm shrink-0"
+                  style={{ backgroundColor: penColor || '#D97706' }}
+                />
+              </button>
+
+              {/* Discrete 3-step Stroke Width: 2px, 4px, 8px */}
+              <div className="flex items-center gap-0.5 border-l border-border/60 pl-1">
+                {[
+                  { width: 2, label: 'Fine', indicator: 'h-1 w-1' },
+                  { width: 4, label: 'Med', indicator: 'h-1.5 w-1.5' },
+                  { width: 8, label: 'Bold', indicator: 'h-2 w-2' },
+                ].map((step) => {
+                  const isActive = (penWidth || 4) === step.width;
+                  return (
+                    <button
+                      key={step.width}
+                      type="button"
+                      onClick={() => onChangePenWidth?.(step.width)}
+                      className={`h-6 px-1.5 rounded text-[11px] font-medium transition-colors flex items-center gap-1 ${
+                        isActive
+                          ? 'bg-accent/20 text-accent font-semibold'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+                      }`}
+                      title={`${step.label} (${step.width}px)`}
+                    >
+                      <span
+                        className={`rounded-full bg-current ${step.indicator}`}
+                      />
+                      <span className="text-[10px]">{step.width}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Undo Button (Subtle, contextual) */}
           {canUndo && (

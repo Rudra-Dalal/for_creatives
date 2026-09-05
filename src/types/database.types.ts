@@ -81,7 +81,7 @@ export interface Database {
           id: string;
           project_id: string;
           reference_id: string | null;
-          type: 'reference' | 'image' | 'text' | 'color' | 'idea';
+          type: 'reference' | 'image' | 'text' | 'color' | 'idea' | 'stroke';
           content: Json;
           x: number;
           y: number;
@@ -96,7 +96,7 @@ export interface Database {
           id?: string;
           project_id: string;
           reference_id?: string | null;
-          type: 'reference' | 'image' | 'text' | 'color' | 'idea';
+          type: 'reference' | 'image' | 'text' | 'color' | 'idea' | 'stroke';
           content?: Json;
           x?: number;
           y?: number;
@@ -111,7 +111,7 @@ export interface Database {
           id?: string;
           project_id?: string;
           reference_id?: string | null;
-          type?: 'reference' | 'image' | 'text' | 'color' | 'idea';
+          type?: 'reference' | 'image' | 'text' | 'color' | 'idea' | 'stroke';
           content?: Json;
           x?: number;
           y?: number;

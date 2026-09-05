@@ -5,7 +5,7 @@ export type MoodboardItemRow = Database['public']['Tables']['moodboard_items']['
 export type MoodboardItemInsert = Database['public']['Tables']['moodboard_items']['Insert'];
 export type MoodboardItemUpdate = Database['public']['Tables']['moodboard_items']['Update'];
 
-export type MoodboardItemType = 'reference' | 'image' | 'text' | 'color' | 'idea';
+export type MoodboardItemType = 'reference' | 'image' | 'text' | 'color' | 'idea' | 'stroke';
 
 export type AnchorPosition = 'top' | 'right' | 'bottom' | 'left';
 
@@ -62,12 +62,20 @@ export interface IdeaItemContent extends BaseItemContent {
   notes?: string;
 }
 
+export interface StrokeItemContent extends BaseItemContent {
+  points: number[];
+  color: string;
+  strokeWidth: number;
+  tension?: number;
+}
+
 export type MoodboardItemContent =
   | ReferenceItemContent
   | ImageItemContent
   | TextItemContent
   | ColorItemContent
-  | IdeaItemContent;
+  | IdeaItemContent
+  | StrokeItemContent;
 
 export interface MoodboardItem extends Omit<MoodboardItemRow, 'content' | 'type'> {
   type: MoodboardItemType;

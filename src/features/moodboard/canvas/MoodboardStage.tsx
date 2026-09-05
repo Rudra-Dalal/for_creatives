@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Stage, Layer, Rect, Arrow } from 'react-konva';
+import { Stage, Layer, Rect, Arrow, Line } from 'react-konva';
 import Konva from 'konva';
 import type {
   MoodboardItem,
@@ -18,10 +18,12 @@ import { CanvasImageItem } from './CanvasImageItem';
 import { CanvasTextItem } from './CanvasTextItem';
 import { CanvasColorItem } from './CanvasColorItem';
 import { CanvasIdeaItem } from './CanvasIdeaItem';
+import { CanvasStrokeItem } from './CanvasStrokeItem';
 import { CanvasTransformer } from './CanvasTransformer';
 import { CanvasConnectorItem } from './CanvasConnectorItem';
 import { CanvasItemAnchors } from './CanvasItemAnchors';
 import { getAnchorPoint, calculateBezierCurve } from './connectorUtils';
+import { simplifyPoints, normalizeStrokePoints } from '../utils/strokeUtils';
 import { HexColorPicker } from 'react-colorful';
 import { Compass } from 'lucide-react';
 
@@ -31,6 +33,16 @@ interface MoodboardStageProps {
   selectedIds?: string[];
   viewport: CanvasViewport;
   readOnly?: boolean;
+  activeTool?: 'select' | 'pen';
+  penColor?: string;
+  penWidth?: number;
+  onChangeActiveTool?: (tool: 'select' | 'pen') => void;
+  onAddStroke?: (
+    points: number[],
+    color: string,
+    strokeWidth: number,
+    bbox: { x: number; y: number; width: number; height: number }
+  ) => Promise<unknown>;
   connections?: ResolvedConnection[];
   selectedConnectionId?: string | null;
   onSelectConnection?: (connectionId: string | null) => void;
@@ -82,6 +94,11 @@ export function MoodboardStage({
   selectedIds,
   viewport,
   readOnly = false,
+  activeTool = 'select',
+  penColor = '#D97706',
+  penWidth = 4,
+  onChangeActiveTool,
+  onAddStroke,
   connections = [],
   selectedConnectionId = null,
   onSelectConnection,
@@ -117,6 +134,11 @@ export function MoodboardStage({
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
   const initialGeometryRef = useRef<Map<string, { x: number; y: number; width: number; height: number; zIndex?: number }>>(new Map());
+
+  // Freehand pen drawing state
+  const isDrawingRef = useRef(false);
+  const currentStrokePointsRef = useRef<number[]>([]);
+  const [currentStroke, setCurrentStroke] = useState<number[] | null>(null);
 
   // Connection drag state
   const [connectingFrom, setConnectingFrom] = useState<{
@@ -407,8 +429,26 @@ export function MoodboardStage({
         return;
       }
 
-      // Escape: Clear selection & cancel connection drag
+      // Tool Switch shortcuts: P for Pen, V for Select
+      if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (e.key.toLowerCase() === 'p') {
+          e.preventDefault();
+          onChangeActiveTool?.(activeTool === 'pen' ? 'select' : 'pen');
+          return;
+        }
+        if (e.key.toLowerCase() === 'v') {
+          e.preventDefault();
+          onChangeActiveTool?.('select');
+          return;
+        }
+      }
+
+      // Escape: If Pen tool active, exit to select mode; otherwise clear selection & cancel connection drag
       if (e.key === 'Escape') {
+        if (activeTool === 'pen') {
+          onChangeActiveTool?.('select');
+          return;
+        }
         if (connectingFrom) {
           setConnectingFrom(null);
           setConnectingPointerPos(null);
@@ -528,6 +568,8 @@ export function MoodboardStage({
     selectedConnectionId,
     onSelectConnection,
     onDeleteConnection,
+    activeTool,
+    onChangeActiveTool,
   ]);
 
   // Export stage to PNG
@@ -847,6 +889,7 @@ export function MoodboardStage({
 
   const handleItemPointerDown = useCallback(
     (id: string, node: Konva.Node) => {
+      if (activeTool === 'pen') return;
       nodeMapRef.current.set(id, node);
       // When holding shift, toggle happens on click to allow shift-drag
       if (isShiftPressed) return;
@@ -859,11 +902,12 @@ export function MoodboardStage({
         setSelectedNodes([node]);
       }
     },
-    [isShiftPressed, effectiveSelectedIds, onSelectIds, onSelectId]
+    [activeTool, isShiftPressed, effectiveSelectedIds, onSelectIds, onSelectId]
   );
 
   const handleItemClick = useCallback(
     (id: string, node: Konva.Node) => {
+      if (activeTool === 'pen') return;
       nodeMapRef.current.set(id, node);
       if (isShiftPressed && onToggleSelectId) {
         onToggleSelectId(id, true);
@@ -880,13 +924,36 @@ export function MoodboardStage({
         setSelectedNodes([node]);
       }
     },
-    [isShiftPressed, onToggleSelectId, onSelectIds, onSelectId]
+    [activeTool, isShiftPressed, onToggleSelectId, onSelectIds, onSelectId]
   );
 
-  // Handle Stage Mouse Down for Marquee selection
+  // Handle Stage Mouse Down for Marquee selection or freehand pen stroke
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     if ('button' in e.evt && e.evt.button === 1) return;
     if (isSpacePressed) return;
+
+    // Freehand pen drawing: start capturing stroke
+    if (!readOnly && activeTool === 'pen') {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const canvasX = (pointer.x - stage.x()) / stage.scaleX();
+      const canvasY = (pointer.y - stage.y()) / stage.scaleY();
+
+      isDrawingRef.current = true;
+      currentStrokePointsRef.current = [canvasX, canvasY];
+      setCurrentStroke([canvasX, canvasY]);
+
+      if (effectiveSelectedIds.length > 0) {
+        if (onSelectIds) onSelectIds([]);
+        else onSelectId(null);
+        setSelectedNode(null);
+        setSelectedNodes([]);
+      }
+      return;
+    }
 
     // Fallback: If clicked directly on a card or child of a card
     const clickedItemGroup = e.target.findAncestor('.moodboard-item', true);
@@ -941,8 +1008,23 @@ export function MoodboardStage({
     }
   };
 
-  // Handle Stage Mouse Move for Marquee selection & connection drag
+  // Handle Stage Mouse Move for Marquee selection & connection drag & pen drawing
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    // Handle in-progress freehand pen drawing
+    if (isDrawingRef.current) {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const currentCanvasX = (pointer.x - stage.x()) / stage.scaleX();
+      const currentCanvasY = (pointer.y - stage.y()) / stage.scaleY();
+
+      currentStrokePointsRef.current.push(currentCanvasX, currentCanvasY);
+      setCurrentStroke([...currentStrokePointsRef.current]);
+      return;
+    }
+
     // Handle active connection drag
     if (connectingFrom) {
       const stage = stageRef.current;
@@ -1058,8 +1140,29 @@ export function MoodboardStage({
     }
   };
 
-  // Handle Stage Mouse Up for Marquee selection & connection drag finish
+  // Handle Stage Mouse Up for Marquee selection, connection drag finish & pen stroke save
   const handleStageMouseUp = () => {
+    // Finish and persist freehand pen stroke
+    if (isDrawingRef.current) {
+      isDrawingRef.current = false;
+      const rawPoints = currentStrokePointsRef.current;
+      currentStrokePointsRef.current = [];
+      setCurrentStroke(null);
+
+      if (rawPoints && rawPoints.length >= 2 && onAddStroke) {
+        // Storage discipline: Douglas-Peucker point decimation & bounding box normalization
+        const simplified = simplifyPoints(rawPoints, 1.5);
+        const bbox = normalizeStrokePoints(simplified);
+        onAddStroke(bbox.relativePoints, penColor, penWidth, {
+          x: bbox.x,
+          y: bbox.y,
+          width: bbox.width,
+          height: bbox.height,
+        });
+      }
+      return;
+    }
+
     if (connectingFrom) {
       if (connectingTarget && onAddConnection) {
         onAddConnection(
@@ -1231,7 +1334,13 @@ export function MoodboardStage({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`relative flex-1 w-full h-full overflow-hidden select-none bg-[#121211] ${
-        isMiddlePanning ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
+        isMiddlePanning
+          ? 'cursor-grabbing'
+          : isSpacePressed
+          ? 'cursor-grab active:cursor-grabbing'
+          : activeTool === 'pen'
+          ? 'cursor-crosshair'
+          : 'cursor-default'
       } ${isDragOver ? 'ring-2 ring-inset ring-accent/60' : ''}`}
     >
       {/* Subtle Drag Over Indicator */}
@@ -1258,6 +1367,7 @@ export function MoodboardStage({
         onMouseDown={handleStageMouseDown}
         onMouseMove={handleStageMouseMove}
         onMouseUp={handleStageMouseUp}
+        onMouseLeave={handleStageMouseUp}
         onTouchStart={handleStageMouseDown}
         onTouchMove={handleStageMouseMove}
         onTouchEnd={handleStageMouseUp}
@@ -1365,9 +1475,24 @@ export function MoodboardStage({
             />
           )}
 
-          {/* Render All 5 Playground Objects in strict z-index order */}
+          {/* Render All Playground Objects in strict z-index order */}
           {sortedItems.map((item) => {
             const isSelected = effectiveSelectedIds.includes(item.id);
+
+            if (item.type === 'stroke') {
+              return (
+                <CanvasStrokeItem
+                  key={item.id}
+                  item={item}
+                  isSelected={isSelected}
+                  isDraggable={!readOnly && activeTool === 'select'}
+                  onPointerDown={(node) => handleItemPointerDown(item.id, node)}
+                  onSelect={(node) => handleItemClick(item.id, node)}
+                  onDragStart={() => handleItemDragStart(item)}
+                  onDragEnd={handleItemDragEnd}
+                />
+              );
+            }
 
             if (item.type === 'text') {
               return (
@@ -1375,7 +1500,7 @@ export function MoodboardStage({
                   key={item.id}
                   item={item}
                   isSelected={isSelected}
-                  isDraggable={!readOnly}
+                  isDraggable={!readOnly && activeTool === 'select'}
                   onPointerDown={(node) => handleItemPointerDown(item.id, node)}
                   onSelect={(node) => handleItemClick(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
@@ -1392,7 +1517,7 @@ export function MoodboardStage({
                   key={item.id}
                   item={item}
                   isSelected={isSelected}
-                  isDraggable={!readOnly}
+                  isDraggable={!readOnly && activeTool === 'select'}
                   onPointerDown={(node) => handleItemPointerDown(item.id, node)}
                   onSelect={(node) => handleItemClick(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
@@ -1409,7 +1534,7 @@ export function MoodboardStage({
                   key={item.id}
                   item={item}
                   isSelected={isSelected}
-                  isDraggable={!readOnly}
+                  isDraggable={!readOnly && activeTool === 'select'}
                   onPointerDown={(node) => handleItemPointerDown(item.id, node)}
                   onSelect={(node) => handleItemClick(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
@@ -1426,7 +1551,7 @@ export function MoodboardStage({
                   key={item.id}
                   item={item}
                   isSelected={isSelected}
-                  isDraggable={!readOnly}
+                  isDraggable={!readOnly && activeTool === 'select'}
                   onPointerDown={(node) => handleItemPointerDown(item.id, node)}
                   onSelect={(node) => handleItemClick(item.id, node)}
                   onDragStart={() => handleItemDragStart(item)}
@@ -1449,7 +1574,7 @@ export function MoodboardStage({
                 isSelected={isSelected}
                 linkedDirectionsCount={linkedCount}
                 onInspectDirection={onInspectReferenceDirection}
-                isDraggable={!readOnly}
+                isDraggable={!readOnly && activeTool === 'select'}
                 onPointerDown={(node) => handleItemPointerDown(item.id, node)}
                 onSelect={(node) => handleItemClick(item.id, node)}
                 onDragStart={() => handleItemDragStart(item)}
@@ -1460,9 +1585,24 @@ export function MoodboardStage({
             );
           })}
 
+          {/* In-progress live freehand pen stroke */}
+          {currentStroke && currentStroke.length >= 2 && (
+            <Line
+              points={currentStroke}
+              stroke={penColor}
+              strokeWidth={penWidth}
+              tension={0.5}
+              lineCap="round"
+              lineJoin="round"
+              listening={false}
+              opacity={0.9}
+            />
+          )}
+
           {/* Cardinal Anchor Handles on Selected or Candidate Items */}
           {!readOnly &&
             sortedItems.map((rawItem) => {
+              if (rawItem.type === 'stroke') return null;
               const isSelected = effectiveSelectedIds.includes(rawItem.id);
               const isConnectingTarget = connectingTarget?.itemId === rawItem.id;
               const isCandidate = connectingFrom !== null && connectingFrom.itemId !== rawItem.id;
@@ -1485,14 +1625,21 @@ export function MoodboardStage({
               );
             })}
 
-          {/* Konva Transformer for resize (hidden in read-only mode) */}
-          {!readOnly && (selectedNodes.length > 0 || selectedNode) && (
-            <CanvasTransformer
-              selectedNode={selectedNode}
-              selectedNodes={selectedNodes.length > 0 ? selectedNodes : (selectedNode ? [selectedNode] : [])}
-              keepRatio={isImageOrReferenceSelected}
-            />
-          )}
+          {/* Konva Transformer for resize (hidden in read-only mode, and ignores strokes) */}
+          {!readOnly && (() => {
+            const transformableNodes = (selectedNodes.length > 0 ? selectedNodes : (selectedNode ? [selectedNode] : [])).filter((node) => {
+              const item = items.find((i) => i.id === node.id());
+              return item && item.type !== 'stroke';
+            });
+            if (transformableNodes.length === 0) return null;
+            return (
+              <CanvasTransformer
+                selectedNode={transformableNodes[0]}
+                selectedNodes={transformableNodes}
+                keepRatio={isImageOrReferenceSelected}
+              />
+            );
+          })()}
         </Layer>
       </Stage>
 

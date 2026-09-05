@@ -3,6 +3,32 @@ import type { Database, Json } from '@/types/database.types';
 import type { MoodboardItem, MoodboardItemInsert, MoodboardItemUpdate } from '../types';
 import type { Reference } from '@/features/references/types';
 
+function mapItemRecord(item: any): MoodboardItem {
+  const ref = item.references as unknown as Reference | null;
+  const rawContent = (item.content as unknown as Record<string, unknown>) || {};
+  const isStroke =
+    item.type === 'stroke' ||
+    (item.type === 'idea' && rawContent.strokeType === 'stroke') ||
+    Array.isArray(rawContent.points);
+
+  return {
+    id: item.id,
+    project_id: item.project_id,
+    reference_id: item.reference_id,
+    type: isStroke ? 'stroke' : (item.type as MoodboardItem['type']),
+    content: rawContent as unknown as MoodboardItem['content'],
+    x: item.x,
+    y: item.y,
+    width: item.width,
+    height: item.height,
+    z_index: item.z_index,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+    deleted_at: item.deleted_at,
+    reference: ref && typeof ref === 'object' && 'id' in ref ? ref : null,
+  };
+}
+
 export const moodboardService = {
   /**
    * Fetch all active moodboard canvas items for a project,
@@ -24,25 +50,7 @@ export const moodboardService = {
     if (error) throw error;
     if (!items) return [];
 
-    return items.map((item) => {
-      const ref = item.references as unknown as Reference | null;
-      return {
-        id: item.id,
-        project_id: item.project_id,
-        reference_id: item.reference_id,
-        type: item.type as MoodboardItem['type'],
-        content: (item.content as unknown as MoodboardItem['content']) || {},
-        x: item.x,
-        y: item.y,
-        width: item.width,
-        height: item.height,
-        z_index: item.z_index,
-        created_at: item.created_at,
-        updated_at: item.updated_at,
-        deleted_at: item.deleted_at,
-        reference: ref && typeof ref === 'object' && 'id' in ref ? ref : null,
-      };
-    });
+    return items.map(mapItemRecord);
   },
 
   /**
@@ -64,25 +72,7 @@ export const moodboardService = {
     if (error) throw error;
     if (!items) return [];
 
-    return items.map((item) => {
-      const ref = item.references as unknown as Reference | null;
-      return {
-        id: item.id,
-        project_id: item.project_id,
-        reference_id: item.reference_id,
-        type: item.type as MoodboardItem['type'],
-        content: (item.content as unknown as MoodboardItem['content']) || {},
-        x: item.x,
-        y: item.y,
-        width: item.width,
-        height: item.height,
-        z_index: item.z_index,
-        created_at: item.created_at,
-        updated_at: item.updated_at,
-        deleted_at: item.deleted_at,
-        reference: ref && typeof ref === 'object' && 'id' in ref ? ref : null,
-      };
-    });
+    return items.map(mapItemRecord);
   },
 
   /**
@@ -117,7 +107,7 @@ export const moodboardService = {
       defaultHeight = 240;
     }
 
-    const payload: MoodboardItemInsert = {
+    let payload: MoodboardItemInsert = {
       project_id: input.projectId,
       reference_id: input.referenceId || null,
       type: input.type,
@@ -129,7 +119,7 @@ export const moodboardService = {
       z_index: input.zIndex ?? 1,
     };
 
-    const { data: item, error } = await supabase
+    let { data: item, error } = await supabase
       .from('moodboard_items')
       .insert(payload)
       .select(`
@@ -138,25 +128,34 @@ export const moodboardService = {
       `)
       .single();
 
-    if (error) throw error;
+    // If Postgres constraint rejects 'stroke' on an unmigrated database,
+    // gracefully fall back to storing with strokeType in schema-free jsonb content
+    if (error && input.type === 'stroke' && error.code === '23514') {
+      const fallbackContent = {
+        ...(typeof input.content === 'object' && input.content !== null ? input.content : {}),
+        strokeType: 'stroke',
+      };
+      payload = {
+        ...payload,
+        type: 'idea',
+        content: fallbackContent as unknown as Json,
+      };
+      const fallbackRes = await supabase
+        .from('moodboard_items')
+        .insert(payload)
+        .select(`
+          *,
+          references (*)
+        `)
+        .single();
+      item = fallbackRes.data;
+      error = fallbackRes.error;
+    }
 
-    const ref = item.references as unknown as Reference | null;
-    return {
-      id: item.id,
-      project_id: item.project_id,
-      reference_id: item.reference_id,
-      type: item.type as MoodboardItem['type'],
-      content: (item.content as unknown as MoodboardItem['content']) || {},
-      x: item.x,
-      y: item.y,
-      width: item.width,
-      height: item.height,
-      z_index: item.z_index,
-      created_at: item.created_at,
-      updated_at: item.updated_at,
-      deleted_at: item.deleted_at,
-      reference: ref && typeof ref === 'object' && 'id' in ref ? ref : null,
-    };
+    if (error) throw error;
+    if (!item) throw new Error('Failed to create moodboard item');
+
+    return mapItemRecord(item);
   },
 
   /**

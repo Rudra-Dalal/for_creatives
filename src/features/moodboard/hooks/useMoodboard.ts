@@ -10,6 +10,7 @@ import type {
   ImageItemContent,
   ColorItemContent,
   IdeaItemContent,
+  StrokeItemContent,
   ItemConnection,
   AnchorPosition,
   ResolvedConnection,
@@ -61,7 +62,21 @@ export type UndoAction =
     };
 
 export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], readOnly?: boolean) {
-  const [items, setItems] = useState<MoodboardItem[]>(initialItems || []);
+  const normalizeItem = useCallback((item: any): MoodboardItem => {
+    const content = (item.content as any) || {};
+    const isStroke =
+      item.type === 'stroke' ||
+      (item.type === 'idea' && content.strokeType === 'stroke') ||
+      Array.isArray(content.points);
+    return {
+      ...item,
+      type: isStroke ? 'stroke' : item.type,
+    };
+  }, []);
+
+  const [items, setItems] = useState<MoodboardItem[]>(() =>
+    initialItems ? initialItems.map(normalizeItem) : []
+  );
   const [selectedIds, _setSelectedIds] = useState<string[]>([]);
   const selectedId = selectedIds[0] ?? null;
 
@@ -107,10 +122,10 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
   // Synchronize initialItems if provided (e.g. from bundle)
   useEffect(() => {
     if (initialItems) {
-      setItems(initialItems);
+      setItems(initialItems.map(normalizeItem));
       setIsLoading(false);
     }
-  }, [initialItems]);
+  }, [initialItems, normalizeItem]);
 
   // Single-level undo action state
   const [lastAction, setLastAction] = useState<UndoAction | null>(null);
@@ -546,6 +561,45 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     setSelectedId(created.id);
     recordUndoAction({ type: 'ADD', itemId: created.id, item: created });
     return created;
+  };
+
+  // Add freehand drawing stroke to canvas
+  const addStrokeItem = async (
+    points: number[],
+    color: string,
+    strokeWidth: number,
+    bbox: { x: number; y: number; width: number; height: number }
+  ): Promise<MoodboardItem> => {
+    const nextZ = getMaxZIndex() + 1;
+    const content: StrokeItemContent = {
+      points,
+      color,
+      strokeWidth,
+      tension: 0.5,
+    };
+
+    beginSave();
+    try {
+      const created = await moodboardService.createItem({
+        projectId,
+        referenceId: null,
+        type: 'stroke',
+        content: content as unknown as Json,
+        x: bbox.x,
+        y: bbox.y,
+        width: bbox.width,
+        height: bbox.height,
+        zIndex: nextZ,
+      });
+
+      setItems((prev) => [...prev, created]);
+      recordUndoAction({ type: 'ADD', itemId: created.id, item: created });
+      endSave();
+      return created;
+    } catch (err) {
+      endSave(err);
+      throw err;
+    }
   };
 
   // Duplicate an existing item on canvas
@@ -1230,6 +1284,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     addTextNote,
     addColorItem,
     addIdeaItem,
+    addStrokeItem,
     duplicateItem,
     duplicateSelectedItems,
     updateItemLocal,
