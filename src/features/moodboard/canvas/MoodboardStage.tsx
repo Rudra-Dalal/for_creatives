@@ -135,10 +135,10 @@ export function MoodboardStage({
   const stageRef = useRef<Konva.Stage | null>(null);
   const initialGeometryRef = useRef<Map<string, { x: number; y: number; width: number; height: number; zIndex?: number }>>(new Map());
 
-  // Freehand pen drawing state
+  // Freehand pen drawing state (direct Konva ref for 60-120fps fluid rendering without React re-renders)
   const isDrawingRef = useRef(false);
   const currentStrokePointsRef = useRef<number[]>([]);
-  const [currentStroke, setCurrentStroke] = useState<number[] | null>(null);
+  const activeLineRef = useRef<Konva.Line | null>(null);
 
   // Connection drag state
   const [connectingFrom, setConnectingFrom] = useState<{
@@ -944,7 +944,12 @@ export function MoodboardStage({
 
       isDrawingRef.current = true;
       currentStrokePointsRef.current = [canvasX, canvasY];
-      setCurrentStroke([canvasX, canvasY]);
+
+      if (activeLineRef.current) {
+        activeLineRef.current.points([canvasX, canvasY]);
+        activeLineRef.current.visible(true);
+        activeLineRef.current.getLayer()?.batchDraw();
+      }
 
       if (effectiveSelectedIds.length > 0) {
         if (onSelectIds) onSelectIds([]);
@@ -1021,7 +1026,10 @@ export function MoodboardStage({
       const currentCanvasY = (pointer.y - stage.y()) / stage.scaleY();
 
       currentStrokePointsRef.current.push(currentCanvasX, currentCanvasY);
-      setCurrentStroke([...currentStrokePointsRef.current]);
+      if (activeLineRef.current) {
+        activeLineRef.current.points(currentStrokePointsRef.current);
+        activeLineRef.current.getLayer()?.batchDraw();
+      }
       return;
     }
 
@@ -1147,7 +1155,12 @@ export function MoodboardStage({
       isDrawingRef.current = false;
       const rawPoints = currentStrokePointsRef.current;
       currentStrokePointsRef.current = [];
-      setCurrentStroke(null);
+
+      if (activeLineRef.current) {
+        activeLineRef.current.visible(false);
+        activeLineRef.current.points([]);
+        activeLineRef.current.getLayer()?.batchDraw();
+      }
 
       if (rawPoints && rawPoints.length >= 2 && onAddStroke) {
         // Storage discipline: Douglas-Peucker point decimation & bounding box normalization
@@ -1585,19 +1598,20 @@ export function MoodboardStage({
             );
           })}
 
-          {/* In-progress live freehand pen stroke */}
-          {currentStroke && currentStroke.length >= 2 && (
-            <Line
-              points={currentStroke}
-              stroke={penColor}
-              strokeWidth={penWidth}
-              tension={0.5}
-              lineCap="round"
-              lineJoin="round"
-              listening={false}
-              opacity={0.9}
-            />
-          )}
+          {/* In-progress live freehand pen stroke (rendered directly via ref during drawing for 60-120fps fluid interaction) */}
+          <Line
+            ref={activeLineRef}
+            visible={false}
+            points={[]}
+            stroke={penColor}
+            strokeWidth={penWidth}
+            tension={0.5}
+            lineCap="round"
+            lineJoin="round"
+            listening={false}
+            opacity={0.9}
+            perfectDrawEnabled={false}
+          />
 
           {/* Cardinal Anchor Handles on Selected or Candidate Items */}
           {!readOnly &&
