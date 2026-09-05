@@ -36,6 +36,10 @@ export type UndoAction =
       nextGeometry?: { x: number; y: number; width: number; height: number; zIndex?: number };
     }
   | {
+      type: 'BATCH_DELETE';
+      items: MoodboardItem[];
+    }
+  | {
       type: 'BATCH_MOVE';
       items: Array<{
         id: string;
@@ -235,6 +239,15 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
           return [...prev, actionToRevert.item!];
         });
         setSelectedId(actionToRevert.itemId);
+      } else if (actionToRevert.type === 'BATCH_DELETE' && actionToRevert.items) {
+        // Undo Batch Delete -> restore all items in parallel
+        await Promise.all(actionToRevert.items.map((i) => moodboardService.restoreItem(i.id)));
+        setItems((prev) => {
+          const existingIds = new Set(prev.map((i) => i.id));
+          const toAdd = actionToRevert.items.filter((i) => !existingIds.has(i.id));
+          return [...prev, ...toAdd];
+        });
+        setSelectedIds(actionToRevert.items.map((i) => i.id));
       } else if (
         (actionToRevert.type === 'MOVE' || actionToRevert.type === 'RESIZE') &&
         actionToRevert.prevGeometry
@@ -339,7 +352,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     } catch (err) {
       console.error('Failed to execute undo:', err);
     }
-  }, [lastAction, selectedId, setSelectedId, items]);
+  }, [lastAction, selectedId, setSelectedId, setSelectedIds, items]);
 
   // Add reference item to canvas
   const addReferenceItem = async (
@@ -826,25 +839,45 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     }
   };
 
+  // Batch delete items with single-step batch undo support (used by bulk delete and whole-stroke eraser)
+  const batchDeleteItems = useCallback(
+    async (itemsToDelete: MoodboardItem[] | string[]) => {
+      if (itemsToDelete.length === 0) return;
+
+      const ids = typeof itemsToDelete[0] === 'string'
+        ? (itemsToDelete as string[])
+        : (itemsToDelete as MoodboardItem[]).map((i) => i.id);
+
+      const targets = typeof itemsToDelete[0] === 'string'
+        ? items.filter((i) => ids.includes(i.id))
+        : (itemsToDelete as MoodboardItem[]);
+
+      if (targets.length === 0) return;
+
+      setItems((prev) => prev.filter((item) => !ids.includes(item.id)));
+      setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+
+      recordUndoAction({
+        type: 'BATCH_DELETE',
+        items: targets,
+      });
+
+      beginSave();
+      try {
+        await Promise.all(targets.map((t) => moodboardService.softDeleteItem(t.id)));
+        endSave();
+      } catch (err) {
+        endSave(err);
+      }
+    },
+    [items, recordUndoAction, beginSave, endSave, setSelectedIds]
+  );
+
   // Bulk delete all selected items
   const deleteSelectedItems = async () => {
     if (selectedIds.length === 0) return;
-    const idsToDelete = [...selectedIds];
-    const targets = items.filter((i) => idsToDelete.includes(i.id));
-
-    setItems((prev) => prev.filter((item) => !idsToDelete.includes(item.id)));
-    setSelectedIds([]);
-
-    beginSave();
-    try {
-      for (const target of targets) {
-        recordUndoAction({ type: 'DELETE', itemId: target.id, item: target });
-        await moodboardService.deleteItem(target.id);
-      }
-      endSave();
-    } catch (err) {
-      endSave(err);
-    }
+    const targets = items.filter((i) => selectedIds.includes(i.id));
+    await batchDeleteItems(targets);
   };
 
   // Bulk duplicate all selected items
@@ -1296,6 +1329,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     bringToFront,
     deleteItem,
     deleteSelectedItems,
+    batchDeleteItems,
     zoomIn,
     zoomOut,
     resetViewport,

@@ -23,7 +23,7 @@ import { CanvasTransformer } from './CanvasTransformer';
 import { CanvasConnectorItem } from './CanvasConnectorItem';
 import { CanvasItemAnchors } from './CanvasItemAnchors';
 import { getAnchorPoint, calculateBezierCurve } from './connectorUtils';
-import { simplifyPoints, normalizeStrokePoints } from '../utils/strokeUtils';
+import { simplifyPoints, normalizeStrokePoints, isPathIntersectingStroke } from '../utils/strokeUtils';
 import { HexColorPicker } from 'react-colorful';
 import { Compass } from 'lucide-react';
 
@@ -33,16 +33,17 @@ interface MoodboardStageProps {
   selectedIds?: string[];
   viewport: CanvasViewport;
   readOnly?: boolean;
-  activeTool?: 'select' | 'pen';
+  activeTool?: 'select' | 'pen' | 'eraser';
   penColor?: string;
   penWidth?: number;
-  onChangeActiveTool?: (tool: 'select' | 'pen') => void;
+  onChangeActiveTool?: (tool: 'select' | 'pen' | 'eraser') => void;
   onAddStroke?: (
     points: number[],
     color: string,
     strokeWidth: number,
     bbox: { x: number; y: number; width: number; height: number }
   ) => Promise<unknown>;
+  onBatchDeleteStrokes?: (items: MoodboardItem[]) => void;
   connections?: ResolvedConnection[];
   selectedConnectionId?: string | null;
   onSelectConnection?: (connectionId: string | null) => void;
@@ -99,6 +100,7 @@ export function MoodboardStage({
   penWidth = 4,
   onChangeActiveTool,
   onAddStroke,
+  onBatchDeleteStrokes,
   connections = [],
   selectedConnectionId = null,
   onSelectConnection,
@@ -140,6 +142,37 @@ export function MoodboardStage({
   const currentStrokePointsRef = useRef<number[]>([]);
   const activeLineRef = useRef<Konva.Line | null>(null);
 
+  // Whole-stroke eraser state
+  const isErasingRef = useRef(false);
+  const lastEraserPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const erasedIdsRef = useRef<Set<string>>(new Set());
+  const erasedItemsRef = useRef<MoodboardItem[]>([]);
+  const [erasedTick, setErasedTick] = useState(0);
+
+  // Check and erase active strokes along a pointer movement path
+  const checkAndEraseStrokes = useCallback(
+    (fromX: number, fromY: number, toX: number, toY: number) => {
+      // Confirmed: Strictly considers currently active (non-deleted) strokes
+      const activeStrokes = items.filter(
+        (i) => i.type === 'stroke' && !i.deleted_at && !erasedIdsRef.current.has(i.id)
+      );
+
+      let erasedAny = false;
+      for (const stroke of activeStrokes) {
+        if (isPathIntersectingStroke(fromX, fromY, toX, toY, stroke, 20)) {
+          erasedIdsRef.current.add(stroke.id);
+          erasedItemsRef.current.push(stroke);
+          erasedAny = true;
+        }
+      }
+
+      if (erasedAny) {
+        setErasedTick((t) => (t + 1) % 10000);
+      }
+    },
+    [items]
+  );
+
   // Connection drag state
   const [connectingFrom, setConnectingFrom] = useState<{
     itemId: string;
@@ -171,8 +204,11 @@ export function MoodboardStage({
   }, [items, effectiveSelectedIds]);
 
   const sortedItems = React.useMemo(() => {
-    return [...items].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
-  }, [items]);
+    void erasedTick;
+    return [...items]
+      .filter((i) => !erasedIdsRef.current.has(i.id))
+      .sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
+  }, [items, erasedTick]);
 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [selectedNodes, setSelectedNodes] = useState<Konva.Node[]>([]);
@@ -429,9 +465,19 @@ export function MoodboardStage({
         return;
       }
 
-      // Tool Switch shortcuts: P for Pen, V for Select
+      // Tool Switch shortcuts: P for Pen, E / Shift+P for Eraser, V for Select
       if (!e.metaKey && !e.ctrlKey && !e.altKey) {
-        if (e.key.toLowerCase() === 'p') {
+        if (e.key.toLowerCase() === 'p' && e.shiftKey) {
+          e.preventDefault();
+          onChangeActiveTool?.(activeTool === 'eraser' ? 'select' : 'eraser');
+          return;
+        }
+        if (e.key.toLowerCase() === 'e') {
+          e.preventDefault();
+          onChangeActiveTool?.(activeTool === 'eraser' ? 'select' : 'eraser');
+          return;
+        }
+        if (e.key.toLowerCase() === 'p' && !e.shiftKey) {
           e.preventDefault();
           onChangeActiveTool?.(activeTool === 'pen' ? 'select' : 'pen');
           return;
@@ -443,9 +489,9 @@ export function MoodboardStage({
         }
       }
 
-      // Escape: If Pen tool active, exit to select mode; otherwise clear selection & cancel connection drag
+      // Escape: If Pen/Eraser tool active, exit to select mode; otherwise clear selection & cancel connection drag
       if (e.key === 'Escape') {
-        if (activeTool === 'pen') {
+        if (activeTool === 'pen' || activeTool === 'eraser') {
           onChangeActiveTool?.('select');
           return;
         }
@@ -889,7 +935,7 @@ export function MoodboardStage({
 
   const handleItemPointerDown = useCallback(
     (id: string, node: Konva.Node) => {
-      if (activeTool === 'pen') return;
+      if (activeTool === 'pen' || activeTool === 'eraser') return;
       nodeMapRef.current.set(id, node);
       // When holding shift, toggle happens on click to allow shift-drag
       if (isShiftPressed) return;
@@ -907,7 +953,7 @@ export function MoodboardStage({
 
   const handleItemClick = useCallback(
     (id: string, node: Konva.Node) => {
-      if (activeTool === 'pen') return;
+      if (activeTool === 'pen' || activeTool === 'eraser') return;
       nodeMapRef.current.set(id, node);
       if (isShiftPressed && onToggleSelectId) {
         onToggleSelectId(id, true);
@@ -957,6 +1003,30 @@ export function MoodboardStage({
         setSelectedNode(null);
         setSelectedNodes([]);
       }
+      return;
+    }
+
+    // Whole-stroke eraser: hit-test and erase active strokes
+    if (!readOnly && activeTool === 'eraser') {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const canvasX = (pointer.x - stage.x()) / stage.scaleX();
+      const canvasY = (pointer.y - stage.y()) / stage.scaleY();
+
+      isErasingRef.current = true;
+      lastEraserPointerRef.current = { x: canvasX, y: canvasY };
+
+      if (effectiveSelectedIds.length > 0) {
+        if (onSelectIds) onSelectIds([]);
+        else onSelectId(null);
+        setSelectedNode(null);
+        setSelectedNodes([]);
+      }
+
+      checkAndEraseStrokes(canvasX, canvasY, canvasX, canvasY);
       return;
     }
 
@@ -1030,6 +1100,22 @@ export function MoodboardStage({
         activeLineRef.current.points(currentStrokePointsRef.current);
         activeLineRef.current.getLayer()?.batchDraw();
       }
+      return;
+    }
+
+    // Handle in-progress whole-stroke erasing drag
+    if (isErasingRef.current) {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const currentCanvasX = (pointer.x - stage.x()) / stage.scaleX();
+      const currentCanvasY = (pointer.y - stage.y()) / stage.scaleY();
+      const prev = lastEraserPointerRef.current || { x: currentCanvasX, y: currentCanvasY };
+      lastEraserPointerRef.current = { x: currentCanvasX, y: currentCanvasY };
+
+      checkAndEraseStrokes(prev.x, prev.y, currentCanvasX, currentCanvasY);
       return;
     }
 
@@ -1172,6 +1258,20 @@ export function MoodboardStage({
           width: bbox.width,
           height: bbox.height,
         });
+      }
+      return;
+    }
+
+    // Finish whole-stroke eraser drag and dispatch batch soft-delete
+    if (isErasingRef.current) {
+      isErasingRef.current = false;
+      lastEraserPointerRef.current = null;
+      const itemsToDelete = [...erasedItemsRef.current];
+      erasedItemsRef.current = [];
+      erasedIdsRef.current.clear();
+
+      if (itemsToDelete.length > 0 && onBatchDeleteStrokes) {
+        onBatchDeleteStrokes(itemsToDelete);
       }
       return;
     }
@@ -1351,7 +1451,7 @@ export function MoodboardStage({
           ? 'cursor-grabbing'
           : isSpacePressed
           ? 'cursor-grab active:cursor-grabbing'
-          : activeTool === 'pen'
+          : activeTool === 'pen' || activeTool === 'eraser'
           ? 'cursor-crosshair'
           : 'cursor-default'
       } ${isDragOver ? 'ring-2 ring-inset ring-accent/60' : ''}`}

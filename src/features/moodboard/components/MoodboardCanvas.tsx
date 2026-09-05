@@ -81,6 +81,7 @@ export function MoodboardCanvas({
     bringToFront,
     deleteItem,
     deleteSelectedItems,
+    batchDeleteItems,
     addStrokeItem,
     alignSelectedItems,
     distributeSelectedItems,
@@ -102,8 +103,8 @@ export function MoodboardCanvas({
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // Pen / Scribble tool state
-  const [activeTool, setActiveTool] = useState<'select' | 'pen'>('select');
+  // Pen / Eraser tool state
+  const [activeTool, setActiveTool] = useState<'select' | 'pen' | 'eraser'>('select');
   const [penColor, setPenColor] = useState<string>('#D97706');
   const [penWidth, setPenWidth] = useState<number>(4);
 
@@ -497,6 +498,7 @@ export function MoodboardCanvas({
         penWidth={penWidth}
         onChangeActiveTool={setActiveTool}
         onAddStroke={addStrokeItem}
+        onBatchDeleteStrokes={batchDeleteItems}
         connections={connections}
         selectedConnectionId={selectedConnectionId}
         onSelectConnection={setSelectedConnectionId}
@@ -602,6 +604,7 @@ export function MoodboardCanvas({
         readOnly={readOnly}
         activeTool={activeTool}
         onTogglePenTool={() => setActiveTool((prev) => (prev === 'pen' ? 'select' : 'pen'))}
+        onToggleEraserTool={() => setActiveTool((prev) => (prev === 'eraser' ? 'select' : 'eraser'))}
         penColor={penColor}
         onOpenPenColorPicker={handleOpenPenColorDialog}
         penWidth={penWidth}

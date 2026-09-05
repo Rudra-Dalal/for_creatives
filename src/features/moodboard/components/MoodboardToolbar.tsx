@@ -34,6 +34,7 @@ import {
   Columns,
   Rows,
   PenTool,
+  Eraser,
 } from 'lucide-react';
 import type { MoodboardItem } from '../types';
 import type { AlignmentType, DistributionType } from '../utils/layoutUtils';
@@ -43,8 +44,9 @@ interface MoodboardToolbarProps {
   selectedId: string | null;
   selectedCount?: number;
   readOnly?: boolean;
-  activeTool?: 'select' | 'pen';
+  activeTool?: 'select' | 'pen' | 'eraser';
   onTogglePenTool?: () => void;
+  onToggleEraserTool?: () => void;
   penColor?: string;
   onOpenPenColorPicker?: () => void;
   penWidth?: number;
@@ -82,6 +84,7 @@ export function MoodboardToolbar({
   readOnly = false,
   activeTool = 'select',
   onTogglePenTool,
+  onToggleEraserTool,
   penColor = '#D97706',
   onOpenPenColorPicker,
   penWidth = 4,
@@ -202,6 +205,23 @@ export function MoodboardToolbar({
             <PenTool className="h-3.5 w-3.5" />
             <span>Draw</span>
             <span className="text-[10px] font-mono opacity-60 ml-0.5">P</span>
+          </Button>
+
+          {/* Whole-Stroke Eraser Tool Toggle */}
+          <Button
+            variant={activeTool === 'eraser' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={onToggleEraserTool}
+            className={`h-8 rounded-full gap-1.5 px-3 text-xs font-medium transition-colors ${
+              activeTool === 'eraser'
+                ? 'bg-accent/15 text-accent border border-accent/40 hover:bg-accent/20'
+                : 'text-foreground hover:bg-surface-hover'
+            }`}
+            title="Whole-Stroke Eraser (E or Shift+P)"
+          >
+            <Eraser className="h-3.5 w-3.5" />
+            <span>Erase</span>
+            <span className="text-[10px] font-mono opacity-60 ml-0.5">E</span>
           </Button>
 
           {/* When Pen Mode is active, reveal restrained styling controls: Color swatch & 3-step width toggle */}

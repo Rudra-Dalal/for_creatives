@@ -6,6 +6,8 @@
  * Adheres strictly to storage discipline (eliminates raw pointer noise and bloat).
  */
 
+import type { MoodboardItem, StrokeItemContent } from '../types';
+
 export interface StrokeBoundingBox {
   x: number;
   y: number;
@@ -177,3 +179,111 @@ export function normalizeStrokePoints(points: number[]): StrokeBoundingBox {
     relativePoints,
   };
 }
+
+/**
+ * Calculates perpendicular or clamped distance from point (px, py) to line segment (x1, y1)-(x2, y2).
+ */
+export function distanceToSegment(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lengthSq = dx * dx + dy * dy;
+
+  if (lengthSq === 0) {
+    return Math.hypot(px - x1, py - y1);
+  }
+
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSq));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
+
+/**
+ * Checks if a point (canvasX, canvasY) intersects an active stroke.
+ * Strictly verifies the item is non-deleted, of type 'stroke', and within hit radius.
+ */
+export function isPointIntersectingStroke(
+  canvasX: number,
+  canvasY: number,
+  item: MoodboardItem,
+  hitRadius = 14
+): boolean {
+  if (item.type !== 'stroke' || item.deleted_at) {
+    return false;
+  }
+
+  const content = (item.content as StrokeItemContent) || {};
+  const points = content.points || [];
+  if (points.length < 2) return false;
+
+  const strokeWidth = content.strokeWidth || 4;
+  const effectiveRadius = Math.max(hitRadius, strokeWidth / 2 + 8);
+
+  // Quick bounding box check with padding
+  const minX = item.x - effectiveRadius;
+  const maxX = item.x + item.width + effectiveRadius;
+  const minY = item.y - effectiveRadius;
+  const maxY = item.y + item.height + effectiveRadius;
+
+  if (canvasX < minX || canvasX > maxX || canvasY < minY || canvasY > maxY) {
+    return false;
+  }
+
+  // Segment distance checks
+  for (let i = 0; i < points.length - 2; i += 2) {
+    const x1 = item.x + points[i];
+    const y1 = item.y + points[i + 1];
+    const x2 = item.x + points[i + 2];
+    const y2 = item.y + points[i + 3];
+
+    const dist = distanceToSegment(canvasX, canvasY, x1, y1, x2, y2);
+    if (dist <= effectiveRadius) {
+      return true;
+    }
+  }
+
+  // Single-point tap or closed end
+  if (points.length === 2) {
+    const dist = Math.hypot(canvasX - (item.x + points[0]), canvasY - (item.y + points[1]));
+    if (dist <= effectiveRadius) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Checks if a movement segment from (x1, y1) to (x2, y2) intersects an active stroke.
+ * Samples along the trajectory to ensure fast eraser drags never miss strokes.
+ */
+export function isPathIntersectingStroke(
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  item: MoodboardItem,
+  hitRadius = 14
+): boolean {
+  if (item.type !== 'stroke' || item.deleted_at) {
+    return false;
+  }
+
+  const dist = Math.hypot(toX - fromX, toY - fromY);
+  const steps = Math.max(1, Math.ceil(dist / 8)); // sample every 8px
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const px = fromX + (toX - fromX) * t;
+    const py = fromY + (toY - fromY) * t;
+    if (isPointIntersectingStroke(px, py, item, hitRadius)) {
+      return true;
+    }
+  }
+  return false;
+}
+
