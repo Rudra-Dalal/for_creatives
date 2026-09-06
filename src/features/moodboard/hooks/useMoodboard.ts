@@ -18,6 +18,7 @@ import type {
 import type { Json } from '@/types/database.types';
 import type { Reference } from '@/features/references/types';
 import { getImageNaturalDimensions } from '@/lib/utils/image';
+import { getCanvasSafeImageUrl } from '../utils/canvasImageUtils';
 import {
   calculateAlignment,
   calculateDistribution,
@@ -365,7 +366,8 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     let itemHeight = 220;
 
     if (reference.thumbnail_url) {
-      const dims = await getImageNaturalDimensions(reference.thumbnail_url);
+      const probeUrl = getCanvasSafeImageUrl(reference.thumbnail_url);
+      const dims = await getImageNaturalDimensions(probeUrl);
       if (dims && dims.width > 0 && dims.height > 0) {
         const aspect = dims.height / dims.width;
         itemWidth = 300;

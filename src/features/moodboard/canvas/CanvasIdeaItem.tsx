@@ -102,10 +102,7 @@ export function CanvasIdeaItem({
         e.cancelBubble = true;
         onDoubleClick(item);
       }}
-      onDragStart={() => {
-        if (groupRef.current) onSelect(groupRef.current);
-        onDragStart();
-      }}
+      onDragStart={onDragStart}
       onDragEnd={handleDragEnd}
       onTransformEnd={handleTransformEnd}
     >

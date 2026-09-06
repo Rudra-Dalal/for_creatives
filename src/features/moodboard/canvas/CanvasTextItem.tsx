@@ -96,10 +96,7 @@ export function CanvasTextItem({
       }}
       onDblClick={() => onDoubleClick(item)}
       onDblTap={() => onDoubleClick(item)}
-      onDragStart={() => {
-        if (groupRef.current) onSelect(groupRef.current);
-        onDragStart();
-      }}
+      onDragStart={onDragStart}
       onDragEnd={handleDragEnd}
       onTransformEnd={handleTransformEnd}
     >

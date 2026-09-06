@@ -140,10 +140,7 @@ export function CanvasImageItem({
         e.cancelBubble = true;
         if (groupRef.current) onSelect(groupRef.current);
       }}
-      onDragStart={() => {
-        if (groupRef.current) onSelect(groupRef.current);
-        onDragStart();
-      }}
+      onDragStart={onDragStart}
       onDragEnd={handleDragEnd}
       onTransformEnd={handleTransformEnd}
     >

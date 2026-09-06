@@ -223,6 +223,7 @@ export function MoodboardStage({
   const [liveDragTick, setLiveDragTick] = useState(0);
   const dragRafRef = useRef<number | null>(null);
   const nodeMapRef = useRef<Map<string, Konva.Node>>(new Map());
+  const pendingDimensionsRef = useRef<Map<string, { width: number; height: number }>>(new Map());
 
   // Real-time live coordinates lookup during active dragging (keeps anchors and connector lines attached)
   const getItemLiveBounds = useCallback(
@@ -703,7 +704,10 @@ export function MoodboardStage({
           height: itm.height,
           zIndex: itm.z_index,
         });
-        onBringToFront(itm.id);
+        const konvaNode = stageRef.current?.findOne('#' + id);
+        if (konvaNode) {
+          konvaNode.moveToTop();
+        }
       }
     });
   };
@@ -790,12 +794,19 @@ export function MoodboardStage({
         const finalX = selectedItemId === id ? x : Math.round(item.x + dx);
         const finalY = selectedItemId === id ? y : Math.round(item.y + dy);
 
-        onUpdateItemLocal(selectedItemId, { x: finalX, y: finalY });
+        const pendingDim = pendingDimensionsRef.current.get(selectedItemId);
+        if (pendingDim) {
+          pendingDimensionsRef.current.delete(selectedItemId);
+        }
+        const widthToSave = pendingDim ? pendingDim.width : item.width;
+        const heightToSave = pendingDim ? pendingDim.height : item.height;
+
+        onUpdateItemLocal(selectedItemId, { x: finalX, y: finalY, width: widthToSave, height: heightToSave });
         onPersistGeometry(selectedItemId, {
           x: finalX,
           y: finalY,
-          width: item.width,
-          height: item.height,
+          width: widthToSave,
+          height: heightToSave,
           zIndex: item.z_index,
         });
 
@@ -807,16 +818,25 @@ export function MoodboardStage({
             nextGeometry: {
               x: finalX,
               y: finalY,
-              width: item.width,
-              height: item.height,
+              width: widthToSave,
+              height: heightToSave,
               zIndex: item.z_index,
             },
           });
         }
+
+        onBringToFront(selectedItemId);
       });
     } else {
       const item = items.find((i) => i.id === id);
       if (!item) return;
+
+      const pendingDim = pendingDimensionsRef.current.get(id);
+      if (pendingDim) {
+        pendingDimensionsRef.current.delete(id);
+      }
+      const widthToSave = pendingDim ? pendingDim.width : item.width;
+      const heightToSave = pendingDim ? pendingDim.height : item.height;
 
       const initial = initialGeometryRef.current.get(id);
       if (initial && (initial.x !== x || initial.y !== y)) {
@@ -824,18 +844,20 @@ export function MoodboardStage({
           type: 'MOVE',
           itemId: id,
           prevGeometry: initial,
-          nextGeometry: { x, y, width: item.width, height: item.height, zIndex: item.z_index },
+          nextGeometry: { x, y, width: widthToSave, height: heightToSave, zIndex: item.z_index },
         });
       }
 
-      onUpdateItemLocal(id, { x, y });
+      onUpdateItemLocal(id, { x, y, width: widthToSave, height: heightToSave });
       onPersistGeometry(id, {
         x,
         y,
-        width: item.width,
-        height: item.height,
+        width: widthToSave,
+        height: heightToSave,
         zIndex: item.z_index,
       });
+
+      onBringToFront(id);
     }
 
     if (dragRafRef.current !== null) {
@@ -875,6 +897,10 @@ export function MoodboardStage({
 
   // Auto-correction of dimensions to match natural aspect ratio without undo pollution
   const handleDimensionsCorrected = (id: string, width: number, height: number) => {
+    if (liveDragPositionsRef.current.has(id)) {
+      pendingDimensionsRef.current.set(id, { width, height });
+      return;
+    }
     onUpdateItemLocal(id, { width, height });
     const item = items.find((i) => i.id === id);
     if (item) {
@@ -1136,6 +1162,7 @@ export function MoodboardStage({
       let foundTarget: { itemId: string; anchor: AnchorPosition } | null = null;
       for (const rawItem of items) {
         if (rawItem.id === connectingFrom.itemId) continue;
+        if (rawItem.type === 'stroke') continue;
         const item = getItemLiveBounds(rawItem);
         const padding = 20;
         if (
@@ -1717,7 +1744,23 @@ export function MoodboardStage({
             perfectDrawEnabled={false}
           />
 
-          {/* Cardinal Anchor Handles on Selected or Candidate Items */}
+          {/* Konva Transformer for resize (hidden in read-only mode, and ignores strokes) */}
+          {!readOnly && (() => {
+            const transformableNodes = (selectedNodes.length > 0 ? selectedNodes : (selectedNode ? [selectedNode] : [])).filter((node) => {
+              const item = items.find((i) => i.id === node.id());
+              return item && item.type !== 'stroke';
+            });
+            if (transformableNodes.length === 0) return null;
+            return (
+              <CanvasTransformer
+                selectedNode={transformableNodes[0]}
+                selectedNodes={transformableNodes}
+                keepRatio={isImageOrReferenceSelected}
+              />
+            );
+          })()}
+
+          {/* Cardinal Anchor Handles on Selected or Candidate Items (rendered above transformer for clean hit capture) */}
           {!readOnly &&
             sortedItems.map((rawItem) => {
               if (rawItem.type === 'stroke') return null;
@@ -1742,22 +1785,6 @@ export function MoodboardStage({
                 />
               );
             })}
-
-          {/* Konva Transformer for resize (hidden in read-only mode, and ignores strokes) */}
-          {!readOnly && (() => {
-            const transformableNodes = (selectedNodes.length > 0 ? selectedNodes : (selectedNode ? [selectedNode] : [])).filter((node) => {
-              const item = items.find((i) => i.id === node.id());
-              return item && item.type !== 'stroke';
-            });
-            if (transformableNodes.length === 0) return null;
-            return (
-              <CanvasTransformer
-                selectedNode={transformableNodes[0]}
-                selectedNodes={transformableNodes}
-                keepRatio={isImageOrReferenceSelected}
-              />
-            );
-          })()}
         </Layer>
       </Stage>
 

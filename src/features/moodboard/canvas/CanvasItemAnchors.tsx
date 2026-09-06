@@ -41,6 +41,8 @@ export function CanvasItemAnchors({
             <Circle
               radius={14 / Math.max(0.4, scale)}
               fill="transparent"
+              onMouseDown={handlePointerDown}
+              onTouchStart={handlePointerDown}
               onPointerDown={handlePointerDown}
               onMouseEnter={() => {
                 setHoveredAnchor(anchor);
