@@ -1618,7 +1618,8 @@ export function MoodboardStage({
           )}
 
           {/* Render All Playground Objects in strict z-index order */}
-          {sortedItems.map((item) => {
+          {sortedItems.map((rawItem) => {
+            const item = getItemLiveBounds(rawItem);
             const isSelected = effectiveSelectedIds.includes(item.id);
 
             if (item.type === 'stroke') {
