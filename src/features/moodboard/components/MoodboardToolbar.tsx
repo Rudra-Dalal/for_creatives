@@ -293,7 +293,7 @@ export function MoodboardToolbar({
                           ? 'bg-accent/20 text-accent font-semibold'
                           : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
                       }`}
-                      title={`${step.label} (${step.size}px)`}
+                      title={`${step.label} (${step.size}px radius)`}
                     >
                       <span className={`rounded-full bg-current ${step.indicatorClass}`} />
                       <span className="text-[10px]">{step.size}</span>

@@ -89,6 +89,16 @@ export interface CanvasViewport {
   scale: number;
 }
 
+/**
+ * Discrete eraser sizes defined explicitly as SCREEN-SPACE RADIUS values:
+ * - Small: 8px radius
+ * - Medium: 16px radius (default)
+ * - Large: 28px radius
+ *
+ * Both the live visual guide ring and the authoritative stroke-cutting calculation
+ * consume these values directly as radii, converted through viewport zoom scale.
+ * These are NOT diameters.
+ */
 export type EraserSize = 8 | 16 | 28;
 
 export const DEFAULT_ERASER_SIZE: EraserSize = 16;
