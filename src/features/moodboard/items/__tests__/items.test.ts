@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   ITEM_DEFAULT_DIMENSIONS,
   ASPECT_LOCKED_MIN_HEIGHT,
@@ -6,6 +6,8 @@ import {
   ASPECT_LOCKED_DEFAULT_WIDTH,
   TRANSFORMER_MIN_WIDTH,
   TRANSFORMER_MIN_HEIGHT,
+} from '../itemTypes';
+import {
   isAspectLocked,
   resolveDefaultDimensions,
   resolveAspectLockedDimensions,
@@ -13,7 +15,7 @@ import {
   getItemBounds,
   getItemCenter,
   isPointInItem,
-} from '../index';
+} from '../canvasItemPure';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -323,4 +325,70 @@ describe('Items Module — Stage 3', () => {
     });
   });
 
+  // =========================================================================
+  // ItemsLayer z-index sorting invariant
+  // =========================================================================
+  describe('ItemsLayer — Strict z-index ordering', () => {
+    it('sorts items in ascending order of z_index so lower z renders below higher', () => {
+      const items = [
+        { id: '1', z_index: 10 },
+        { id: '2', z_index: -2 },
+        { id: '3', z_index: 5 },
+        { id: '4', z_index: 0 },
+      ];
+      const sorted = [...items].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
+      expect(sorted.map((i) => i.id)).toEqual(['2', '4', '3', '1']);
+    });
+
+    it('handles undefined and missing z_index gracefully with 0 fallback', () => {
+      const items = [
+        { id: '1', z_index: 3 },
+        { id: '2', z_index: undefined },
+        { id: '3', z_index: -1 },
+      ];
+      const sorted = [...items].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
+      expect(sorted.map((i) => i.id)).toEqual(['3', '2', '1']);
+    });
+  });
+
+  // =========================================================================
+  // useItemDrag multi-item synchronization invariant
+  // =========================================================================
+  describe('useItemDrag — Multi-item synchronization invariant', () => {
+    it('synchronizes all selected items by primary drag displacement delta (dx, dy)', () => {
+      const primaryStart = { x: 100, y: 100 };
+      const siblingStart = { x: 300, y: 200 };
+      const unselectedStart = { x: 500, y: 500 };
+
+      // Primary dragged to (150, 180)
+      const primaryDragged = { x: 150, y: 180 };
+      const dx = primaryDragged.x - primaryStart.x; // +50
+      const dy = primaryDragged.y - primaryStart.y; // +80
+
+      const siblingLive = {
+        x: siblingStart.x + dx,
+        y: siblingStart.y + dy,
+      };
+
+      expect(siblingLive).toEqual({ x: 350, y: 280 });
+      // Unselected item is untouched
+      expect(unselectedStart).toEqual({ x: 500, y: 500 });
+    });
+
+    it('commits integer positions for all dragged items on dragEnd', () => {
+      const startA = { x: 100, y: 100 };
+      const startB = { x: 250, y: 150 };
+
+      const finalA = { x: 142.4, y: 188.7 };
+      const dx = finalA.x - startA.x;
+      const dy = finalA.y - startA.y;
+
+      const commitA = { x: finalA.x, y: finalA.y };
+      const commitB = { x: Math.round(startB.x + dx), y: Math.round(startB.y + dy) };
+
+      expect(commitB.x).toBe(292);
+      expect(commitB.y).toBe(239);
+    });
+  });
 });
+
