@@ -34,7 +34,9 @@ export function ColorCard({
   const label = content.label || hex.toUpperCase();
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
-    onDragEnd(item.id, e.target.x(), e.target.y());
+    const node = groupRef.current ?? (e.currentTarget as Konva.Node);
+    if (!node) return;
+    onDragEnd(item.id, node.x(), node.y());
   };
 
   const handleTransformEnd = () => {

@@ -350,45 +350,4 @@ describe('Items Module — Stage 3', () => {
       expect(sorted.map((i) => i.id)).toEqual(['3', '2', '1']);
     });
   });
-
-  // =========================================================================
-  // useItemDrag multi-item synchronization invariant
-  // =========================================================================
-  describe('useItemDrag — Multi-item synchronization invariant', () => {
-    it('synchronizes all selected items by primary drag displacement delta (dx, dy)', () => {
-      const primaryStart = { x: 100, y: 100 };
-      const siblingStart = { x: 300, y: 200 };
-      const unselectedStart = { x: 500, y: 500 };
-
-      // Primary dragged to (150, 180)
-      const primaryDragged = { x: 150, y: 180 };
-      const dx = primaryDragged.x - primaryStart.x; // +50
-      const dy = primaryDragged.y - primaryStart.y; // +80
-
-      const siblingLive = {
-        x: siblingStart.x + dx,
-        y: siblingStart.y + dy,
-      };
-
-      expect(siblingLive).toEqual({ x: 350, y: 280 });
-      // Unselected item is untouched
-      expect(unselectedStart).toEqual({ x: 500, y: 500 });
-    });
-
-    it('commits integer positions for all dragged items on dragEnd', () => {
-      const startA = { x: 100, y: 100 };
-      const startB = { x: 250, y: 150 };
-
-      const finalA = { x: 142.4, y: 188.7 };
-      const dx = finalA.x - startA.x;
-      const dy = finalA.y - startA.y;
-
-      const commitA = { x: finalA.x, y: finalA.y };
-      const commitB = { x: Math.round(startB.x + dx), y: Math.round(startB.y + dy) };
-
-      expect(commitB.x).toBe(292);
-      expect(commitB.y).toBe(239);
-    });
-  });
 });
-

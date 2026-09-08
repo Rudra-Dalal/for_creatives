@@ -33,7 +33,9 @@ export function TextCard({
   const text = content.text || 'Add thought...';
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
-    onDragEnd(item.id, e.target.x(), e.target.y());
+    const node = groupRef.current ?? (e.currentTarget as Konva.Node);
+    if (!node) return;
+    onDragEnd(item.id, node.x(), node.y());
   };
 
   const handleTransformEnd = () => {

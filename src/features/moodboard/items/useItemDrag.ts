@@ -212,7 +212,7 @@ export function useItemDrag({
       }
 
       // Schedule one RAF per frame to drive connector/anchor re-renders
-      if (dragRafRef.current === null) {
+      if (typeof requestAnimationFrame !== 'undefined' && dragRafRef.current === null) {
         dragRafRef.current = requestAnimationFrame(() => {
           dragRafRef.current = null;
           setLiveDragTick((t) => (t + 1) % 10000);
@@ -289,7 +289,9 @@ export function useItemDrag({
 
       // Cleanup
       if (dragRafRef.current !== null) {
-        cancelAnimationFrame(dragRafRef.current);
+        if (typeof cancelAnimationFrame !== 'undefined') {
+          cancelAnimationFrame(dragRafRef.current);
+        }
         dragRafRef.current = null;
       }
       liveDragPositionsRef.current.clear();

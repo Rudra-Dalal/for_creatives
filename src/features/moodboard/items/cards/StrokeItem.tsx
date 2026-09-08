@@ -31,7 +31,9 @@ export function StrokeItem({
   const strokeWidth = content.strokeWidth || 4;
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
-    onDragEnd(item.id, e.target.x(), e.target.y());
+    const node = groupRef.current ?? (e.currentTarget as Konva.Node);
+    if (!node) return;
+    onDragEnd(item.id, node.x(), node.y());
   };
 
   return (
