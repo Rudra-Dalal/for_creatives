@@ -110,7 +110,6 @@ export function MoodboardCanvas({
   const [activeTool, setActiveTool] = useState<'select' | 'pen' | 'eraser'>('select');
   const [penColor, setPenColor] = useState<string>('#D97706');
   const [penWidth, setPenWidth] = useState<number>(4);
-  const [eraserSize, setEraserSize] = useState<number>(16);
 
   // Color Swatch Dialog state (react-colorful)
   const [isColorDialogOpen, setIsColorDialogOpen] = useState(false);
@@ -501,7 +500,6 @@ export function MoodboardCanvas({
         activeTool={activeTool}
         penColor={penColor}
         penWidth={penWidth}
-        eraserSize={eraserSize}
         onChangeActiveTool={setActiveTool}
         onAddStroke={addStrokeItem}
         onBatchDeleteStrokes={batchDeleteItems}
@@ -616,8 +614,6 @@ export function MoodboardCanvas({
         onOpenPenColorPicker={handleOpenPenColorDialog}
         penWidth={penWidth}
         onChangePenWidth={setPenWidth}
-        eraserSize={eraserSize}
-        onChangeEraserSize={setEraserSize}
         canUndo={canUndo}
         onUndo={handleUndo}
         isLibraryOpen={isLibraryOpen}

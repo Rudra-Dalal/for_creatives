@@ -97,27 +97,4 @@ describe('strokeSlicing — Geometric Polyline Circle Intersection', () => {
     expect(boxes[1].y).toBeCloseTo(200);
     expect(boxes[1].relativePoints.length).toBeGreaterThanOrEqual(4);
   });
-
-  it('correctly scales cut radius for different eraser sizes (8, 16, 28)', () => {
-    const line = [0, 50, 100, 50];
-
-    // Fine eraser: radius 8 (cut zone [42, 58])
-    const cut8 = slicePolylineWithCircle(line, 50, 50, 8);
-    expect(cut8.length).toBe(2);
-    expect(cut8[0][2]).toBeCloseTo(42);
-    expect(cut8[1][0]).toBeCloseTo(58);
-
-    // Medium eraser: radius 16 (cut zone [34, 66])
-    const cut16 = slicePolylineWithCircle(line, 50, 50, 16);
-    expect(cut16.length).toBe(2);
-    expect(cut16[0][2]).toBeCloseTo(34);
-    expect(cut16[1][0]).toBeCloseTo(66);
-
-    // Large eraser: radius 28 (cut zone [22, 78])
-    const cut28 = slicePolylineWithCircle(line, 50, 50, 28);
-    expect(cut28.length).toBe(2);
-    expect(cut28[0][2]).toBeCloseTo(22);
-    expect(cut28[1][0]).toBeCloseTo(78);
-  });
 });
-

@@ -51,8 +51,6 @@ interface MoodboardToolbarProps {
   onOpenPenColorPicker?: () => void;
   penWidth?: number;
   onChangePenWidth?: (width: number) => void;
-  eraserSize?: number;
-  onChangeEraserSize?: (size: number) => void;
   canUndo?: boolean;
   onUndo?: () => void;
   isLibraryOpen: boolean;
@@ -91,8 +89,6 @@ export function MoodboardToolbar({
   onOpenPenColorPicker,
   penWidth = 4,
   onChangePenWidth,
-  eraserSize = 16,
-  onChangeEraserSize,
   canUndo,
   onUndo,
   isLibraryOpen,
@@ -268,38 +264,6 @@ export function MoodboardToolbar({
                         className={`rounded-full bg-current ${step.indicator}`}
                       />
                       <span className="text-[10px]">{step.width}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* When Eraser Mode is active, reveal discrete size controls: Fine (8px), Med (16px), Large (28px) */}
-          {activeTool === 'eraser' && (
-            <div className="flex items-center gap-1 pl-1.5 pr-1.5 py-0.5 rounded-full bg-surface-subtle/80 border border-border/70">
-              <span className="text-[10px] text-muted-foreground font-medium px-1">Size</span>
-              <div className="flex items-center gap-0.5 border-l border-border/60 pl-1">
-                {[
-                  { size: 8, label: 'Fine', indicator: 'h-1.5 w-1.5' },
-                  { size: 16, label: 'Med', indicator: 'h-2.5 w-2.5' },
-                  { size: 28, label: 'Large', indicator: 'h-3.5 w-3.5' },
-                ].map((step) => {
-                  const isActive = (eraserSize || 16) === step.size;
-                  return (
-                    <button
-                      key={step.size}
-                      type="button"
-                      onClick={() => onChangeEraserSize?.(step.size)}
-                      className={`h-6 px-1.5 rounded text-[11px] font-medium transition-colors flex items-center gap-1 ${
-                        isActive
-                          ? 'bg-accent/20 text-accent font-semibold'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
-                      }`}
-                      title={`Eraser ${step.label} (${step.size}px)`}
-                    >
-                      <span className={`rounded-full bg-current ${step.indicator}`} />
-                      <span className="text-[10px]">{step.size}</span>
                     </button>
                   );
                 })}

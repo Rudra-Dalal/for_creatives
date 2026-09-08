@@ -45,7 +45,6 @@ interface MoodboardStageProps {
   activeTool?: 'select' | 'pen' | 'eraser';
   penColor?: string;
   penWidth?: number;
-  eraserSize?: number;
   onChangeActiveTool?: (tool: 'select' | 'pen' | 'eraser') => void;
   onAddStroke?: (
     points: number[],
@@ -123,7 +122,6 @@ export function MoodboardStage({
   activeTool = 'select',
   penColor = '#D97706',
   penWidth = 4,
-  eraserSize = 16,
   onChangeActiveTool,
   onAddStroke,
   onBatchDeleteStrokes,
@@ -188,7 +186,6 @@ export function MoodboardStage({
   const eraserInitialStrokesRef = useRef<MoodboardItem[]>([]);
   const workingStrokesRef = useRef<Map<string, { stroke: MoodboardItem; isOriginal: boolean }>>(new Map());
   const [eraserTick, setEraserTick] = useState(0);
-  const [eraserHoverPos, setEraserHoverPos] = useState<{ x: number; y: number } | null>(null);
 
   // Slices active strokes along an eraser movement segment
   const sliceStrokesAlongPath = useCallback(
@@ -196,7 +193,7 @@ export function MoodboardStage({
       const map = workingStrokesRef.current;
       if (!map || map.size === 0) return;
 
-      const radius = (eraserSize || 16) / Math.max(0.4, viewport.scale);
+      const radius = 14 / Math.max(0.4, viewport.scale);
       const dist = Math.hypot(toX - fromX, toY - fromY);
       const steps = Math.max(1, Math.ceil(dist / 8));
 
@@ -281,7 +278,7 @@ export function MoodboardStage({
         setEraserTick((t) => (t + 1) % 10000);
       }
     },
-    [viewport.scale, eraserSize]
+    [viewport.scale]
   );
 
   // Commits partial stroke eraser results on pointerup with atomic single-step undo
@@ -1243,22 +1240,6 @@ export function MoodboardStage({
 
   // Handle Stage Mouse Move for Marquee selection & connection drag & pen drawing
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    // Track eraser pointer position for live visual guide
-    if (activeTool === 'eraser') {
-      const stage = stageRef.current;
-      if (stage) {
-        const pointer = stage.getPointerPosition();
-        if (pointer) {
-          setEraserHoverPos({
-            x: (pointer.x - stage.x()) / stage.scaleX(),
-            y: (pointer.y - stage.y()) / stage.scaleY(),
-          });
-        }
-      }
-    } else if (eraserHoverPos) {
-      setEraserHoverPos(null);
-    }
-
     // Handle in-progress freehand pen drawing via usePenTool
     if (pen.handleStageMouseMove(e)) {
       return;
@@ -1569,10 +1550,7 @@ export function MoodboardStage({
         onMouseDown={handleStageMouseDown}
         onMouseMove={handleStageMouseMove}
         onMouseUp={handleStageMouseUp}
-        onMouseLeave={() => {
-          setEraserHoverPos(null);
-          handleStageMouseUp();
-        }}
+        onMouseLeave={handleStageMouseUp}
         onTouchStart={handleStageMouseDown}
         onTouchMove={handleStageMouseMove}
         onTouchEnd={handleStageMouseUp}
@@ -1803,20 +1781,6 @@ export function MoodboardStage({
                 />
               )}
             </>
-          )}
-
-          {/* Live Eraser Size & Position Indicator Ring */}
-          {activeTool === 'eraser' && eraserHoverPos && (
-            <Circle
-              x={eraserHoverPos.x}
-              y={eraserHoverPos.y}
-              radius={(eraserSize || 16) / Math.max(0.4, viewport.scale)}
-              stroke="#D97706"
-              strokeWidth={1.5 / Math.max(0.4, viewport.scale)}
-              dash={[4 / Math.max(0.4, viewport.scale), 3 / Math.max(0.4, viewport.scale)]}
-              fill="rgba(217, 119, 6, 0.08)"
-              listening={false}
-            />
           )}
         </Layer>
 
