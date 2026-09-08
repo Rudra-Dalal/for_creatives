@@ -3,8 +3,8 @@
 import { useState, useRef, useCallback } from 'react';
 import type { AnchorPosition, MoodboardItem } from '../../types';
 import type { CanvasPoint } from '../../coordinates/geometryTypes';
-import { CLICK_VS_DRAG_THRESHOLD_PX, CORNER_PRIORITY_ZONE_PX } from '../../coordinates/constants';
-import { findClosestCardinalAnchor, isPointInCornerProtectionZone } from '../geometry/anchorGeometry';
+import { CLICK_VS_DRAG_THRESHOLD_PX, CONNECTOR_SNAP_PROXIMITY_PX } from '../../coordinates/constants';
+import { findClosestCardinalAnchor } from '../geometry/anchorGeometry';
 
 export interface ConnectingSource {
   itemId: string;
@@ -26,8 +26,8 @@ export interface UseConnectorDragOptions {
     fromAnchor: AnchorPosition,
     toAnchor: AnchorPosition
   ) => void;
-  /** Proximity padding around candidate items for magnetic anchor snapping (default: 24px). */
-  snapProximityPadding?: number;
+  /** Screen-space proximity envelope around candidate items for magnetic anchor snapping (default: 28px). */
+  snapProximityPx?: number;
 }
 
 export interface UseConnectorDragReturn {
@@ -51,7 +51,8 @@ export interface UseConnectorDragReturn {
   /** Updates the live elastic line and computes magnetic snapping against candidate items. */
   updateConnecting: (
     pointerPos: CanvasPoint,
-    candidateItems: MoodboardItem[]
+    candidateItems: MoodboardItem[],
+    scale?: number
   ) => void;
   /** Finalizes the connection drag and commits the new connection if a valid target is snapped. */
   finishConnecting: () => boolean;
@@ -64,17 +65,19 @@ export interface UseConnectorDragReturn {
  *
  * Interaction Contracts:
  *  1. Authoritative threshold: Live connection line activates only after pointer movement
- *     exceeds CLICK_VS_DRAG_THRESHOLD_PX (4px).
+ *     exceeds CLICK_VS_DRAG_THRESHOLD_PX (4px screen space).
  *  2. Magnetic cardinal edge snapping: Snaps to candidate card anchors mathematically
  *     WITHOUT dynamically mounting 4 interactive DOM/Konva anchor listeners per item.
- *  3. Corner protection: Avoids anchor snapping when pointer is within the 20px
- *     corner priority zone where Transformer resize handles operate.
- *  4. Single authority: Completely encapsulates connectingFrom, connectingPointerPos,
- *     and connectingTarget state with synchronous ref backing.
+ *  3. Screen-space envelope: Uses CONNECTOR_SNAP_PROXIMITY_PX (28px screen space) converted
+ *     to canvas world distance via viewport scale.
+ *  4. Corner protection: Respects CORNER_PRIORITY_ZONE_PX (20px screen space) to ensure
+ *     Transformer corner resize handles retain absolute priority.
+ *  5. Single authority: Encapsulates connectingFrom, connectingPointerPos, and connectingTarget
+ *     with synchronous ref backing.
  */
 export function useConnectorDrag({
   onAddConnection,
-  snapProximityPadding = 24,
+  snapProximityPx = CONNECTOR_SNAP_PROXIMITY_PX,
 }: UseConnectorDragOptions = {}): UseConnectorDragReturn {
   const [connectingFrom, setConnectingFrom] = useState<ConnectingSource | null>(null);
   const [connectingPointerPos, setConnectingPointerPos] = useState<CanvasPoint | null>(null);
@@ -113,15 +116,15 @@ export function useConnectorDrag({
   );
 
   const updateConnecting = useCallback(
-    (pointerPos: CanvasPoint, candidateItems: MoodboardItem[]) => {
+    (pointerPos: CanvasPoint, candidateItems: MoodboardItem[], scale = 1) => {
       const currentSource = connectingFromRef.current;
       if (!currentSource) return;
 
-      // Evaluate 4px threshold
+      // Evaluate 4px screen-space threshold
       if (!thresholdExceededRef.current && initialPointerPosRef.current) {
-        const dx = pointerPos.x - initialPointerPosRef.current.x;
-        const dy = pointerPos.y - initialPointerPosRef.current.y;
-        if (Math.hypot(dx, dy) >= CLICK_VS_DRAG_THRESHOLD_PX) {
+        const dxScreen = (pointerPos.x - initialPointerPosRef.current.x) * scale;
+        const dyScreen = (pointerPos.y - initialPointerPosRef.current.y) * scale;
+        if (Math.hypot(dxScreen, dyScreen) >= CLICK_VS_DRAG_THRESHOLD_PX) {
           thresholdExceededRef.current = true;
           setIsDragThresholdExceeded(true);
         }
@@ -138,22 +141,10 @@ export function useConnectorDrag({
         if (item.type === 'stroke' || item.deleted_at) continue;
 
         const bounds = { x: item.x, y: item.y, width: item.width, height: item.height };
-        const pad = snapProximityPadding;
 
-        // Bounding box proximity check
-        if (
-          pointerPos.x >= bounds.x - pad &&
-          pointerPos.x <= bounds.x + bounds.width + pad &&
-          pointerPos.y >= bounds.y - pad &&
-          pointerPos.y <= bounds.y + bounds.height + pad
-        ) {
-          // If within corner priority zone, do NOT snap to cardinal anchor
-          // (allows Transformer corner resize handles to maintain priority)
-          if (isPointInCornerProtectionZone(pointerPos, bounds, CORNER_PRIORITY_ZONE_PX)) {
-            continue;
-          }
-
-          const closest = findClosestCardinalAnchor(pointerPos, bounds);
+        // findClosestCardinalAnchor converts snapProximityPx and corner protection to world units via scale
+        const closest = findClosestCardinalAnchor(pointerPos, bounds, scale, snapProximityPx);
+        if (closest) {
           foundTarget = {
             itemId: item.id,
             anchor: closest.anchor,
@@ -166,7 +157,7 @@ export function useConnectorDrag({
       connectingTargetRef.current = foundTarget;
       setConnectingTarget(foundTarget);
     },
-    [snapProximityPadding]
+    [snapProximityPx]
   );
 
   const finishConnecting = useCallback((): boolean => {

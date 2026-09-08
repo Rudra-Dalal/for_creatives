@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Stage, Layer, Rect, Arrow, Line } from 'react-konva';
 import Konva from 'konva';
 import type {
@@ -28,7 +28,7 @@ import { CanvasTransformer } from '../selection';
 import { isPathIntersectingStroke } from '../utils/strokeUtils';
 import {
   ConnectorsLayer,
-  CanvasItemAnchorHandles,
+  ConnectorAnchorHandles,
   useConnectorDrag,
   getAnchorPoint,
   calculateBezierCurve,
@@ -199,6 +199,36 @@ export function MoodboardStage({
   const connectorDrag = useConnectorDrag({
     onAddConnection,
   });
+
+  // Live elastic drag curve for InteractionOverlayLayer
+  const liveElasticCurve = useMemo(() => {
+    if (!connectorDrag.isConnecting || !connectorDrag.connectingFrom || !connectorDrag.connectingPointerPos) {
+      return null;
+    }
+    if (connectorDrag.connectingTarget) {
+      const curve = calculateBezierCurve(
+        connectorDrag.connectingFrom.startPoint,
+        connectorDrag.connectingTarget.snapPoint,
+        connectorDrag.connectingFrom.anchor,
+        connectorDrag.connectingTarget.anchor
+      );
+      return { points: curve.points, bezier: true };
+    }
+    return {
+      points: [
+        connectorDrag.connectingFrom.startPoint.x,
+        connectorDrag.connectingFrom.startPoint.y,
+        connectorDrag.connectingPointerPos.x,
+        connectorDrag.connectingPointerPos.y,
+      ],
+      bezier: false,
+    };
+  }, [
+    connectorDrag.isConnecting,
+    connectorDrag.connectingFrom,
+    connectorDrag.connectingPointerPos,
+    connectorDrag.connectingTarget,
+  ]);
 
   // Connection label editing state
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
@@ -993,7 +1023,7 @@ export function MoodboardStage({
       if (!stage) return;
       const pos = getPointerCanvasPosition(stage, viewport);
       if (!pos) return;
-      connectorDrag.updateConnecting(pos, items);
+      connectorDrag.updateConnecting(pos, items, viewport.scale);
       return;
     }
 
@@ -1316,7 +1346,6 @@ export function MoodboardStage({
           items={items}
           selectedConnectionId={selectedConnectionId}
           scale={viewport.scale}
-          drag={connectorDrag}
           onSelectConnection={(id) => {
             onSelectConnection?.(id);
             if (onSelectIds) onSelectIds([]);
@@ -1330,7 +1359,7 @@ export function MoodboardStage({
           }}
         />
 
-        {/* Layer 3: Main Items & Transformer Layer */}
+        {/* Layer 3: Main Items Layer (strictly items and playground objects) */}
         <Layer name="items-layer" listening={!pen.isDrawingRef.current && activeTool !== 'pen'}>
           {/* Render All Playground Objects in strict z-index order */}
           {sortedItems.map((rawItem) => {
@@ -1444,7 +1473,10 @@ export function MoodboardStage({
               />
             );
           })}
+        </Layer>
 
+        {/* Layer 4: Interaction Overlay Layer (CanvasTransformer, Cardinal Anchor Handles, Live Elastic Line) */}
+        <Layer name="interaction-overlay-layer">
           {/* Konva Transformer for resize (hidden in read-only mode, and ignores strokes) */}
           {!readOnly && (() => {
             const transformableNodes = (selectedNodes.length > 0 ? selectedNodes : (selectedNode ? [selectedNode] : [])).filter((node) => {
@@ -1461,7 +1493,7 @@ export function MoodboardStage({
             );
           })()}
 
-          {/* Cardinal Anchor Handles on actively selected card only (far from corners, zero extra listeners during drag) */}
+          {/* Cardinal Anchor Handles on actively selected card only */}
           {!readOnly &&
             activeTool === 'select' &&
             !connectorDrag.isConnecting &&
@@ -1471,7 +1503,7 @@ export function MoodboardStage({
               if (!rawItem || rawItem.type === 'stroke') return null;
               const item = getItemLiveBounds(rawItem);
               return (
-                <CanvasItemAnchorHandles
+                <ConnectorAnchorHandles
                   key={`anchors-${item.id}`}
                   item={item}
                   scale={viewport.scale}
@@ -1481,6 +1513,21 @@ export function MoodboardStage({
                 />
               );
             })()}
+
+          {/* Live Elastic Drag-to-Connect Arrow (activates only after 4px threshold) */}
+          {connectorDrag.isConnecting && liveElasticCurve && connectorDrag.isDragThresholdExceeded && (
+            <Arrow
+              points={liveElasticCurve.points}
+              bezier={liveElasticCurve.bezier}
+              stroke="#D97706"
+              fill="#D97706"
+              strokeWidth={2 / Math.max(0.4, viewport.scale)}
+              dash={[6 / Math.max(0.4, viewport.scale), 4 / Math.max(0.4, viewport.scale)]}
+              pointerLength={8 / Math.max(0.4, viewport.scale)}
+              pointerWidth={6 / Math.max(0.4, viewport.scale)}
+              listening={false}
+            />
+          )}
         </Layer>
 
         {/* Dedicated high-performance Drawing Layer (isolated canvas: 0 item/background redraws during drawing) */}

@@ -1,6 +1,5 @@
-import type { AnchorPosition, ResolvedConnection, MoodboardItem } from '../../types';
+import type { AnchorPosition } from '../../types';
 import type { CanvasPoint } from '../../coordinates/geometryTypes';
-import { getOptimalAnchors } from './anchorGeometry';
 
 export interface BezierCurveData {
   start: CanvasPoint;
@@ -97,49 +96,4 @@ export function calculateBezierCurve(
     midpoint,
     points: [start.x, start.y, cp1.x, cp1.y, cp2.x, cp2.y, end.x, end.y],
   };
-}
-
-/**
- * Resolves all active connections across moodboard items into a flat list of renderable connections,
- * filtering out any pointing to non-existent or deleted items.
- */
-export function extractActiveConnections(items: MoodboardItem[]): ResolvedConnection[] {
-  const itemMap = new Map<string, MoodboardItem>(items.map((i) => [i.id, i]));
-  const resolved: ResolvedConnection[] = [];
-
-  for (const item of items) {
-    if (item.deleted_at) continue;
-    const rawConnections = (item.content as { connections?: unknown })?.connections;
-    if (Array.isArray(rawConnections)) {
-      for (const conn of rawConnections) {
-        if (
-          conn &&
-          typeof conn === 'object' &&
-          'id' in conn &&
-          'targetId' in conn &&
-          itemMap.has(conn.targetId) &&
-          conn.targetId !== item.id
-        ) {
-          const targetItem = itemMap.get(conn.targetId)!;
-          if (targetItem.deleted_at) continue;
-
-          const optimal = getOptimalAnchors(
-            { x: item.x, y: item.y, width: item.width, height: item.height },
-            { x: targetItem.x, y: targetItem.y, width: targetItem.width, height: targetItem.height }
-          );
-
-          resolved.push({
-            id: conn.id,
-            fromId: item.id,
-            targetId: conn.targetId,
-            fromAnchor: conn.fromAnchor || optimal.fromAnchor,
-            toAnchor: conn.toAnchor || optimal.toAnchor,
-            label: conn.label,
-          });
-        }
-      }
-    }
-  }
-
-  return resolved;
 }

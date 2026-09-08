@@ -1,6 +1,6 @@
 import type { AnchorPosition } from '../../types';
 import type { CanvasPoint, CanvasBounds } from '../../coordinates/geometryTypes';
-import { CORNER_PRIORITY_ZONE_PX } from '../../coordinates/constants';
+import { CORNER_PRIORITY_ZONE_PX, CONNECTOR_SNAP_PROXIMITY_PX } from '../../coordinates/constants';
 
 /**
  * Returns the exact canvas world coordinates for a cardinal anchor on a rectangular item.
@@ -32,14 +32,18 @@ export const CARDINAL_ANCHORS: readonly AnchorPosition[] = ['top', 'right', 'bot
  * Checks whether a given canvas point falls within the corner protection zone
  * of any of the 4 corners of a rectangular item.
  *
- * In the corner protection zone (default 20px), Transformer corner resize handles
+ * In the corner protection zone (default 20px screen-space), Transformer corner resize handles
  * take absolute hit priority over connector initiation or attachment.
+ * Converts screen-space zonePx to canvas world units via scale.
  */
 export function isPointInCornerProtectionZone(
   point: CanvasPoint,
   bounds: CanvasBounds,
+  scale = 1,
   zonePx: number = CORNER_PRIORITY_ZONE_PX
 ): boolean {
+  const worldZone = zonePx / Math.max(0.2, scale);
+
   const corners: CanvasPoint[] = [
     { x: bounds.x, y: bounds.y },                                    // Top-Left
     { x: bounds.x + bounds.width, y: bounds.y },                     // Top-Right
@@ -49,7 +53,7 @@ export function isPointInCornerProtectionZone(
 
   for (const corner of corners) {
     const dist = Math.hypot(point.x - corner.x, point.y - corner.y);
-    if (dist <= zonePx) {
+    if (dist <= worldZone) {
       return true;
     }
   }
@@ -66,11 +70,37 @@ export interface ClosestAnchorResult {
 /**
  * Finds the closest cardinal anchor on an item's bounding box to a target pointer point.
  * Used for magnetic cardinal edge snapping during connector dragging.
+ *
+ * Rules:
+ *  1. Rejects any pointer position within the protected corner regions (CORNER_PRIORITY_ZONE_PX).
+ *  2. Evaluates distance within the screen-space CONNECTOR_SNAP_PROXIMITY_PX (28px) converted
+ *     to canvas world distance via scale.
+ *  3. Returns null if outside the snapping envelope or inside a corner zone.
  */
 export function findClosestCardinalAnchor(
   pointer: CanvasPoint,
-  bounds: CanvasBounds
-): ClosestAnchorResult {
+  bounds: CanvasBounds,
+  scale = 1,
+  snapProximityPx: number = CONNECTOR_SNAP_PROXIMITY_PX
+): ClosestAnchorResult | null {
+  // Reject anchors inside the corner protection zone
+  if (isPointInCornerProtectionZone(pointer, bounds, scale)) {
+    return null;
+  }
+
+  // Convert screen-space proximity envelope (28px) into canvas world units
+  const worldProximity = snapProximityPx / Math.max(0.2, scale);
+
+  // Check if pointer is within the item's extended snapping envelope
+  if (
+    pointer.x < bounds.x - worldProximity ||
+    pointer.x > bounds.x + bounds.width + worldProximity ||
+    pointer.y < bounds.y - worldProximity ||
+    pointer.y > bounds.y + bounds.height + worldProximity
+  ) {
+    return null;
+  }
+
   let bestAnchor: AnchorPosition = 'left';
   let bestPoint: CanvasPoint = getAnchorPoint(bounds, 'left');
   let minDistance = Infinity;
@@ -95,6 +125,9 @@ export function findClosestCardinalAnchor(
 /**
  * Automatically chooses the pair of anchors that minimizes wire crossing and visual clutter
  * between two rectangular items.
+ *
+ * Strictly deterministic and geometric (simple center delta comparison).
+ * No obstacle routing, auto-layout, or clutter analysis algorithms.
  */
 export function getOptimalAnchors(
   source: CanvasBounds,

@@ -1,5 +1,5 @@
 import type { MoodboardItem } from '../types';
-import { extractActiveConnections } from './geometry/bezierGeometry';
+import { extractActiveConnections } from './connectionResolution';
 
 /**
  * Traverses all active connections on the moodboard bidirectionally to find

@@ -7,24 +7,25 @@ import type { AnchorPosition, MoodboardItem } from '../../types';
 import type { CanvasPoint } from '../../coordinates/geometryTypes';
 import { getAnchorPoint, CARDINAL_ANCHORS } from '../geometry/anchorGeometry';
 
-export interface CanvasItemAnchorHandlesProps {
+export interface ConnectorAnchorHandlesProps {
   item: MoodboardItem;
   scale?: number;
   onStartConnect: (itemId: string, anchor: AnchorPosition, startPoint: CanvasPoint) => void;
 }
 
 /**
- * CanvasItemAnchorHandles — Renders the 4 cardinal magnetic connection anchors (top, right, bottom, left)
+ * ConnectorAnchorHandles — Renders the 4 cardinal magnetic connection anchors (top, right, bottom, left)
  * around an actively selected card.
  *
- * Designed to strictly avoid interfering with the 4 corner resize handles of CanvasTransformer:
- * anchors are positioned at edge midpoints, far outside the 20px corner priority zone.
+ * Rendered through InteractionOverlayLayer above items so that anchor dots have clean hit-testing.
+ * Anchors are positioned at edge midpoints, far outside the 20px corner priority zone to never
+ * interfere with the 4 corner resize handles of CanvasTransformer.
  */
-export function CanvasItemAnchorHandles({
+export function ConnectorAnchorHandles({
   item,
   scale = 1,
   onStartConnect,
-}: CanvasItemAnchorHandlesProps) {
+}: ConnectorAnchorHandlesProps) {
   const [hoveredAnchor, setHoveredAnchor] = useState<AnchorPosition | null>(null);
 
   const zoomDivisor = Math.max(0.4, scale);

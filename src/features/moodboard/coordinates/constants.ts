@@ -22,3 +22,9 @@ export const MAX_CANVAS_SCALE = 3.0;
  * Used to ensure cardinal connector anchors never encroach into corner handle hit regions.
  */
 export const CORNER_PRIORITY_ZONE_PX = 20;
+
+/**
+ * Screen-space magnetic snap proximity envelope for connector dragging (in screen pixels).
+ * Converted to canvas world distance via screen-to-canvas scale before distance comparisons.
+ */
+export const CONNECTOR_SNAP_PROXIMITY_PX = 28;

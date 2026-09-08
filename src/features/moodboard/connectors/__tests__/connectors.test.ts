@@ -11,12 +11,16 @@ import {
 import {
   calculateBezierCurve,
   calculateBezierMidpoint,
-  extractActiveConnections,
 } from '../geometry/bezierGeometry';
+import { extractActiveConnections } from '../connectionResolution';
 import { useConnectorDrag } from '../interaction/useConnectorDrag';
 import type { UseConnectorDragOptions } from '../interaction/useConnectorDrag';
 import { getConnectedReferenceIdsForIdea } from '../semanticDirection';
-import { CLICK_VS_DRAG_THRESHOLD_PX, CORNER_PRIORITY_ZONE_PX } from '../../coordinates/constants';
+import {
+  CLICK_VS_DRAG_THRESHOLD_PX,
+  CORNER_PRIORITY_ZONE_PX,
+  CONNECTOR_SNAP_PROXIMITY_PX,
+} from '../../coordinates/constants';
 import type { MoodboardItem } from '../../types';
 
 // ---------------------------------------------------------------------------
@@ -60,7 +64,7 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
   const sampleBounds = { x: 100, y: 100, width: 200, height: 100 };
 
   // =========================================================================
-  // 1. Cardinal Anchor Geometry
+  // 1. Cardinal Anchor Geometry & Edge Centers
   // =========================================================================
   describe('anchorGeometry — Cardinal Anchor Calculations', () => {
     it('places all 4 cardinal anchors precisely at edge centers', () => {
@@ -80,61 +84,82 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
   });
 
   // =========================================================================
-  // 2. Corner Protection Zone
+  // 2. Corner Protection Zone (Scale-Aware)
   // =========================================================================
   describe('anchorGeometry — Corner Protection Zone', () => {
-    it('detects points within 20px of any of the 4 card corners', () => {
+    it('detects points within 20px screen-space of any of the 4 card corners at scale = 1', () => {
       // Top-Left corner is at (100, 100)
-      expect(isPointInCornerProtectionZone({ x: 105, y: 105 }, sampleBounds, CORNER_PRIORITY_ZONE_PX)).toBe(true);
-      expect(isPointInCornerProtectionZone({ x: 100, y: 100 }, sampleBounds, CORNER_PRIORITY_ZONE_PX)).toBe(true);
+      expect(isPointInCornerProtectionZone({ x: 105, y: 105 }, sampleBounds, 1, CORNER_PRIORITY_ZONE_PX)).toBe(true);
+      expect(isPointInCornerProtectionZone({ x: 100, y: 100 }, sampleBounds, 1, CORNER_PRIORITY_ZONE_PX)).toBe(true);
 
       // Top-Right corner is at (300, 100)
-      expect(isPointInCornerProtectionZone({ x: 295, y: 105 }, sampleBounds, CORNER_PRIORITY_ZONE_PX)).toBe(true);
+      expect(isPointInCornerProtectionZone({ x: 295, y: 105 }, sampleBounds, 1, CORNER_PRIORITY_ZONE_PX)).toBe(true);
 
       // Bottom-Right corner is at (300, 200)
-      expect(isPointInCornerProtectionZone({ x: 290, y: 195 }, sampleBounds, CORNER_PRIORITY_ZONE_PX)).toBe(true);
+      expect(isPointInCornerProtectionZone({ x: 290, y: 195 }, sampleBounds, 1, CORNER_PRIORITY_ZONE_PX)).toBe(true);
 
       // Bottom-Left corner is at (100, 200)
-      expect(isPointInCornerProtectionZone({ x: 105, y: 195 }, sampleBounds, CORNER_PRIORITY_ZONE_PX)).toBe(true);
+      expect(isPointInCornerProtectionZone({ x: 105, y: 195 }, sampleBounds, 1, CORNER_PRIORITY_ZONE_PX)).toBe(true);
+    });
+
+    it('scales corner protection zone into world units correctly with zoom', () => {
+      // At scale = 2, world zone is 20 / 2 = 10px
+      // Point 15px from corner: within zone at scale 1, but outside zone at scale 2
+      const point15 = { x: 115, y: 100 };
+      expect(isPointInCornerProtectionZone(point15, sampleBounds, 1, CORNER_PRIORITY_ZONE_PX)).toBe(true);
+      expect(isPointInCornerProtectionZone(point15, sampleBounds, 2, CORNER_PRIORITY_ZONE_PX)).toBe(false);
     });
 
     it('returns false for points far from corners, such as edge centers', () => {
       // Top edge center (200, 100) is 100px away from corners
-      expect(isPointInCornerProtectionZone({ x: 200, y: 100 }, sampleBounds, CORNER_PRIORITY_ZONE_PX)).toBe(false);
+      expect(isPointInCornerProtectionZone({ x: 200, y: 100 }, sampleBounds, 1, CORNER_PRIORITY_ZONE_PX)).toBe(false);
       // Right edge center (300, 150) is 50px away from corners
-      expect(isPointInCornerProtectionZone({ x: 300, y: 150 }, sampleBounds, CORNER_PRIORITY_ZONE_PX)).toBe(false);
+      expect(isPointInCornerProtectionZone({ x: 300, y: 150 }, sampleBounds, 1, CORNER_PRIORITY_ZONE_PX)).toBe(false);
       // Center of card (200, 150)
-      expect(isPointInCornerProtectionZone({ x: 200, y: 150 }, sampleBounds, CORNER_PRIORITY_ZONE_PX)).toBe(false);
+      expect(isPointInCornerProtectionZone({ x: 200, y: 150 }, sampleBounds, 1, CORNER_PRIORITY_ZONE_PX)).toBe(false);
     });
   });
 
   // =========================================================================
-  // 3. Magnetic Cardinal Edge Snapping
+  // 3. Magnetic Cardinal Edge Snapping (Scale-Aware 28px Envelope)
   // =========================================================================
   describe('anchorGeometry — Magnetic Cardinal Anchor Snapping', () => {
-    it('snaps to the closest cardinal anchor on the item bounds', () => {
-      // Pointer near right edge
-      const resRight = findClosestCardinalAnchor({ x: 310, y: 155 }, sampleBounds);
-      expect(resRight.anchor).toBe('right');
-      expect(resRight.point).toEqual({ x: 300, y: 150 });
+    it('snaps to the closest cardinal anchor when within the 28px screen envelope', () => {
+      // Pointer near right edge at scale = 1 (right edge is at x=300, pointer at x=315 -> 15px < 28px)
+      const resRight = findClosestCardinalAnchor({ x: 315, y: 150 }, sampleBounds, 1, CONNECTOR_SNAP_PROXIMITY_PX);
+      expect(resRight).not.toBeNull();
+      expect(resRight?.anchor).toBe('right');
+      expect(resRight?.point).toEqual({ x: 300, y: 150 });
 
       // Pointer near top edge
-      const resTop = findClosestCardinalAnchor({ x: 205, y: 85 }, sampleBounds);
-      expect(resTop.anchor).toBe('top');
-      expect(resTop.point).toEqual({ x: 200, y: 100 });
-
-      // Pointer near bottom edge
-      const resBottom = findClosestCardinalAnchor({ x: 195, y: 215 }, sampleBounds);
-      expect(resBottom.anchor).toBe('bottom');
-      expect(resBottom.point).toEqual({ x: 200, y: 200 });
-
-      // Pointer near left edge
-      const resLeft = findClosestCardinalAnchor({ x: 90, y: 145 }, sampleBounds);
-      expect(resLeft.anchor).toBe('left');
-      expect(resLeft.point).toEqual({ x: 100, y: 150 });
+      const resTop = findClosestCardinalAnchor({ x: 200, y: 85 }, sampleBounds, 1, CONNECTOR_SNAP_PROXIMITY_PX);
+      expect(resTop).not.toBeNull();
+      expect(resTop?.anchor).toBe('top');
+      expect(resTop?.point).toEqual({ x: 200, y: 100 });
     });
 
-    it('determines optimal anchors based on relative card positions', () => {
+    it('rejects candidate anchors when outside the 28px screen envelope', () => {
+      // Pointer 40px away from right edge at scale = 1 -> exceeds 28px
+      const resFar = findClosestCardinalAnchor({ x: 345, y: 150 }, sampleBounds, 1, CONNECTOR_SNAP_PROXIMITY_PX);
+      expect(resFar).toBeNull();
+    });
+
+    it('scales the 28px screen envelope dynamically with viewport zoom', () => {
+      // At scale = 2, world distance limit is 28 / 2 = 14px
+      // Pointer 20px away from right edge (x = 320)
+      // At scale = 1: 20px <= 28px -> snaps
+      expect(findClosestCardinalAnchor({ x: 320, y: 150 }, sampleBounds, 1, CONNECTOR_SNAP_PROXIMITY_PX)).not.toBeNull();
+      // At scale = 2: 20px > 14px -> rejects
+      expect(findClosestCardinalAnchor({ x: 320, y: 150 }, sampleBounds, 2, CONNECTOR_SNAP_PROXIMITY_PX)).toBeNull();
+    });
+
+    it('rejects candidate anchors when pointer falls within protected corner zone', () => {
+      // Pointer at (305, 105) -> within 20px of top-right corner (300, 100)
+      const resCorner = findClosestCardinalAnchor({ x: 305, y: 105 }, sampleBounds, 1, CONNECTOR_SNAP_PROXIMITY_PX);
+      expect(resCorner).toBeNull();
+    });
+
+    it('determines optimal anchors geometrically without obstacle routing', () => {
       const source = { x: 100, y: 100, width: 100, height: 100 };
       const targetEast = { x: 400, y: 100, width: 100, height: 100 };
       const targetSouth = { x: 100, y: 400, width: 100, height: 100 };
@@ -152,18 +177,18 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
   });
 
   // =========================================================================
-  // 4. Cubic Bezier Geometry & Midpoint Calculation
+  // 4. Pure Cubic Bezier Geometry & Exact Midpoint Math
   // =========================================================================
-  describe('bezierGeometry — Cubic Bezier & Label Midpoint Math', () => {
+  describe('bezierGeometry — Pure Cubic Bezier & Label Midpoint Math', () => {
     const start = { x: 100, y: 100 };
     const end = { x: 300, y: 100 };
 
-    it('calculates cubic bezier curve with correct control points and 8-point flat array', () => {
+    it('calculates cubic bezier curve with perpendicular control points and flat 8-point array', () => {
       const curve = calculateBezierCurve(start, end, 'right', 'left');
 
       expect(curve.start).toEqual(start);
       expect(curve.end).toEqual(end);
-      // Distance is 200 -> offset = 200 * 0.4 = 80
+      // Distance is 200 -> offset = clamp(200 * 0.4, 30, 180) = 80
       expect(curve.cp1).toEqual({ x: 180, y: 100 });
       expect(curve.cp2).toEqual({ x: 220, y: 100 });
       expect(curve.points).toEqual([100, 100, 180, 100, 220, 100, 300, 100]);
@@ -176,7 +201,12 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
       const midpoint = calculateBezierMidpoint(start, cp1, cp2, end, 0.5);
       expect(midpoint).toEqual({ x: 200, y: 100 });
     });
+  });
 
+  // =========================================================================
+  // 5. Connection Resolution Domain
+  // =========================================================================
+  describe('connectionResolution — Semantic Extraction', () => {
     it('extracts active connections and filters out non-existent or deleted items', () => {
       const items: MoodboardItem[] = [
         createMockItem({
@@ -190,6 +220,7 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
             connections: [
               { id: 'c1', targetId: 'card-2', fromAnchor: 'right', toAnchor: 'left', label: 'supports' },
               { id: 'c2', targetId: 'card-deleted', fromAnchor: 'right', toAnchor: 'left' },
+              { id: 'c3', targetId: 'card-1' }, // self connection filtered out
             ],
           },
         }),
@@ -222,7 +253,7 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
   });
 
   // =========================================================================
-  // 5. useConnectorDrag — Single Authoritative Controller
+  // 6. useConnectorDrag — Single Authoritative Controller
   // =========================================================================
   describe('useConnectorDrag — Threshold & Magnetic Interaction', () => {
     const candidateCards: MoodboardItem[] = [
@@ -260,22 +291,22 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
       expect(hook.isDragThresholdExceeded).toBe(false);
 
       // Move 2px (below 4px threshold)
-      hook.updateConnecting({ x: 152, y: 100 }, candidateCards);
+      hook.updateConnecting({ x: 152, y: 100 }, candidateCards, 1);
       expect(hook.isDragThresholdExceeded).toBe(false);
 
       // Move 5px (exceeds 4px threshold)
-      hook.updateConnecting({ x: 155, y: 100 }, candidateCards);
+      hook.updateConnecting({ x: 155, y: 100 }, candidateCards, 1);
       expect(hook.isDragThresholdExceeded).toBe(true);
     });
 
-    it('magnetically snaps to candidate card edge anchor when hovering nearby', () => {
+    it('magnetically snaps to candidate card edge anchor using scale-aware 28px envelope', () => {
       const hook = renderConnectorDrag();
 
       hook.startConnecting('card-source', 'right', { x: 150, y: 100 });
 
-      // Move pointer close to card-target's left edge (card-target is at x: 300, y: 50, left anchor is at (300, 100))
-      // Pointer at (290, 102) -> within 24px padding
-      hook.updateConnecting({ x: 290, y: 102 }, candidateCards);
+      // card-target is at x: 300, y: 50 (width: 100, height: 100). Left anchor is at (300, 100).
+      // Pointer at (290, 100) -> 10px from left edge (< 28px envelope at scale = 1)
+      hook.updateConnecting({ x: 290, y: 100 }, candidateCards, 1);
 
       expect(hook.connectingTarget).not.toBeNull();
       expect(hook.connectingTarget?.itemId).toBe('card-target');
@@ -289,7 +320,7 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
       hook.startConnecting('card-source', 'right', { x: 150, y: 100 });
 
       // Pointer at (305, 55) -> near card-target top-left corner (within 20px)
-      hook.updateConnecting({ x: 305, y: 55 }, candidateCards);
+      hook.updateConnecting({ x: 305, y: 55 }, candidateCards, 1);
 
       // Should refuse to snap to cardinal anchor in the corner protection zone
       expect(hook.connectingTarget).toBeNull();
@@ -301,11 +332,11 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
       hook.startConnecting('card-source', 'right', { x: 150, y: 100 });
 
       // Pointer hovering over self
-      hook.updateConnecting({ x: 60, y: 60 }, candidateCards);
+      hook.updateConnecting({ x: 60, y: 60 }, candidateCards, 1);
       expect(hook.connectingTarget).toBeNull();
 
       // Pointer hovering over stroke item
-      hook.updateConnecting({ x: 210, y: 210 }, candidateCards);
+      hook.updateConnecting({ x: 210, y: 210 }, candidateCards, 1);
       expect(hook.connectingTarget).toBeNull();
     });
 
@@ -314,7 +345,7 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
       const hook = renderConnectorDrag({ onAddConnection });
 
       hook.startConnecting('card-source', 'right', { x: 150, y: 100 });
-      hook.updateConnecting({ x: 290, y: 102 }, candidateCards); // snaps to target and exceeds 4px
+      hook.updateConnecting({ x: 290, y: 100 }, candidateCards, 1); // snaps to target and exceeds 4px
 
       const committed = hook.finishConnecting();
       expect(committed).toBe(true);
@@ -328,7 +359,7 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
       const hook = renderConnectorDrag({ onAddConnection });
 
       hook.startConnecting('card-source', 'right', { x: 150, y: 100 });
-      hook.updateConnecting({ x: 180, y: 100 }, candidateCards); // empty space
+      hook.updateConnecting({ x: 180, y: 100 }, candidateCards, 1); // empty space
 
       const committed = hook.finishConnecting();
       expect(committed).toBe(false);
@@ -338,7 +369,7 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
   });
 
   // =========================================================================
-  // 6. Semantic Direction Linking
+  // 7. Semantic Direction Linking
   // =========================================================================
   describe('semanticDirection — Bidirectional Reference Extraction', () => {
     it('extracts all connected Reference IDs bidirectionally for an Idea item', () => {
