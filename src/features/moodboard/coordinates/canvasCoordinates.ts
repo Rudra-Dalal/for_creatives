@@ -89,6 +89,23 @@ export function pointToCanvas(
 }
 
 /**
+ * Converts a screen-space pixel distance or radius to canvas world distance.
+ * When zooming the canvas, dividing by viewport scale ensures tools with fixed physical
+ * screen dimensions (e.g. eraser radius) maintain the exact same physical size on screen.
+ */
+export function screenDistanceToCanvas(screenDistance: number, scale: number): number {
+  const safeScale = Math.max(0.001, scale);
+  return screenDistance / safeScale;
+}
+
+/**
+ * Converts a canvas world distance to screen-space pixel distance.
+ */
+export function canvasDistanceToScreen(canvasDistance: number, scale: number): number {
+  return canvasDistance * scale;
+}
+
+/**
  * Extracts the exact canvas world coordinates from an active Konva Stage instance.
  * Falls back to the authoritative ViewportTransform when stage transforms are initializing.
  */

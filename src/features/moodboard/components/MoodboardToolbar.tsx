@@ -36,7 +36,8 @@ import {
   PenTool,
   Eraser,
 } from 'lucide-react';
-import type { MoodboardItem } from '../types';
+import type { MoodboardItem, EraserSize } from '../types';
+import { DEFAULT_ERASER_SIZE, ERASER_SIZES } from '../types';
 import type { AlignmentType, DistributionType } from '../utils/layoutUtils';
 
 interface MoodboardToolbarProps {
@@ -51,6 +52,8 @@ interface MoodboardToolbarProps {
   onOpenPenColorPicker?: () => void;
   penWidth?: number;
   onChangePenWidth?: (width: number) => void;
+  eraserSize?: EraserSize;
+  onChangeEraserSize?: (size: EraserSize) => void;
   canUndo?: boolean;
   onUndo?: () => void;
   isLibraryOpen: boolean;
@@ -89,6 +92,8 @@ export function MoodboardToolbar({
   onOpenPenColorPicker,
   penWidth = 4,
   onChangePenWidth,
+  eraserSize = DEFAULT_ERASER_SIZE,
+  onChangeEraserSize,
   canUndo,
   onUndo,
   isLibraryOpen,
@@ -264,6 +269,34 @@ export function MoodboardToolbar({
                         className={`rounded-full bg-current ${step.indicator}`}
                       />
                       <span className="text-[10px]">{step.width}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* When Eraser Mode is active, reveal discrete size controls: Small (8px), Medium (16px), Large (28px) */}
+          {activeTool === 'eraser' && (
+            <div className="flex items-center gap-1 pl-1.5 pr-1.5 py-0.5 rounded-full bg-surface-subtle/80 border border-border/70">
+              <span className="text-[10px] text-muted-foreground font-medium px-1">Size</span>
+              <div className="flex items-center gap-0.5 border-l border-border/60 pl-1">
+                {ERASER_SIZES.map((step) => {
+                  const isActive = (eraserSize || DEFAULT_ERASER_SIZE) === step.size;
+                  return (
+                    <button
+                      key={step.size}
+                      type="button"
+                      onClick={() => onChangeEraserSize?.(step.size)}
+                      className={`h-6 px-1.5 rounded text-[11px] font-medium transition-colors flex items-center gap-1 ${
+                        isActive
+                          ? 'bg-accent/20 text-accent font-semibold'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+                      }`}
+                      title={`${step.label} (${step.size}px)`}
+                    >
+                      <span className={`rounded-full bg-current ${step.indicatorClass}`} />
+                      <span className="text-[10px]">{step.size}</span>
                     </button>
                   );
                 })}

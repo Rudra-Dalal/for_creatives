@@ -89,3 +89,17 @@ export interface CanvasViewport {
   scale: number;
 }
 
+export type EraserSize = 8 | 16 | 28;
+
+export const DEFAULT_ERASER_SIZE: EraserSize = 16;
+
+export const ERASER_SIZES: ReadonlyArray<{
+  readonly size: EraserSize;
+  readonly label: string;
+  readonly indicatorClass: string;
+}> = [
+  { size: 8, label: 'Small', indicatorClass: 'h-1.5 w-1.5' },
+  { size: 16, label: 'Medium', indicatorClass: 'h-2 w-2' },
+  { size: 28, label: 'Large', indicatorClass: 'h-3 w-3' },
+] as const;
+

@@ -11,7 +11,8 @@ import { playgroundImageService } from '../services/playgroundImageService';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Button } from '@/components/ui/button';
 import type { Reference } from '@/features/references/types';
-import type { MoodboardItem, ColorItemContent } from '../types';
+import type { MoodboardItem, ColorItemContent, EraserSize } from '../types';
+import { DEFAULT_ERASER_SIZE } from '../types';
 import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
 import { CanvasDirectionInspector } from './CanvasDirectionInspector';
 import { ColorSwatchDialog } from './ColorSwatchDialog';
@@ -110,6 +111,7 @@ export function MoodboardCanvas({
   const [activeTool, setActiveTool] = useState<'select' | 'pen' | 'eraser'>('select');
   const [penColor, setPenColor] = useState<string>('#D97706');
   const [penWidth, setPenWidth] = useState<number>(4);
+  const [eraserSize, setEraserSize] = useState<EraserSize>(DEFAULT_ERASER_SIZE);
 
   // Color Swatch Dialog state (react-colorful)
   const [isColorDialogOpen, setIsColorDialogOpen] = useState(false);
@@ -500,6 +502,7 @@ export function MoodboardCanvas({
         activeTool={activeTool}
         penColor={penColor}
         penWidth={penWidth}
+        eraserSize={eraserSize}
         onChangeActiveTool={setActiveTool}
         onAddStroke={addStrokeItem}
         onBatchDeleteStrokes={batchDeleteItems}
@@ -614,6 +617,8 @@ export function MoodboardCanvas({
         onOpenPenColorPicker={handleOpenPenColorDialog}
         penWidth={penWidth}
         onChangePenWidth={setPenWidth}
+        eraserSize={eraserSize}
+        onChangeEraserSize={setEraserSize}
         canUndo={canUndo}
         onUndo={handleUndo}
         isLibraryOpen={isLibraryOpen}

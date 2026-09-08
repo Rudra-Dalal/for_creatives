@@ -17,6 +17,8 @@ import {
   clampViewportScale,
   calculateCenteredZoom,
   calculateZoomToFit,
+  screenDistanceToCanvas,
+  canvasDistanceToScreen,
 } from '../index';
 import type { ViewportTransform, ContainerRect, CanvasBounds } from '../index';
 
@@ -275,4 +277,36 @@ describe('Authoritative Coordinates Module', () => {
       expect(calculateZoomToFit([], 1000, 800)).toEqual({ x: 0, y: 0, scale: 1 });
     });
   });
+
+  describe('Screen-Space Distance & Zoom Scaling (Eraser & Pointer Tools)', () => {
+    it('converts screen distance to world distance inversely proportional to zoom scale', () => {
+      // At 1.0x zoom, 16px screen distance equals 16 world units
+      expect(screenDistanceToCanvas(16, 1.0)).toBeCloseTo(16);
+
+      // At 2.0x zoom (zoomed in), 16px screen distance equals 8 world units
+      expect(screenDistanceToCanvas(16, 2.0)).toBeCloseTo(8);
+
+      // At 0.5x zoom (zoomed out), 16px screen distance equals 32 world units
+      expect(screenDistanceToCanvas(16, 0.5)).toBeCloseTo(32);
+    });
+
+    it('maintains mathematical identity between screenDistanceToCanvas and canvasDistanceToScreen', () => {
+      const screenDistances = [8, 16, 28];
+      const scales = [0.2, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0];
+
+      for (const dist of screenDistances) {
+        for (const scale of scales) {
+          const worldDist = screenDistanceToCanvas(dist, scale);
+          const roundtripScreenDist = canvasDistanceToScreen(worldDist, scale);
+          expect(roundtripScreenDist).toBeCloseTo(dist, 5);
+        }
+      }
+    });
+
+    it('safely guards against division by zero with near-zero scale', () => {
+      expect(() => screenDistanceToCanvas(16, 0)).not.toThrow();
+      expect(Number.isFinite(screenDistanceToCanvas(16, 0))).toBe(true);
+    });
+  });
 });
+

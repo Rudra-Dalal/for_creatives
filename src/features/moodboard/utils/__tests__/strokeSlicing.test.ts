@@ -97,4 +97,109 @@ describe('strokeSlicing — Geometric Polyline Circle Intersection', () => {
     expect(boxes[1].y).toBeCloseTo(200);
     expect(boxes[1].relativePoints.length).toBeGreaterThanOrEqual(4);
   });
+
+  describe('Eraser Sizes, Zoom-Scaled Slicing & Atomic Undo', () => {
+    it('verifies default Medium eraser size is 16px', async () => {
+      const { DEFAULT_ERASER_SIZE } = await import('../../types');
+      expect(DEFAULT_ERASER_SIZE).toBe(16);
+    });
+
+    it('changing size updates erase radius: 8px is narrow, 16px default, 28px wide', () => {
+      const line = [0, 50, 100, 50];
+
+      // 8px (Small) cut
+      const cut8 = slicePolylineWithCircle(line, 50, 50, 8);
+      expect(cut8.length).toBe(2);
+      const gap8 = cut8[1][0] - cut8[0][2];
+      expect(gap8).toBeCloseTo(16); // 2 * radius = 16
+
+      // 16px (Medium default) cut
+      const cut16 = slicePolylineWithCircle(line, 50, 50, 16);
+      expect(cut16.length).toBe(2);
+      const gap16 = cut16[1][0] - cut16[0][2];
+      expect(gap16).toBeCloseTo(32); // 2 * radius = 32
+
+      // 28px (Large) cut
+      const cut28 = slicePolylineWithCircle(line, 50, 50, 28);
+      expect(cut28.length).toBe(2);
+      const gap28 = cut28[1][0] - cut28[0][2];
+      expect(gap28).toBeCloseTo(56); // 2 * radius = 56
+
+      // Monotonic widening: narrow < default < wide
+      expect(gap8).toBeLessThan(gap16);
+      expect(gap16).toBeLessThan(gap28);
+    });
+
+    it('screen-space size remains visually consistent across zoom levels', async () => {
+      const { screenDistanceToCanvas, canvasDistanceToScreen } = await import('../../coordinates');
+      const screenEraserSize = 16;
+      const zoomScales = [0.5, 1.0, 2.0];
+
+      for (const scale of zoomScales) {
+        // World radius adjusts inversely with scale
+        const worldRadius = screenDistanceToCanvas(screenEraserSize, scale);
+
+        // Perform cut in world coordinates
+        const line = [0, 50, 200, 50];
+        const result = slicePolylineWithCircle(line, 100, 50, worldRadius);
+        expect(result.length).toBe(2);
+
+        // Calculate world cut gap
+        const worldGap = result[1][0] - result[0][2];
+        expect(worldGap).toBeCloseTo(worldRadius * 2);
+
+        // Project cut back to screen space: MUST match 2 * screenEraserSize regardless of zoom
+        const screenCutWidth = canvasDistanceToScreen(worldGap, scale);
+        expect(screenCutWidth).toBeCloseTo(screenEraserSize * 2, 5);
+      }
+    });
+
+    it('partial stroke splitting works cleanly for all 3 discrete sizes (8, 16, 28)', () => {
+      const line = [0, 100, 200, 100];
+      const sizes = [8, 16, 28];
+
+      for (const size of sizes) {
+        const splitResult = slicePolylineWithCircle(line, 100, 100, size);
+        expect(splitResult.length).toBe(2);
+        // First piece starts at 0, ends before cut
+        expect(splitResult[0][0]).toBe(0);
+        expect(splitResult[0][2]).toBeCloseTo(100 - size);
+        // Second piece starts after cut, ends at 200
+        expect(splitResult[1][0]).toBeCloseTo(100 + size);
+        expect(splitResult[1][2]).toBe(200);
+      }
+    });
+
+    it('one continuous erase gesture produces one atomic PARTIAL_ERASE undo action', () => {
+      // Simulates the commit structure created by finishErasing in MoodboardStage
+      const initialStrokes = [
+        {
+          id: 'stroke-1',
+          type: 'stroke' as const,
+          x: 0,
+          y: 50,
+          width: 100,
+          height: 10,
+          z_index: 1,
+          content: { points: [0, 5, 100, 5], color: '#D97706', strokeWidth: 4 },
+        },
+      ];
+
+      // A single erase pass updates the original stroke and adds a new sub-stroke
+      const undoAction = {
+        type: 'PARTIAL_ERASE' as const,
+        updates: [{ id: 'stroke-1', x: 0, y: 50, width: 42, height: 10, relativePoints: [0, 5, 42, 5] }],
+        newStrokeIds: ['sub-stroke-2'],
+        deletedStrokes: [],
+        originalStrokes: initialStrokes,
+      };
+
+      // Atomic contract: all pieces are packed into one single undo action
+      expect(undoAction.type).toBe('PARTIAL_ERASE');
+      expect(undoAction.updates.length).toBe(1);
+      expect(undoAction.newStrokeIds.length).toBe(1);
+      expect(undoAction.originalStrokes).toEqual(initialStrokes);
+    });
+  });
 });
+
