@@ -26,6 +26,8 @@ import { getAnchorPoint, calculateBezierCurve } from './connectorUtils';
 import { simplifyPoints, normalizeStrokePoints, isPathIntersectingStroke } from '../utils/strokeUtils';
 import { HexColorPicker } from 'react-colorful';
 import { Compass } from 'lucide-react';
+import { useCanvasViewport, CanvasBackground } from '../viewport';
+import { getPointerCanvasPosition, canvasToScreen } from '../coordinates';
 
 interface MoodboardStageProps {
   items: MoodboardItem[];
@@ -135,7 +137,6 @@ export function MoodboardStage({
   onRecordUndoAction,
   onRegisterExport,
 }: MoodboardStageProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
   const initialGeometryRef = useRef<Map<string, { x: number; y: number; width: number; height: number; zIndex?: number }>>(new Map());
 
@@ -212,11 +213,9 @@ export function MoodboardStage({
       .sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
   }, [items, erasedTick]);
 
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [selectedNodes, setSelectedNodes] = useState<Konva.Node[]>([]);
   const [selectedNode, setSelectedNode] = useState<Konva.Node | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const dragStartPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const liveDragPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
@@ -224,6 +223,46 @@ export function MoodboardStage({
   const dragRafRef = useRef<number | null>(null);
   const nodeMapRef = useRef<Map<string, Konva.Node>>(new Map());
   const pendingDimensionsRef = useRef<Map<string, { width: number; height: number }>>(new Map());
+
+  // Editing overlays
+  const [editingTextItem, setEditingTextItem] = useState<MoodboardItem | null>(null);
+  const [editingTextValue, setEditingTextValue] = useState('');
+
+  const [editingColorItem, setEditingColorItem] = useState<MoodboardItem | null>(null);
+  const [editingColorHex, setEditingColorHex] = useState('');
+  const [editingColorLabel, setEditingColorLabel] = useState('');
+
+  const [editingIdeaItem, setEditingIdeaItem] = useState<MoodboardItem | null>(null);
+  const [editingIdeaTitle, setEditingIdeaTitle] = useState('');
+  const [editingIdeaNotes, setEditingIdeaNotes] = useState('');
+
+  const isTextInputActive = useCallback(() => {
+    const active = document.activeElement;
+    return (
+      active?.tagName === 'INPUT' ||
+      active?.tagName === 'TEXTAREA' ||
+      (active as HTMLElement)?.isContentEditable ||
+      Boolean(editingTextItem || editingColorItem || editingIdeaItem)
+    );
+  }, [editingTextItem, editingColorItem, editingIdeaItem]);
+
+  // Viewport engine from authoritative viewport module (guarantees same-cycle synchronization)
+  const {
+    containerRef,
+    dimensions,
+    isSpacePressed,
+    isMiddlePanning,
+    handleContainerMouseDown,
+    handleWheel,
+    handleStageDragMove: handleViewportDragMove,
+    handleStageDragEnd: handleViewportDragEnd,
+  } = useCanvasViewport({
+    stageRef,
+    viewport,
+    onViewportChange,
+    onZoomToFit,
+    isTextInputActive,
+  });
 
   // Real-time live coordinates lookup during active dragging (keeps anchors and connector lines attached)
   const getItemLiveBounds = useCallback(
@@ -256,52 +295,18 @@ export function MoodboardStage({
   const marqueeStartPointerRef = useRef<{ x: number; y: number } | null>(null);
   const lastMarqueeHitIdsRef = useRef<string[]>([]);
 
-  // Middle-mouse drag panning state
-  const isMiddlePanningRef = useRef(false);
-  const middlePanStartRef = useRef<{ clientX: number; clientY: number; vx: number; vy: number }>({ clientX: 0, clientY: 0, vx: 0, vy: 0 });
-  const [isMiddlePanning, setIsMiddlePanning] = useState(false);
-
-  // Editing overlays
-  const [editingTextItem, setEditingTextItem] = useState<MoodboardItem | null>(null);
-  const [editingTextValue, setEditingTextValue] = useState('');
-
-  const [editingColorItem, setEditingColorItem] = useState<MoodboardItem | null>(null);
-  const [editingColorHex, setEditingColorHex] = useState('');
-  const [editingColorLabel, setEditingColorLabel] = useState('');
-
-  const [editingIdeaItem, setEditingIdeaItem] = useState<MoodboardItem | null>(null);
-  const [editingIdeaTitle, setEditingIdeaTitle] = useState('');
-  const [editingIdeaNotes, setEditingIdeaNotes] = useState('');
-
-  // Canvas for crisp dotted background pattern that redraws dynamically at current zoom
-  const [dotPatternCanvas, setDotPatternCanvas] = useState<HTMLCanvasElement | null>(null);
-
-  // Restrict Konva node dragging strictly to left click (button 0)
+  // Cancel any pending animation frame on unmount
   useEffect(() => {
-    Konva.dragButtons = [0];
+    return () => {
+      if (dragRafRef.current !== null) {
+        cancelAnimationFrame(dragRafRef.current);
+      }
+    };
   }, []);
 
-  // Global mouse handlers for middle-mouse drag panning across entire window
+  // Global mouseup cleanup for marquee and live drag
   useEffect(() => {
-    const handleGlobalMouseMove = (e: MouseEvent) => {
-      if (!isMiddlePanningRef.current) return;
-      e.preventDefault();
-      const dx = e.clientX - middlePanStartRef.current.clientX;
-      const dy = e.clientY - middlePanStartRef.current.clientY;
-      onViewportChange({
-        x: middlePanStartRef.current.vx + dx,
-        y: middlePanStartRef.current.vy + dy,
-        scale: viewport.scale,
-      });
-    };
-
-    const handleGlobalMouseUp = (e: MouseEvent) => {
-      if (e.button === 1 || isMiddlePanningRef.current) {
-        if (isMiddlePanningRef.current) {
-          isMiddlePanningRef.current = false;
-          setIsMiddlePanning(false);
-        }
-      }
+    const handleGlobalMouseUp = () => {
       if (isMarqueeSelectingRef.current) {
         isMarqueeSelectingRef.current = false;
         marqueeStartPointerRef.current = null;
@@ -318,91 +323,9 @@ export function MoodboardStage({
       }
     };
 
-    window.addEventListener('mousemove', handleGlobalMouseMove, { passive: false });
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => {
-      window.removeEventListener('mousemove', handleGlobalMouseMove);
       window.removeEventListener('mouseup', handleGlobalMouseUp);
-    };
-  }, [viewport.scale, onViewportChange]);
-
-  // Cancel any pending animation frame on unmount
-  useEffect(() => {
-    return () => {
-      if (dragRafRef.current !== null) {
-        cancelAnimationFrame(dragRafRef.current);
-      }
-    };
-  }, []);
-
-  const handleContainerMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1) {
-      // Middle mouse button pressed - start viewport panning
-      e.preventDefault();
-      isMiddlePanningRef.current = true;
-      setIsMiddlePanning(true);
-      middlePanStartRef.current = {
-        clientX: e.clientX,
-        clientY: e.clientY,
-        vx: viewport.x,
-        vy: viewport.y,
-      };
-    }
-  };
-
-  // Redraw dotted background crisply at current zoom scale and device pixel ratio
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const scaleFactor = Math.max(0.2, viewport.scale) * dpr;
-    const baseGrid = 28;
-    const tileSize = Math.max(4, Math.round(baseGrid * scaleFactor));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = tileSize;
-    canvas.height = tileSize;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#121211';
-      ctx.fillRect(0, 0, tileSize, tileSize);
-
-      // Dot radius scales smoothly with zoom so it renders crisply at native screen resolution
-      const dotRadius = Math.max(0.8, 1.2 * scaleFactor);
-      ctx.fillStyle = '#262622';
-      ctx.beginPath();
-      ctx.arc(tileSize / 2, tileSize / 2, dotRadius, 0, Math.PI * 2);
-      ctx.fill();
-
-      setDotPatternCanvas(canvas);
-    }
-  }, [viewport.scale]);
-
-  // Resize observer to fill container with exact bounding rect
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const updateSize = () => {
-      const rect = container.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        setDimensions({
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-        });
-      }
-    };
-
-    updateSize();
-
-    const ro = new ResizeObserver(() => {
-      updateSize();
-    });
-    ro.observe(container);
-
-    window.addEventListener('resize', updateSize);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', updateSize);
     };
   }, []);
 
@@ -434,38 +357,14 @@ export function MoodboardStage({
 
   // Keyboard shortcut listener (Undo, Delete, Escape, Duplicate, Nudge, Zoom-to-fit, Spacebar-pan)
   useEffect(() => {
-    const isTextInputActive = () => {
-      const active = document.activeElement;
-      return (
-        active?.tagName === 'INPUT' ||
-        active?.tagName === 'TEXTAREA' ||
-        (active as HTMLElement)?.isContentEditable ||
-        Boolean(editingTextItem || editingColorItem || editingIdeaItem)
-      );
-    };
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isTextInputActive()) {
-        return;
-      }
-
-      // Spacebar pan (Hold Space)
-      if (e.code === 'Space' && !e.repeat) {
-        e.preventDefault();
-        setIsSpacePressed(true);
         return;
       }
 
       // Track Shift key for multi-select
       if (e.key === 'Shift') {
         setIsShiftPressed(true);
-      }
-
-      // Zoom to Fit: Cmd/Ctrl + 0
-      if ((e.metaKey || e.ctrlKey) && e.key === '0') {
-        e.preventDefault();
-        onZoomToFit?.(dimensions.width, dimensions.height);
-        return;
       }
 
       // Tool Switch shortcuts: P for Pen, E / Shift+P for Eraser, V for Select
@@ -581,9 +480,6 @@ export function MoodboardStage({
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        setIsSpacePressed(false);
-      }
       if (e.key === 'Shift') {
         setIsShiftPressed(false);
       }
@@ -619,6 +515,7 @@ export function MoodboardStage({
     onDeleteConnection,
     activeTool,
     onChangeActiveTool,
+    isTextInputActive,
   ]);
 
   // Export stage to PNG
@@ -714,6 +611,7 @@ export function MoodboardStage({
 
   // Synchronized drag move for items, connector arrows, and anchor handles
   const handleStageDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
+    if (handleViewportDragMove(e)) return;
     if (e.target === stageRef.current) return;
 
     let draggedNode: Konva.Node = e.target;
@@ -908,47 +806,11 @@ export function MoodboardStage({
     }
   };
 
-  // Mouse wheel zoom centered on cursor
-  const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
-    e.evt.preventDefault();
-
-    const stage = stageRef.current;
-    if (!stage) return;
-
-    const scaleBy = 1.08;
-    const oldScale = stage.scaleX();
-    const pointer = stage.getPointerPosition();
-
-    if (!pointer) return;
-
-    const mousePointTo = {
-      x: (pointer.x - stage.x()) / oldScale,
-      y: (pointer.y - stage.y()) / oldScale,
-    };
-
-    const direction = e.evt.deltaY > 0 ? -1 : 1;
-    const newScale = direction > 0 ? Math.min(oldScale * scaleBy, 3) : Math.max(oldScale / scaleBy, 0.2);
-
-    const newPos = {
-      x: pointer.x - mousePointTo.x * newScale,
-      y: pointer.y - mousePointTo.y * newScale,
-    };
-
-    onViewportChange({
-      x: newPos.x,
-      y: newPos.y,
-      scale: newScale,
-    });
-  };
-
   // Drag stage (panning) or fallback drag end cleanup
   const handleStageDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+    if (handleViewportDragEnd(e)) return;
     if (e.target === stageRef.current) {
-      onViewportChange({
-        x: e.target.x(),
-        y: e.target.y(),
-        scale: viewport.scale,
-      });
+      return;
     } else {
       if (dragRafRef.current !== null) {
         cancelAnimationFrame(dragRafRef.current);
@@ -1516,30 +1378,7 @@ export function MoodboardStage({
       >
         <Layer>
           {/* Dotted Infinite Playground Canvas Background */}
-          {dotPatternCanvas ? (
-            <Rect
-              name="canvas-background"
-              x={-50000}
-              y={-50000}
-              width={100000}
-              height={100000}
-              fillPatternImage={dotPatternCanvas as unknown as HTMLImageElement}
-              fillPatternRepeat="repeat"
-              fillPatternScale={{
-                x: 28 / dotPatternCanvas.width,
-                y: 28 / dotPatternCanvas.height,
-              }}
-            />
-          ) : (
-            <Rect
-              name="canvas-background"
-              x={-50000}
-              y={-50000}
-              width={100000}
-              height={100000}
-              fill="#121211"
-            />
-          )}
+          <CanvasBackground scale={viewport.scale} />
 
           {/* Marquee Selection Rectangle (Windows desktop / Figma style) */}
           {selectionBox && selectionBox.visible && (selectionBox.width > 2 || selectionBox.height > 2) && (
