@@ -3,3 +3,4 @@ export * from './canvasItemPure';
 export * from './useItemDrag';
 export * from './ItemsLayer';
 export * from './cards';
+export * from './usePenTool';

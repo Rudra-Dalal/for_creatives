@@ -28,6 +28,7 @@ import { HexColorPicker } from 'react-colorful';
 import { Compass } from 'lucide-react';
 import { useCanvasViewport, CanvasBackground } from '../viewport';
 import { getPointerCanvasPosition, canvasToScreen } from '../coordinates';
+import { usePenTool } from '../items/usePenTool';
 
 interface MoodboardStageProps {
   items: MoodboardItem[];
@@ -140,10 +141,24 @@ export function MoodboardStage({
   const stageRef = useRef<Konva.Stage | null>(null);
   const initialGeometryRef = useRef<Map<string, { x: number; y: number; width: number; height: number; zIndex?: number }>>(new Map());
 
-  // Freehand pen drawing state (direct Konva ref for 60-120fps fluid rendering without React re-renders)
-  const isDrawingRef = useRef(false);
-  const currentStrokePointsRef = useRef<number[]>([]);
-  const activeLineRef = useRef<Konva.Line | null>(null);
+  // Authoritative freehand pen tool interaction hook
+  const pen = usePenTool({
+    stageRef,
+    activeTool,
+    readOnly,
+    penColor,
+    penWidth,
+    viewport,
+    onAddStroke,
+    onClearSelection: () => {
+      if (effectiveSelectedIds.length > 0) {
+        if (onSelectIds) onSelectIds([]);
+        else onSelectId(null);
+        setSelectedNode(null);
+        setSelectedNodes([]);
+      }
+    },
+  });
 
   // Whole-stroke eraser state
   const isErasingRef = useRef(false);
@@ -868,31 +883,8 @@ export function MoodboardStage({
     if ('button' in e.evt && e.evt.button === 1) return;
     if (isSpacePressed) return;
 
-    // Freehand pen drawing: start capturing stroke
-    if (!readOnly && activeTool === 'pen') {
-      const stage = stageRef.current;
-      if (!stage) return;
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
-
-      const canvasX = (pointer.x - stage.x()) / stage.scaleX();
-      const canvasY = (pointer.y - stage.y()) / stage.scaleY();
-
-      isDrawingRef.current = true;
-      currentStrokePointsRef.current = [canvasX, canvasY];
-
-      if (activeLineRef.current) {
-        activeLineRef.current.points([canvasX, canvasY]);
-        activeLineRef.current.visible(true);
-        activeLineRef.current.getLayer()?.batchDraw();
-      }
-
-      if (effectiveSelectedIds.length > 0) {
-        if (onSelectIds) onSelectIds([]);
-        else onSelectId(null);
-        setSelectedNode(null);
-        setSelectedNodes([]);
-      }
+    // Freehand pen drawing: start capturing stroke via usePenTool
+    if (pen.handleStageMouseDown(e)) {
       return;
     }
 
@@ -975,21 +967,8 @@ export function MoodboardStage({
 
   // Handle Stage Mouse Move for Marquee selection & connection drag & pen drawing
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    // Handle in-progress freehand pen drawing
-    if (isDrawingRef.current) {
-      const stage = stageRef.current;
-      if (!stage) return;
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
-
-      const currentCanvasX = (pointer.x - stage.x()) / stage.scaleX();
-      const currentCanvasY = (pointer.y - stage.y()) / stage.scaleY();
-
-      currentStrokePointsRef.current.push(currentCanvasX, currentCanvasY);
-      if (activeLineRef.current) {
-        activeLineRef.current.points(currentStrokePointsRef.current);
-        activeLineRef.current.getLayer()?.batchDraw();
-      }
+    // Handle in-progress freehand pen drawing via usePenTool
+    if (pen.handleStageMouseMove(e)) {
       return;
     }
 
@@ -1127,29 +1106,8 @@ export function MoodboardStage({
 
   // Handle Stage Mouse Up for Marquee selection, connection drag finish & pen stroke save
   const handleStageMouseUp = () => {
-    // Finish and persist freehand pen stroke
-    if (isDrawingRef.current) {
-      isDrawingRef.current = false;
-      const rawPoints = currentStrokePointsRef.current;
-      currentStrokePointsRef.current = [];
-
-      if (activeLineRef.current) {
-        activeLineRef.current.visible(false);
-        activeLineRef.current.points([]);
-        activeLineRef.current.getLayer()?.batchDraw();
-      }
-
-      if (rawPoints && rawPoints.length >= 2 && onAddStroke) {
-        // Storage discipline: Douglas-Peucker point decimation & bounding box normalization
-        const simplified = simplifyPoints(rawPoints, 1.5);
-        const bbox = normalizeStrokePoints(simplified);
-        onAddStroke(bbox.relativePoints, penColor, penWidth, {
-          x: bbox.x,
-          y: bbox.y,
-          width: bbox.width,
-          height: bbox.height,
-        });
-      }
+    // Finish and persist freehand pen stroke via usePenTool
+    if (pen.handleStageMouseUp()) {
       return;
     }
 
@@ -1376,7 +1334,7 @@ export function MoodboardStage({
         onTouchMove={handleStageMouseMove}
         onTouchEnd={handleStageMouseUp}
       >
-        <Layer>
+        <Layer listening={!pen.isDrawingRef.current && activeTool !== 'pen'}>
           {/* Dotted Infinite Playground Canvas Background */}
           <CanvasBackground scale={viewport.scale} />
 
@@ -1569,21 +1527,6 @@ export function MoodboardStage({
             );
           })}
 
-          {/* In-progress live freehand pen stroke (rendered directly via ref during drawing for 60-120fps fluid interaction) */}
-          <Line
-            ref={activeLineRef}
-            visible={false}
-            points={[]}
-            stroke={penColor}
-            strokeWidth={penWidth}
-            tension={0.5}
-            lineCap="round"
-            lineJoin="round"
-            listening={false}
-            opacity={0.9}
-            perfectDrawEnabled={false}
-          />
-
           {/* Konva Transformer for resize (hidden in read-only mode, and ignores strokes) */}
           {!readOnly && (() => {
             const transformableNodes = (selectedNodes.length > 0 ? selectedNodes : (selectedNode ? [selectedNode] : [])).filter((node) => {
@@ -1625,6 +1568,22 @@ export function MoodboardStage({
                 />
               );
             })}
+        </Layer>
+
+        {/* Dedicated high-performance Drawing Layer (isolated canvas: 0 item/background redraws during drawing) */}
+        <Layer name="drawing-layer" listening={false}>
+          <Line
+            ref={pen.activeLineRef}
+            visible={false}
+            points={[]}
+            stroke={penColor}
+            strokeWidth={penWidth}
+            lineCap="round"
+            lineJoin="round"
+            listening={false}
+            opacity={0.9}
+            perfectDrawEnabled={false}
+          />
         </Layer>
       </Stage>
 
