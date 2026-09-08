@@ -90,26 +90,25 @@ export interface CanvasViewport {
 }
 
 /**
- * Discrete eraser sizes defined explicitly as SCREEN-SPACE RADIUS values:
- * - Small: 8px radius
- * - Medium: 16px radius (default)
- * - Large: 28px radius
- *
- * Both the live visual guide ring and the authoritative stroke-cutting calculation
- * consume these values directly as radii, converted through viewport zoom scale.
+ * Pen width constants (SCREEN-SPACE width in pixels).
+ * The slider provides continuous selection within this range.
+ * Converted through viewport zoom scale via screenDistanceToCanvas().
+ */
+export const DEFAULT_PEN_WIDTH = 4;
+export const MIN_PEN_WIDTH = 1;
+export const MAX_PEN_WIDTH = 40;
+
+/**
+ * Eraser size constants (SCREEN-SPACE RADIUS in pixels).
+ * The slider provides continuous selection within this range.
+ * Both the live visual guide ring and the authoritative stroke-cutting
+ * calculation consume these values directly as radii, converted through
+ * viewport zoom scale via screenDistanceToCanvas().
  * These are NOT diameters.
  */
-export type EraserSize = 8 | 16 | 28;
+export type EraserSize = number;
 
 export const DEFAULT_ERASER_SIZE: EraserSize = 16;
-
-export const ERASER_SIZES: ReadonlyArray<{
-  readonly size: EraserSize;
-  readonly label: string;
-  readonly indicatorClass: string;
-}> = [
-  { size: 8, label: 'Small', indicatorClass: 'h-1.5 w-1.5' },
-  { size: 16, label: 'Medium', indicatorClass: 'h-2 w-2' },
-  { size: 28, label: 'Large', indicatorClass: 'h-3 w-3' },
-] as const;
+export const MIN_ERASER_SIZE = 4;
+export const MAX_ERASER_SIZE = 48;
 

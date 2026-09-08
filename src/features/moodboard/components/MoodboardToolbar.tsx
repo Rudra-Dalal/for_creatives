@@ -37,7 +37,14 @@ import {
   Eraser,
 } from 'lucide-react';
 import type { MoodboardItem, EraserSize } from '../types';
-import { DEFAULT_ERASER_SIZE, ERASER_SIZES } from '../types';
+import {
+  DEFAULT_ERASER_SIZE,
+  MIN_ERASER_SIZE,
+  MAX_ERASER_SIZE,
+  DEFAULT_PEN_WIDTH,
+  MIN_PEN_WIDTH,
+  MAX_PEN_WIDTH,
+} from '../types';
 import type { AlignmentType, DistributionType } from '../utils/layoutUtils';
 
 interface MoodboardToolbarProps {
@@ -90,7 +97,7 @@ export function MoodboardToolbar({
   onToggleEraserTool,
   penColor = '#D97706',
   onOpenPenColorPicker,
-  penWidth = 4,
+  penWidth = DEFAULT_PEN_WIDTH,
   onChangePenWidth,
   eraserSize = DEFAULT_ERASER_SIZE,
   onChangeEraserSize,
@@ -229,9 +236,9 @@ export function MoodboardToolbar({
             <span className="text-[10px] font-mono opacity-60 ml-0.5">E</span>
           </Button>
 
-          {/* When Pen Mode is active, reveal restrained styling controls: Color swatch & 3-step width toggle */}
+          {/* When Pen Mode is active, reveal restrained styling controls: Color swatch & slider width */}
           {activeTool === 'pen' && (
-            <div className="flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-full bg-surface-subtle/80 border border-border/70">
+            <div className="flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full bg-surface-subtle/80 border border-border/70">
               {/* Color Swatch Trigger */}
               <button
                 type="button"
@@ -245,61 +252,53 @@ export function MoodboardToolbar({
                 />
               </button>
 
-              {/* Discrete 3-step Stroke Width: 2px, 4px, 8px */}
-              <div className="flex items-center gap-0.5 border-l border-border/60 pl-1">
-                {[
-                  { width: 2, label: 'Fine', indicator: 'h-1 w-1' },
-                  { width: 4, label: 'Med', indicator: 'h-1.5 w-1.5' },
-                  { width: 8, label: 'Bold', indicator: 'h-2 w-2' },
-                ].map((step) => {
-                  const isActive = (penWidth || 4) === step.width;
-                  return (
-                    <button
-                      key={step.width}
-                      type="button"
-                      onClick={() => onChangePenWidth?.(step.width)}
-                      className={`h-6 px-1.5 rounded text-[11px] font-medium transition-colors flex items-center gap-1 ${
-                        isActive
-                          ? 'bg-accent/20 text-accent font-semibold'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
-                      }`}
-                      title={`${step.label} (${step.width}px)`}
-                    >
-                      <span
-                        className={`rounded-full bg-current ${step.indicator}`}
-                      />
-                      <span className="text-[10px]">{step.width}</span>
-                    </button>
-                  );
-                })}
+              {/* Compact Pen Width Slider: 1px – 40px */}
+              <div className="flex items-center gap-1.5 border-l border-border/60 pl-1.5">
+                <span
+                  className="rounded-full bg-current shrink-0 transition-all"
+                  style={{ width: Math.max(3, Math.min(10, penWidth * 0.8)), height: Math.max(3, Math.min(10, penWidth * 0.8)) }}
+                />
+                <input
+                  type="range"
+                  min={MIN_PEN_WIDTH}
+                  max={MAX_PEN_WIDTH}
+                  step={1}
+                  value={penWidth}
+                  onChange={(e) => onChangePenWidth?.(Number(e.target.value))}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  className="w-16 h-1 accent-accent cursor-pointer"
+                  title={`Pen width: ${penWidth}px`}
+                />
+                <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-7 text-right">
+                  {penWidth} px
+                </span>
               </div>
             </div>
           )}
 
-          {/* When Eraser Mode is active, reveal discrete size controls: Small (8px), Medium (16px), Large (28px) */}
+          {/* When Eraser Mode is active, reveal compact slider size control: 4px – 48px radius */}
           {activeTool === 'eraser' && (
-            <div className="flex items-center gap-1 pl-1.5 pr-1.5 py-0.5 rounded-full bg-surface-subtle/80 border border-border/70">
-              <span className="text-[10px] text-muted-foreground font-medium px-1">Size</span>
-              <div className="flex items-center gap-0.5 border-l border-border/60 pl-1">
-                {ERASER_SIZES.map((step) => {
-                  const isActive = (eraserSize || DEFAULT_ERASER_SIZE) === step.size;
-                  return (
-                    <button
-                      key={step.size}
-                      type="button"
-                      onClick={() => onChangeEraserSize?.(step.size)}
-                      className={`h-6 px-1.5 rounded text-[11px] font-medium transition-colors flex items-center gap-1 ${
-                        isActive
-                          ? 'bg-accent/20 text-accent font-semibold'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
-                      }`}
-                      title={`${step.label} (${step.size}px radius)`}
-                    >
-                      <span className={`rounded-full bg-current ${step.indicatorClass}`} />
-                      <span className="text-[10px]">{step.size}</span>
-                    </button>
-                  );
-                })}
+            <div className="flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 rounded-full bg-surface-subtle/80 border border-border/70">
+              <span className="text-[10px] text-muted-foreground font-medium">Size</span>
+              <div className="flex items-center gap-1.5 border-l border-border/60 pl-1.5">
+                <span
+                  className="rounded-full border border-current shrink-0 transition-all"
+                  style={{ width: Math.max(4, Math.min(14, eraserSize * 0.5)), height: Math.max(4, Math.min(14, eraserSize * 0.5)) }}
+                />
+                <input
+                  type="range"
+                  min={MIN_ERASER_SIZE}
+                  max={MAX_ERASER_SIZE}
+                  step={1}
+                  value={eraserSize}
+                  onChange={(e) => onChangeEraserSize?.(Number(e.target.value))}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  className="w-16 h-1 accent-accent cursor-pointer"
+                  title={`Eraser radius: ${eraserSize}px`}
+                />
+                <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-7 text-right">
+                  {eraserSize} px
+                </span>
               </div>
             </div>
           )}

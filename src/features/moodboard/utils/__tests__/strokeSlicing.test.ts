@@ -203,3 +203,53 @@ describe('strokeSlicing — Geometric Polyline Circle Intersection', () => {
   });
 });
 
+describe('Eraser slider range — zoom-consistent radius boundaries', () => {
+  it('erases with minimum slider radius 4px at scale 1.0', () => {
+    // radius 4px at scale 1 → canvas radius 4
+    const line = [0, 50, 100, 50];
+    const canvasRadius = 4 / 1; // screenDistanceToCanvas(4, 1)
+    const result = slicePolylineWithCircle(line, 50, 50, canvasRadius);
+
+    // Should create two segments: [0→46, 50] and [54→100, 50]
+    expect(result.length).toBe(2);
+    expect(result[0][2]).toBeCloseTo(46, 0);
+    expect(result[1][0]).toBeCloseTo(54, 0);
+  });
+
+  it('erases with maximum slider radius 48px at scale 1.0', () => {
+    // radius 48px at scale 1 → canvas radius 48
+    const line = [0, 50, 200, 50];
+    const canvasRadius = 48 / 1; // screenDistanceToCanvas(48, 1)
+    const result = slicePolylineWithCircle(line, 100, 50, canvasRadius);
+
+    // Should erase from x=52 to x=148
+    expect(result.length).toBe(2);
+    expect(result[0][2]).toBeCloseTo(52, 0);
+    expect(result[1][0]).toBeCloseTo(148, 0);
+  });
+
+  it('erases with slider radius 16px at zoom scale 2.0 (canvas radius 8)', () => {
+    // radius 16px at scale 2 → canvas radius 8
+    const line = [0, 50, 100, 50];
+    const canvasRadius = 16 / 2; // screenDistanceToCanvas(16, 2)
+    const result = slicePolylineWithCircle(line, 50, 50, canvasRadius);
+
+    // Should erase from x=42 to x=58
+    expect(result.length).toBe(2);
+    expect(result[0][2]).toBeCloseTo(42, 0);
+    expect(result[1][0]).toBeCloseTo(58, 0);
+  });
+
+  it('erases with slider radius 48px at zoom scale 0.5 (canvas radius 96)', () => {
+    // radius 48px at scale 0.5 → canvas radius 96
+    const line = [0, 50, 300, 50];
+    const canvasRadius = 48 / 0.5; // screenDistanceToCanvas(48, 0.5)
+    const result = slicePolylineWithCircle(line, 150, 50, canvasRadius);
+
+    // Should erase from x=54 to x=246
+    expect(result.length).toBe(2);
+    expect(result[0][2]).toBeCloseTo(54, 0);
+    expect(result[1][0]).toBeCloseTo(246, 0);
+  });
+});
+

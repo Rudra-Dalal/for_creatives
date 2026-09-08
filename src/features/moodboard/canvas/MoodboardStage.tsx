@@ -1834,7 +1834,7 @@ export function MoodboardStage({
             visible={false}
             points={[]}
             stroke={penColor}
-            strokeWidth={penWidth}
+            strokeWidth={screenDistanceToCanvas(penWidth, viewport.scale)}
             lineCap="round"
             lineJoin="round"
             listening={false}

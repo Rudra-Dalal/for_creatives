@@ -2,7 +2,7 @@
 
 import { useRef, useCallback } from 'react';
 import type Konva from 'konva';
-import { getPointerCanvasPosition } from '../coordinates/canvasCoordinates';
+import { getPointerCanvasPosition, screenDistanceToCanvas } from '../coordinates/canvasCoordinates';
 import type { ViewportTransform } from '../coordinates/geometryTypes';
 import { simplifyPoints, normalizeStrokePoints } from '../utils/strokeUtils';
 
@@ -86,9 +86,10 @@ export function usePenTool({
       currentStrokePointsRef.current = [pos.x, pos.y];
 
       if (activeLineRef.current) {
+        const canvasWidth = screenDistanceToCanvas(penWidth, viewport?.scale ?? 1);
         activeLineRef.current.points([pos.x, pos.y]);
         activeLineRef.current.stroke(penColor);
-        activeLineRef.current.strokeWidth(penWidth);
+        activeLineRef.current.strokeWidth(canvasWidth);
         activeLineRef.current.visible(true);
         activeLineRef.current.getLayer()?.batchDraw();
       }
@@ -148,7 +149,8 @@ export function usePenTool({
       // Compute bounding box and relative points
       const bbox = normalizeStrokePoints(simplified);
 
-      onAddStroke(bbox.relativePoints, penColor, penWidth, {
+      const canvasWidth = screenDistanceToCanvas(penWidth, viewport?.scale ?? 1);
+      onAddStroke(bbox.relativePoints, penColor, canvasWidth, {
         x: bbox.x,
         y: bbox.y,
         width: bbox.width,
@@ -157,7 +159,7 @@ export function usePenTool({
     }
 
     return true;
-  }, [onAddStroke, penColor, penWidth]);
+  }, [onAddStroke, penColor, penWidth, viewport]);
 
   return {
     activeLineRef,

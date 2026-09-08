@@ -246,4 +246,74 @@ describe('usePenTool — Authoritative Pen Interaction Controller', () => {
     expect(hook.handleStageMouseUp()).toBe(false);
     expect(onAddStroke).not.toHaveBeenCalled();
   });
+
+  it('converts penWidth from screen-space to canvas-space at zoom scale 2.0', () => {
+    // At scale 2.0, penWidth 8px screen → 4px canvas
+    const mockStage = createMockStage({ x: 100, y: 100 }, 2, 0, 0);
+    const mockLine = createMockKonvaLine();
+    const stageRef = { current: mockStage as any };
+    const onAddStroke = vi.fn();
+
+    const hook = renderPenTool({
+      stageRef,
+      activeTool: 'pen',
+      readOnly: false,
+      penColor: '#D97706',
+      penWidth: 8,
+      viewport: { x: 0, y: 0, scale: 2 },
+      onAddStroke,
+    });
+
+    (hook.activeLineRef as any).current = mockLine;
+
+    const evt = { evt: { button: 0 } } as any;
+    hook.handleStageMouseDown(evt);
+
+    // On stroke start, strokeWidth should be converted: 8 / 2 = 4
+    expect(mockLine.strokeWidth).toHaveBeenCalledWith(4);
+
+    mockStage.setPointer(200, 200);
+    hook.handleStageMouseMove(evt);
+    hook.handleStageMouseUp();
+
+    // Committed stroke width should also be 4 (canvas-space)
+    expect(onAddStroke).toHaveBeenCalledTimes(1);
+    const [, , committedWidth] = onAddStroke.mock.calls[0];
+    expect(committedWidth).toBe(4);
+  });
+
+  it('converts penWidth from screen-space to canvas-space at zoom scale 0.5', () => {
+    // At scale 0.5, penWidth 4px screen → 8px canvas
+    const mockStage = createMockStage({ x: 100, y: 100 }, 0.5, 0, 0);
+    const mockLine = createMockKonvaLine();
+    const stageRef = { current: mockStage as any };
+    const onAddStroke = vi.fn();
+
+    const hook = renderPenTool({
+      stageRef,
+      activeTool: 'pen',
+      readOnly: false,
+      penColor: '#D97706',
+      penWidth: 4,
+      viewport: { x: 0, y: 0, scale: 0.5 },
+      onAddStroke,
+    });
+
+    (hook.activeLineRef as any).current = mockLine;
+
+    const evt = { evt: { button: 0 } } as any;
+    hook.handleStageMouseDown(evt);
+
+    // On stroke start, strokeWidth should be converted: 4 / 0.5 = 8
+    expect(mockLine.strokeWidth).toHaveBeenCalledWith(8);
+
+    mockStage.setPointer(200, 200);
+    hook.handleStageMouseMove(evt);
+    hook.handleStageMouseUp();
+
+    // Committed stroke width should also be 8 (canvas-space)
+    expect(onAddStroke).toHaveBeenCalledTimes(1);
+    const [, , committedWidth] = onAddStroke.mock.calls[0];
+    expect(committedWidth).toBe(8);
+  });
 });
