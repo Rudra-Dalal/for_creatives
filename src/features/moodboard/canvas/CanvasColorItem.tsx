@@ -36,7 +36,8 @@ export function CanvasColorItem({
 
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
-    const node = e.target;
+    const node = groupRef.current ?? (e.currentTarget as Konva.Node);
+    if (!node) return;
     onDragEnd(item.id, node.x(), node.y());
   };
 

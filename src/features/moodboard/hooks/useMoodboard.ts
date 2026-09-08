@@ -182,6 +182,8 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
 
   // Keep track of pending persistence timers for debouncing
   const pendingUpdatesRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  // Keep track of pending merged geometries for each item to prevent stale overwrites
+  const pendingGeometriesRef = useRef<Map<string, { x?: number; y?: number; width?: number; height?: number; zIndex?: number }>>(new Map());
 
   const fetchItems = useCallback(async () => {
     if (!projectId || (readOnly && initialItems !== undefined)) return;
@@ -358,7 +360,12 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
         // Undo Partial Erase:
         // 1. Delete created split sub-strokes
         if (actionToRevert.createdItemIds.length > 0) {
-          await Promise.all(actionToRevert.createdItemIds.map((id) => moodboardService.softDeleteItem(id)));
+          await Promise.all(
+            actionToRevert.createdItemIds.map((id) => {
+              if (id.startsWith('temp-')) return Promise.resolve();
+              return moodboardService.softDeleteItem(id);
+            })
+          );
         }
         // 2. Restore deleted strokes
         if (actionToRevert.deletedItemIds.length > 0) {
@@ -635,6 +642,27 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
       tension: 0.5,
     };
 
+    // 1. Create and render optimistic stroke item synchronously on mouseup
+    const tempId = `temp-stroke-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const optimisticItem: MoodboardItem = {
+      id: tempId,
+      project_id: projectId,
+      reference_id: null,
+      type: 'stroke',
+      content: content as unknown as MoodboardItemContent,
+      x: bbox.x,
+      y: bbox.y,
+      width: bbox.width,
+      height: bbox.height,
+      z_index: nextZ,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted_at: null,
+    };
+
+    setItems((prev) => [...prev, optimisticItem]);
+
+    // 2. Persist to database in the background without blocking the UI
     beginSave();
     try {
       const created = await moodboardService.createItem({
@@ -649,11 +677,16 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
         zIndex: nextZ,
       });
 
-      setItems((prev) => [...prev, created]);
+      // Reconcile optimistic ID with the real DB ID
+      setItems((prev) =>
+        prev.map((i) => (i.id === tempId ? { ...created, content: i.content } : i))
+      );
       recordUndoAction({ type: 'ADD', itemId: created.id, item: created });
       endSave();
       return created;
     } catch (err) {
+      // Rollback optimistic item on failure
+      setItems((prev) => prev.filter((i) => i.id !== tempId));
       endSave(err);
       throw err;
     }
@@ -707,24 +740,33 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     []
   );
 
-  // Persist item position/size to Supabase
+  // Persist item position/size to Supabase with partial geometry merging
   const persistItemGeometry = useCallback(
     (
       id: string,
-      geometry: { x: number; y: number; width: number; height: number; zIndex?: number }
+      geometry: { x?: number; y?: number; width?: number; height?: number; zIndex?: number }
     ) => {
-      const existing = pendingUpdatesRef.current.get(id);
-      if (existing) clearTimeout(existing);
+      const existingTimer = pendingUpdatesRef.current.get(id);
+      if (existingTimer) clearTimeout(existingTimer);
+
+      const merged = {
+        ...(pendingGeometriesRef.current.get(id) || {}),
+        ...geometry,
+      };
+      pendingGeometriesRef.current.set(id, merged);
 
       const timer = setTimeout(async () => {
+        const toSave = pendingGeometriesRef.current.get(id);
+        pendingGeometriesRef.current.delete(id);
+        pendingUpdatesRef.current.delete(id);
+        if (!toSave) return;
+
         beginSave();
         try {
-          await moodboardService.updateItem(id, geometry);
+          await moodboardService.updateItem(id, toSave);
           endSave();
         } catch (err) {
           endSave(err);
-        } finally {
-          pendingUpdatesRef.current.delete(id);
         }
       }, 250);
 
@@ -855,13 +897,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
   const bringToFront = async (id: string) => {
     const nextZ = getMaxZIndex() + 1;
     updateItemLocal(id, { z_index: nextZ });
-    beginSave();
-    try {
-      await moodboardService.updateItem(id, { zIndex: nextZ });
-      endSave();
-    } catch (err) {
-      endSave(err);
-    }
+    persistItemGeometry(id, { zIndex: nextZ });
   };
 
   // Delete item from moodboard (soft-delete with undo support)
@@ -937,85 +973,127 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
         return;
       }
 
-      beginSave();
-      try {
-        const deletedSet = new Set(deletedIds);
-        const updateMap = new Map(updates.map((u) => [u.id, u]));
+      const deletedSet = new Set(deletedIds);
+      const updateMap = new Map(updates.map((u) => [u.id, u]));
 
-        // 1. Create split sub-strokes in DB
-        const createdItems: MoodboardItem[] = [];
-        for (const stroke of newStrokes) {
-          const created = await moodboardService.createItem({
-            projectId,
-            referenceId: stroke.referenceId,
-            type: 'stroke',
-            content: stroke.content as unknown as Json,
-            x: stroke.x,
-            y: stroke.y,
-            width: stroke.width,
-            height: stroke.height,
-            zIndex: stroke.zIndex,
-          });
-          createdItems.push(created);
-        }
+      // 1. Generate optimistic items for new split sub-strokes
+      const optimisticCreated: MoodboardItem[] = newStrokes.map((stroke, index) => ({
+        id: `temp-erase-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+        project_id: projectId,
+        reference_id: stroke.referenceId || null,
+        type: 'stroke',
+        content: stroke.content as unknown as MoodboardItemContent,
+        x: stroke.x,
+        y: stroke.y,
+        width: stroke.width,
+        height: stroke.height,
+        z_index: stroke.zIndex,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        deleted_at: null,
+      }));
 
-        // 2. Persist geometry & points for updated strokes
-        await Promise.all(
-          updates.map((u) => {
-            const original = originalStrokes.find((s) => s.id === u.id);
-            const origContent = (original?.content as StrokeItemContent) || {};
-            const nextContent: StrokeItemContent = {
+      // 2. Synchronously update local React state — zero visual blank gap on mouseup
+      setItems((prev) => {
+        const withoutDeleted = prev.filter((i) => !deletedSet.has(i.id));
+        const withUpdates = withoutDeleted.map((i) => {
+          const u = updateMap.get(i.id);
+          if (!u) return i;
+          const origContent = (i.content as StrokeItemContent) || {};
+          return {
+            ...i,
+            x: u.x,
+            y: u.y,
+            width: u.width,
+            height: u.height,
+            content: {
               ...origContent,
               points: u.relativePoints,
-            };
-            return moodboardService.updateItem(u.id, {
-              x: u.x,
-              y: u.y,
-              width: u.width,
-              height: u.height,
-              content: nextContent as unknown as Json,
-            });
-          })
-        );
+            },
+          };
+        });
+        return [...withUpdates, ...optimisticCreated];
+      });
 
-        // 3. Soft-delete fully erased strokes
-        if (deletedIds.length > 0) {
-          await Promise.all(deletedIds.map((id) => moodboardService.softDeleteItem(id)));
-        }
+      // 3. Record single atomic undo action immediately
+      recordUndoAction({
+        type: 'PARTIAL_ERASE',
+        originalStrokes,
+        createdItemIds: optimisticCreated.map((i) => i.id),
+        updatedItems: updates.map((u) => ({
+          id: u.id,
+          prevItem: originalStrokes.find((s) => s.id === u.id)!,
+        })),
+        deletedItemIds: deletedIds,
+      });
 
-        // 4. Update React state atomically
-        setItems((prev) => {
-          const withoutDeleted = prev.filter((i) => !deletedSet.has(i.id));
-          const withUpdates = withoutDeleted.map((i) => {
-            const u = updateMap.get(i.id);
-            if (!u) return i;
-            const origContent = (i.content as StrokeItemContent) || {};
-            return {
-              ...i,
-              x: u.x,
-              y: u.y,
-              width: u.width,
-              height: u.height,
-              content: {
+      // 4. Asynchronously persist database operations in parallel in background
+      beginSave();
+      try {
+        const [createdItems] = await Promise.all([
+          Promise.all(
+            newStrokes.map((stroke) =>
+              moodboardService.createItem({
+                projectId,
+                referenceId: stroke.referenceId,
+                type: 'stroke',
+                content: stroke.content as unknown as Json,
+                x: stroke.x,
+                y: stroke.y,
+                width: stroke.width,
+                height: stroke.height,
+                zIndex: stroke.zIndex,
+              })
+            )
+          ),
+          Promise.all(
+            updates.map((u) => {
+              const original = originalStrokes.find((s) => s.id === u.id);
+              const origContent = (original?.content as StrokeItemContent) || {};
+              const nextContent: StrokeItemContent = {
                 ...origContent,
                 points: u.relativePoints,
-              },
-            };
-          });
-          return [...withUpdates, ...createdItems];
-        });
+              };
+              return moodboardService.updateItem(u.id, {
+                x: u.x,
+                y: u.y,
+                width: u.width,
+                height: u.height,
+                content: nextContent as unknown as Json,
+              });
+            })
+          ),
+          deletedIds.length > 0
+            ? Promise.all(deletedIds.map((id) => moodboardService.softDeleteItem(id)))
+            : Promise.resolve([]),
+        ]);
 
-        // 5. Record single atomic undo action
-        recordUndoAction({
-          type: 'PARTIAL_ERASE',
-          originalStrokes,
-          createdItemIds: createdItems.map((i) => i.id),
-          updatedItems: updates.map((u) => ({
-            id: u.id,
-            prevItem: originalStrokes.find((s) => s.id === u.id)!,
-          })),
-          deletedItemIds: deletedIds,
-        });
+        // Reconcile optimistic IDs to persistent DB IDs
+        if (createdItems.length > 0) {
+          const tempToReal = new Map<string, MoodboardItem>();
+          optimisticCreated.forEach((temp, i) => {
+            if (createdItems[i]) {
+              tempToReal.set(temp.id, createdItems[i]);
+            }
+          });
+
+          setItems((prev) =>
+            prev.map((item) => {
+              const real = tempToReal.get(item.id);
+              return real ? { ...real, content: item.content } : item;
+            })
+          );
+
+          setLastAction((prevAction) => {
+            if (prevAction && prevAction.type === 'PARTIAL_ERASE') {
+              return {
+                ...prevAction,
+                createdItemIds: createdItems.map((c) => c.id),
+              };
+            }
+            return prevAction;
+          });
+        }
 
         endSave();
       } catch (err) {

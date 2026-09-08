@@ -455,6 +455,63 @@ describe('useItemDrag — Actual Hook Integration Tests', () => {
       });
     });
 
+    it('queues dimension correction immediately after handleItemDragStart even before dragmove', () => {
+      const hook = renderItemDrag({
+        items: [itemA],
+        selectedIds: ['item-a'],
+        readOnly: false,
+        stageRef,
+        onSelectIds,
+        onUpdateItemLocal,
+        onPersistGeometry,
+        onRecordUndoAction,
+        onBringToFront,
+      });
+
+      // Drag starts, but before any mouse movement occurs:
+      hook.handleItemDragStart(itemA);
+
+      // liveDragPositionsRef must have item-a immediately
+      expect(hook.liveDragPositionsRef.current.has('item-a')).toBe(true);
+
+      // Thumbnail finishes loading right after drag start
+      hook.handleDimensionsCorrected('item-a', 320, 240);
+
+      // Must be queued, not committed immediately mid-drag
+      expect(onUpdateItemLocal).not.toHaveBeenCalled();
+      expect(onPersistGeometry).not.toHaveBeenCalled();
+
+      // Completes drag
+      hook.handleItemDragEnd('item-a', 150, 150);
+      expect(onUpdateItemLocal).toHaveBeenCalledWith('item-a', {
+        x: 150,
+        y: 150,
+        width: 320,
+        height: 240,
+      });
+    });
+
+    it('cancelDrag cleans up active drag positions and refs', () => {
+      const hook = renderItemDrag({
+        items: [itemA],
+        selectedIds: ['item-a'],
+        readOnly: false,
+        stageRef,
+        onSelectIds,
+        onUpdateItemLocal,
+        onPersistGeometry,
+        onRecordUndoAction,
+        onBringToFront,
+      });
+
+      hook.handleItemDragStart(itemA);
+      expect(hook.liveDragPositionsRef.current.has('item-a')).toBe(true);
+
+      hook.cancelDrag();
+      expect(hook.liveDragPositionsRef.current.has('item-a')).toBe(false);
+      expect(hook.liveDragPositionsRef.current.size).toBe(0);
+    });
+
     it('applies dimension correction immediately when item is not mid-drag', () => {
       const hook = renderItemDrag({
         items: [itemA],

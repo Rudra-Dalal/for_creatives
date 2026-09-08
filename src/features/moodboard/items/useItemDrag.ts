@@ -65,6 +65,10 @@ export interface UseItemDragReturn {
    */
   handleDimensionsCorrected: (id: string, width: number, height: number) => void;
   /**
+   * Cancel active drag state, clean up refs, and force a tick to reset live bounds.
+   */
+  cancelDrag: () => void;
+  /**
    * Incrementing tick that forces ItemsLayer to re-read live drag positions
    * from the ref on each animation frame — drives connector/anchor updates.
    */
@@ -135,6 +139,7 @@ export function useItemDrag({
         const itm = items.find((i) => i.id === id);
         if (!itm) return;
         dragStartPositionsRef.current.set(id, { x: itm.x, y: itm.y });
+        liveDragPositionsRef.current.set(id, { x: itm.x, y: itm.y });
         initialGeometryRef.current.set(id, {
           x: itm.x,
           y: itm.y,
@@ -319,11 +324,28 @@ export function useItemDrag({
     [items, onUpdateItemLocal, onPersistGeometry]
   );
 
+  const cancelDrag = useCallback(() => {
+    if (dragRafRef.current !== null) {
+      if (typeof cancelAnimationFrame !== 'undefined') {
+        cancelAnimationFrame(dragRafRef.current);
+      }
+      dragRafRef.current = null;
+    }
+    dragStartPositionsRef.current.clear();
+    initialGeometryRef.current.clear();
+    pendingDimensionsRef.current.clear();
+    if (liveDragPositionsRef.current.size > 0) {
+      liveDragPositionsRef.current.clear();
+      setLiveDragTick((t) => (t + 1) % 10000);
+    }
+  }, []);
+
   return {
     handleItemDragStart,
     handleStageDragMove,
     handleItemDragEnd,
     handleDimensionsCorrected,
+    cancelDrag,
     liveDragTick,
     liveDragPositionsRef,
   };

@@ -32,6 +32,7 @@ import {
   type CanvasPoint,
 } from '../coordinates';
 import { usePenTool } from '../items/usePenTool';
+import { useItemDrag } from '../items/useItemDrag';
 import { CanvasTransformer } from '../selection';
 import { sliceStrokeItem } from '../utils/strokeSlicing';
 import {
@@ -168,7 +169,6 @@ export function MoodboardStage({
   onRegisterExport,
 }: MoodboardStageProps) {
   const stageRef = useRef<Konva.Stage | null>(null);
-  const initialGeometryRef = useRef<Map<string, { x: number; y: number; width: number; height: number; zIndex?: number }>>(new Map());
 
   // Authoritative freehand pen tool interaction hook
   const pen = usePenTool({
@@ -437,12 +437,32 @@ export function MoodboardStage({
   const [selectedNode, setSelectedNode] = useState<Konva.Node | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
-  const dragStartPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
-  const liveDragPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
-  const [liveDragTick, setLiveDragTick] = useState(0);
-  const dragRafRef = useRef<number | null>(null);
   const nodeMapRef = useRef<Map<string, Konva.Node>>(new Map());
-  const pendingDimensionsRef = useRef<Map<string, { width: number; height: number }>>(new Map());
+
+  // Single authoritative item drag controller
+  const {
+    handleItemDragStart,
+    handleStageDragMove: handleItemDragMove,
+    handleItemDragEnd,
+    handleDimensionsCorrected,
+    cancelDrag,
+    liveDragTick,
+    liveDragPositionsRef,
+  } = useItemDrag({
+    items,
+    selectedIds: effectiveSelectedIds,
+    readOnly,
+    stageRef,
+    onSelectIds: (ids) => {
+      if (onSelectIds) onSelectIds(ids);
+      else if (ids.length > 0) onSelectId(ids[0]);
+      else onSelectId(null);
+    },
+    onUpdateItemLocal,
+    onPersistGeometry,
+    onRecordUndoAction,
+    onBringToFront,
+  });
 
   // Editing overlays
   const [editingTextItem, setEditingTextItem] = useState<MoodboardItem | null>(null);
@@ -515,14 +535,12 @@ export function MoodboardStage({
   const marqueeStartPointerRef = useRef<{ x: number; y: number } | null>(null);
   const lastMarqueeHitIdsRef = useRef<string[]>([]);
 
-  // Cancel any pending animation frame on unmount
+  // Cancel any active drag on unmount
   useEffect(() => {
     return () => {
-      if (dragRafRef.current !== null) {
-        cancelAnimationFrame(dragRafRef.current);
-      }
+      cancelDrag();
     };
-  }, []);
+  }, [cancelDrag]);
 
   // Global mouseup cleanup for marquee, live drag, partial eraser, and connectors
   useEffect(() => {
@@ -539,13 +557,8 @@ export function MoodboardStage({
         lastMarqueeHitIdsRef.current = [];
         setSelectionBox(null);
       }
-      if (dragRafRef.current !== null) {
-        cancelAnimationFrame(dragRafRef.current);
-        dragRafRef.current = null;
-      }
       if (liveDragPositionsRef.current.size > 0) {
-        liveDragPositionsRef.current.clear();
-        setLiveDragTick((t) => (t + 1) % 10000);
+        cancelDrag();
       }
     };
 
@@ -553,7 +566,7 @@ export function MoodboardStage({
     return () => {
       window.removeEventListener('mouseup', handleGlobalMouseUp);
     };
-  }, [finishErasing, connectorDrag]);
+  }, [finishErasing, connectorDrag, cancelDrag, liveDragPositionsRef]);
 
   // Active connection drag global pointer listeners (guarantees continuous tracking and commit across all DOM boundaries)
   useEffect(() => {
@@ -865,192 +878,10 @@ export function MoodboardStage({
     }
   }, [onRegisterExport, handleExportPNG]);
 
-  // Track initial geometry before drag with multi-selection support
-  const handleItemDragStart = (item: MoodboardItem) => {
-    if (readOnly) return;
-
-    let currentSelection = effectiveSelectedIds;
-    if (!currentSelection.includes(item.id)) {
-      currentSelection = [item.id];
-      if (onSelectIds) onSelectIds([item.id]);
-      else onSelectId(item.id);
-    }
-
-    dragStartPositionsRef.current.clear();
-    currentSelection.forEach((id) => {
-      const itm = items.find((i) => i.id === id);
-      if (itm) {
-        dragStartPositionsRef.current.set(id, { x: itm.x, y: itm.y });
-        initialGeometryRef.current.set(id, {
-          x: itm.x,
-          y: itm.y,
-          width: itm.width,
-          height: itm.height,
-          zIndex: itm.z_index,
-        });
-        const konvaNode = stageRef.current?.findOne('#' + id);
-        if (konvaNode) {
-          konvaNode.moveToTop();
-        }
-      }
-    });
-  };
-
   // Synchronized drag move for items, connector arrows, and anchor handles
   const handleStageDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
     if (handleViewportDragMove(e)) return;
-    if (e.target === stageRef.current) return;
-
-    let draggedNode: Konva.Node = e.target;
-    let draggedId = draggedNode.id();
-    if (!draggedId || !items.some((i) => i.id === draggedId)) {
-      const ancestor = draggedNode.findAncestor('.moodboard-item', true);
-      if (ancestor) {
-        draggedNode = ancestor;
-        draggedId = ancestor.id();
-      }
-    }
-
-    if (!draggedId) return;
-
-    const itm = items.find((i) => i.id === draggedId);
-    if (!itm) return;
-
-    let startPos = dragStartPositionsRef.current.get(draggedId);
-    if (!startPos) {
-      startPos = { x: itm.x, y: itm.y };
-      dragStartPositionsRef.current.set(draggedId, startPos);
-    }
-
-    const dx = draggedNode.x() - startPos.x;
-    const dy = draggedNode.y() - startPos.y;
-
-    // Track real-time position of the dragged item
-    liveDragPositionsRef.current.set(draggedId, {
-      x: draggedNode.x(),
-      y: draggedNode.y(),
-    });
-
-    // If multi-selected, synchronize positions of all other selected items in Konva and live ref
-    if (effectiveSelectedIds.length > 1 && effectiveSelectedIds.includes(draggedId)) {
-      effectiveSelectedIds.forEach((id) => {
-        if (id === draggedId) return;
-        const node = stageRef.current?.findOne(`#${id}`);
-        let otherStart = dragStartPositionsRef.current.get(id);
-        if (!otherStart) {
-          const otherItm = items.find((i) => i.id === id);
-          if (otherItm) {
-            otherStart = { x: otherItm.x, y: otherItm.y };
-            dragStartPositionsRef.current.set(id, otherStart);
-          }
-        }
-        if (node && otherStart) {
-          const newX = otherStart.x + dx;
-          const newY = otherStart.y + dy;
-          node.x(newX);
-          node.y(newY);
-          liveDragPositionsRef.current.set(id, { x: newX, y: newY });
-        }
-      });
-    }
-
-    // Schedule RAF update to smoothly re-render connector arrows and anchor handles at 60/120fps
-    if (dragRafRef.current === null) {
-      dragRafRef.current = requestAnimationFrame(() => {
-        dragRafRef.current = null;
-        setLiveDragTick((t) => (t + 1) % 10000);
-      });
-    }
-  };
-
-  // Handle item drag end with group move & undo tracking
-  const handleItemDragEnd = (id: string, x: number, y: number) => {
-    if (readOnly) return;
-
-    if (effectiveSelectedIds.length > 1 && effectiveSelectedIds.includes(id)) {
-      const startPos = dragStartPositionsRef.current.get(id);
-      const dx = startPos ? x - startPos.x : 0;
-      const dy = startPos ? y - startPos.y : 0;
-
-      effectiveSelectedIds.forEach((selectedItemId) => {
-        const item = items.find((i) => i.id === selectedItemId);
-        if (!item) return;
-        const initial = initialGeometryRef.current.get(selectedItemId);
-        const finalX = selectedItemId === id ? x : Math.round(item.x + dx);
-        const finalY = selectedItemId === id ? y : Math.round(item.y + dy);
-
-        const pendingDim = pendingDimensionsRef.current.get(selectedItemId);
-        if (pendingDim) {
-          pendingDimensionsRef.current.delete(selectedItemId);
-        }
-        const widthToSave = pendingDim ? pendingDim.width : item.width;
-        const heightToSave = pendingDim ? pendingDim.height : item.height;
-
-        onUpdateItemLocal(selectedItemId, { x: finalX, y: finalY, width: widthToSave, height: heightToSave });
-        onPersistGeometry(selectedItemId, {
-          x: finalX,
-          y: finalY,
-          width: widthToSave,
-          height: heightToSave,
-          zIndex: item.z_index,
-        });
-
-        if (initial && (initial.x !== finalX || initial.y !== finalY)) {
-          onRecordUndoAction?.({
-            type: 'MOVE',
-            itemId: selectedItemId,
-            prevGeometry: initial,
-            nextGeometry: {
-              x: finalX,
-              y: finalY,
-              width: widthToSave,
-              height: heightToSave,
-              zIndex: item.z_index,
-            },
-          });
-        }
-
-        onBringToFront(selectedItemId);
-      });
-    } else {
-      const item = items.find((i) => i.id === id);
-      if (!item) return;
-
-      const pendingDim = pendingDimensionsRef.current.get(id);
-      if (pendingDim) {
-        pendingDimensionsRef.current.delete(id);
-      }
-      const widthToSave = pendingDim ? pendingDim.width : item.width;
-      const heightToSave = pendingDim ? pendingDim.height : item.height;
-
-      const initial = initialGeometryRef.current.get(id);
-      if (initial && (initial.x !== x || initial.y !== y)) {
-        onRecordUndoAction?.({
-          type: 'MOVE',
-          itemId: id,
-          prevGeometry: initial,
-          nextGeometry: { x, y, width: widthToSave, height: heightToSave, zIndex: item.z_index },
-        });
-      }
-
-      onUpdateItemLocal(id, { x, y, width: widthToSave, height: heightToSave });
-      onPersistGeometry(id, {
-        x,
-        y,
-        width: widthToSave,
-        height: heightToSave,
-        zIndex: item.z_index,
-      });
-
-      onBringToFront(id);
-    }
-
-    if (dragRafRef.current !== null) {
-      cancelAnimationFrame(dragRafRef.current);
-      dragRafRef.current = null;
-    }
-    liveDragPositionsRef.current.clear();
-    setLiveDragTick((t) => (t + 1) % 10000);
+    handleItemDragMove(e);
   };
 
   // Handle item transform end with undo tracking
@@ -1059,7 +890,7 @@ export function MoodboardStage({
     const item = items.find((i) => i.id === id);
     if (!item) return;
 
-    const initial = initialGeometryRef.current.get(id) || {
+    const initial = {
       x: item.x,
       y: item.y,
       width: item.width,
@@ -1080,33 +911,11 @@ export function MoodboardStage({
     onPersistGeometry(id, { x, y, width, height, zIndex: item.z_index });
   };
 
-  // Auto-correction of dimensions to match natural aspect ratio without undo pollution
-  const handleDimensionsCorrected = (id: string, width: number, height: number) => {
-    if (liveDragPositionsRef.current.has(id)) {
-      pendingDimensionsRef.current.set(id, { width, height });
-      return;
-    }
-    onUpdateItemLocal(id, { width, height });
-    const item = items.find((i) => i.id === id);
-    if (item) {
-      onPersistGeometry(id, { x: item.x, y: item.y, width, height, zIndex: item.z_index });
-    }
-  };
-
   // Drag stage (panning) or fallback drag end cleanup
   const handleStageDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     if (handleViewportDragEnd(e)) return;
-    if (e.target === stageRef.current) {
-      return;
-    } else {
-      if (dragRafRef.current !== null) {
-        cancelAnimationFrame(dragRafRef.current);
-        dragRafRef.current = null;
-      }
-      if (liveDragPositionsRef.current.size > 0) {
-        liveDragPositionsRef.current.clear();
-        setLiveDragTick((t) => (t + 1) % 10000);
-      }
+    if (e.target !== stageRef.current && liveDragPositionsRef.current.size > 0) {
+      cancelDrag();
     }
   };
 
@@ -1542,15 +1351,14 @@ export function MoodboardStage({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative flex-1 w-full h-full overflow-hidden select-none bg-[#121211] ${
-        isMiddlePanning
+      className={`relative flex-1 w-full h-full overflow-hidden select-none bg-[#121211] ${isMiddlePanning
           ? 'cursor-grabbing'
           : isSpacePressed
-          ? 'cursor-grab active:cursor-grabbing'
-          : activeTool === 'pen' || activeTool === 'eraser'
-          ? 'cursor-crosshair'
-          : 'cursor-default'
-      } ${isDragOver ? 'ring-2 ring-inset ring-accent/60' : ''}`}
+            ? 'cursor-grab active:cursor-grabbing'
+            : activeTool === 'pen' || activeTool === 'eraser'
+              ? 'cursor-crosshair'
+              : 'cursor-default'
+        } ${isDragOver ? 'ring-2 ring-inset ring-accent/60' : ''}`}
     >
       {/* Subtle Drag Over Indicator */}
       {isDragOver && (

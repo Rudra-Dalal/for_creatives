@@ -135,14 +135,7 @@ export function usePenTool({
     const rawPoints = currentStrokePointsRef.current;
     currentStrokePointsRef.current = [];
 
-    // Immediately hide and clear the live line on the dedicated drawing layer
-    if (activeLineRef.current) {
-      activeLineRef.current.visible(false);
-      activeLineRef.current.points([]);
-      activeLineRef.current.getLayer()?.batchDraw();
-    }
-
-    // Run simplification and normalization ONLY at commit phase
+    // Run simplification, normalization, and synchronous optimistic commit FIRST
     if (rawPoints && rawPoints.length >= 2 && onAddStroke) {
       // Douglas-Peucker point reduction (tolerance: 1.5px)
       const simplified = simplifyPoints(rawPoints, 1.5);
@@ -156,6 +149,14 @@ export function usePenTool({
         width: bbox.width,
         height: bbox.height,
       });
+    }
+
+    // Now clear the live line on the dedicated drawing layer — no blank gap because
+    // the committed stroke is already in local state and ready to render
+    if (activeLineRef.current) {
+      activeLineRef.current.visible(false);
+      activeLineRef.current.points([]);
+      activeLineRef.current.getLayer()?.batchDraw();
     }
 
     return true;

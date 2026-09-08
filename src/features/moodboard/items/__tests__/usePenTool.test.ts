@@ -316,4 +316,37 @@ describe('usePenTool — Authoritative Pen Interaction Controller', () => {
     const [, , committedWidth] = onAddStroke.mock.calls[0];
     expect(committedWidth).toBe(8);
   });
+
+  it('calls onAddStroke synchronously before clearing the active live line to eliminate blank gap', () => {
+    const mockStage = createMockStage({ x: 100, y: 100 });
+    const mockLine = createMockKonvaLine();
+    const stageRef = { current: mockStage as any };
+    let lineVisibleDuringAddStroke = false;
+
+    const onAddStroke = vi.fn(() => {
+      // At the moment onAddStroke is invoked, the live line must still be visible and populated!
+      lineVisibleDuringAddStroke = mockLine.visible() && mockLine.points().length > 0;
+    });
+
+    const hook = renderPenTool({
+      stageRef,
+      activeTool: 'pen',
+      readOnly: false,
+      onAddStroke,
+    });
+
+    (hook.activeLineRef as any).current = mockLine;
+
+    const evt = { evt: { button: 0 } } as any;
+    hook.handleStageMouseDown(evt);
+    mockStage.setPointer(200, 200);
+    hook.handleStageMouseMove(evt);
+
+    hook.handleStageMouseUp();
+
+    expect(onAddStroke).toHaveBeenCalledTimes(1);
+    expect(lineVisibleDuringAddStroke).toBe(true);
+    expect(mockLine.visible()).toBe(false);
+    expect(mockLine.points()).toEqual([]);
+  });
 });
