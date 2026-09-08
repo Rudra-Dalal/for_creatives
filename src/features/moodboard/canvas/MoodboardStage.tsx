@@ -19,16 +19,20 @@ import { CanvasTextItem } from './CanvasTextItem';
 import { CanvasColorItem } from './CanvasColorItem';
 import { CanvasIdeaItem } from './CanvasIdeaItem';
 import { CanvasStrokeItem } from './CanvasStrokeItem';
-import { CanvasTransformer } from './CanvasTransformer';
-import { CanvasConnectorItem } from './CanvasConnectorItem';
-import { CanvasItemAnchors } from './CanvasItemAnchors';
-import { getAnchorPoint, calculateBezierCurve } from './connectorUtils';
-import { simplifyPoints, normalizeStrokePoints, isPathIntersectingStroke } from '../utils/strokeUtils';
 import { HexColorPicker } from 'react-colorful';
 import { Compass } from 'lucide-react';
 import { useCanvasViewport, CanvasBackground } from '../viewport';
 import { getPointerCanvasPosition, canvasToScreen } from '../coordinates';
 import { usePenTool } from '../items/usePenTool';
+import { CanvasTransformer } from '../selection';
+import { isPathIntersectingStroke } from '../utils/strokeUtils';
+import {
+  ConnectorsLayer,
+  CanvasItemAnchorHandles,
+  useConnectorDrag,
+  getAnchorPoint,
+  calculateBezierCurve,
+} from '../connectors';
 
 interface MoodboardStageProps {
   items: MoodboardItem[];
@@ -191,17 +195,10 @@ export function MoodboardStage({
     [items]
   );
 
-  // Connection drag state
-  const [connectingFrom, setConnectingFrom] = useState<{
-    itemId: string;
-    anchor: AnchorPosition;
-    startPoint: { x: number; y: number };
-  } | null>(null);
-  const [connectingPointerPos, setConnectingPointerPos] = useState<{ x: number; y: number } | null>(null);
-  const [connectingTarget, setConnectingTarget] = useState<{
-    itemId: string;
-    anchor: AnchorPosition;
-  } | null>(null);
+  // Authoritative connection drag controller
+  const connectorDrag = useConnectorDrag({
+    onAddConnection,
+  });
 
   // Connection label editing state
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
@@ -412,10 +409,8 @@ export function MoodboardStage({
           onChangeActiveTool?.('select');
           return;
         }
-        if (connectingFrom) {
-          setConnectingFrom(null);
-          setConnectingPointerPos(null);
-          setConnectingTarget(null);
+        if (connectorDrag.isConnecting) {
+          connectorDrag.cancelConnecting();
           return;
         }
         if (editingConnectionId) {
@@ -523,7 +518,7 @@ export function MoodboardStage({
     onNudge,
     onNudgeSelected,
     onZoomToFit,
-    connectingFrom,
+    connectorDrag,
     editingConnectionId,
     selectedConnectionId,
     onSelectConnection,
@@ -957,6 +952,10 @@ export function MoodboardStage({
       onSelectConnection(null);
     }
 
+    if (connectorDrag.isConnecting) {
+      connectorDrag.cancelConnecting();
+    }
+
     if (!('shiftKey' in e.evt && e.evt.shiftKey)) {
       if (onSelectIds) onSelectIds([]);
       else onSelectId(null);
@@ -988,47 +987,13 @@ export function MoodboardStage({
       return;
     }
 
-    // Handle active connection drag
-    if (connectingFrom) {
+    // Handle active connection drag via useConnectorDrag
+    if (connectorDrag.isConnecting) {
       const stage = stageRef.current;
       if (!stage) return;
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
-
-      const currentCanvasX = (pointer.x - stage.x()) / stage.scaleX();
-      const currentCanvasY = (pointer.y - stage.y()) / stage.scaleY();
-      setConnectingPointerPos({ x: currentCanvasX, y: currentCanvasY });
-
-      // Check if pointer is hovering over another candidate item
-      let foundTarget: { itemId: string; anchor: AnchorPosition } | null = null;
-      for (const rawItem of items) {
-        if (rawItem.id === connectingFrom.itemId) continue;
-        if (rawItem.type === 'stroke') continue;
-        const item = getItemLiveBounds(rawItem);
-        const padding = 20;
-        if (
-          currentCanvasX >= item.x - padding &&
-          currentCanvasX <= item.x + item.width + padding &&
-          currentCanvasY >= item.y - padding &&
-          currentCanvasY <= item.y + item.height + padding
-        ) {
-          const anchors: AnchorPosition[] = ['top', 'right', 'bottom', 'left'];
-          let bestAnchor: AnchorPosition = 'left';
-          let minDistance = Infinity;
-
-          for (const a of anchors) {
-            const pt = getAnchorPoint(item, a);
-            const dist = Math.hypot(currentCanvasX - pt.x, currentCanvasY - pt.y);
-            if (dist < minDistance) {
-              minDistance = dist;
-              bestAnchor = a;
-            }
-          }
-          foundTarget = { itemId: item.id, anchor: bestAnchor };
-          break;
-        }
-      }
-      setConnectingTarget(foundTarget);
+      const pos = getPointerCanvasPosition(stage, viewport);
+      if (!pos) return;
+      connectorDrag.updateConnecting(pos, items);
       return;
     }
 
@@ -1125,18 +1090,8 @@ export function MoodboardStage({
       return;
     }
 
-    if (connectingFrom) {
-      if (connectingTarget && onAddConnection) {
-        onAddConnection(
-          connectingFrom.itemId,
-          connectingTarget.itemId,
-          connectingFrom.anchor,
-          connectingTarget.anchor
-        );
-      }
-      setConnectingFrom(null);
-      setConnectingPointerPos(null);
-      setConnectingTarget(null);
+    if (connectorDrag.isConnecting) {
+      connectorDrag.finishConnecting();
       return;
     }
 
@@ -1353,67 +1308,30 @@ export function MoodboardStage({
             />
           )}
 
-          {/* Active Canvas Connectors (rendered beneath cards for clean layering) */}
-          {connections.map((conn) => {
-            const rawSource = items.find((i) => i.id === conn.fromId);
-            const rawTarget = items.find((i) => i.id === conn.targetId);
-            if (!rawSource || !rawTarget) return null;
-            const source = getItemLiveBounds(rawSource);
-            const target = getItemLiveBounds(rawTarget);
-            return (
-              <CanvasConnectorItem
-                key={conn.id}
-                connection={conn}
-                sourceItem={source}
-                targetItem={target}
-                isSelected={selectedConnectionId === conn.id}
-                scale={viewport.scale}
-                onSelect={(id) => {
-                  onSelectConnection?.(id);
-                  if (onSelectIds) onSelectIds([]);
-                  else onSelectId(null);
-                }}
-                onDelete={(id) => onDeleteConnection?.(id)}
-                onDoubleClick={(id) => {
-                  setEditingConnectionId(id);
-                  setConnectionLabelInput(conn.label || '');
-                }}
-              />
-            );
-          })}
+        </Layer>
 
-          {/* Live Elastic Drag-to-Connect Arrow */}
-          {connectingFrom && connectingPointerPos && (
-            <Arrow
-              points={
-                connectingTarget
-                  ? calculateBezierCurve(
-                      connectingFrom.startPoint,
-                      getAnchorPoint(
-                        getItemLiveBounds(items.find((i) => i.id === connectingTarget.itemId)!),
-                        connectingTarget.anchor
-                      ),
-                      connectingFrom.anchor,
-                      connectingTarget.anchor
-                    ).points
-                  : [
-                      connectingFrom.startPoint.x,
-                      connectingFrom.startPoint.y,
-                      connectingPointerPos.x,
-                      connectingPointerPos.y,
-                    ]
-              }
-              bezier={!!connectingTarget}
-              stroke="#D97706"
-              fill="#D97706"
-              strokeWidth={2 / Math.max(0.4, viewport.scale)}
-              dash={[6 / Math.max(0.4, viewport.scale), 4 / Math.max(0.4, viewport.scale)]}
-              pointerLength={8 / Math.max(0.4, viewport.scale)}
-              pointerWidth={6 / Math.max(0.4, viewport.scale)}
-              listening={false}
-            />
-          )}
+        {/* Dedicated Connectors Layer (strictly mounted beneath ItemsLayer) */}
+        <ConnectorsLayer
+          connections={connections}
+          items={items}
+          selectedConnectionId={selectedConnectionId}
+          scale={viewport.scale}
+          drag={connectorDrag}
+          onSelectConnection={(id) => {
+            onSelectConnection?.(id);
+            if (onSelectIds) onSelectIds([]);
+            else onSelectId(null);
+          }}
+          onDeleteConnection={(id) => onDeleteConnection?.(id)}
+          onDoubleClickConnection={(id) => {
+            const conn = connections.find((c) => c.id === id);
+            setEditingConnectionId(id);
+            setConnectionLabelInput(conn?.label || '');
+          }}
+        />
 
+        {/* Layer 3: Main Items & Transformer Layer */}
+        <Layer name="items-layer" listening={!pen.isDrawingRef.current && activeTool !== 'pen'}>
           {/* Render All Playground Objects in strict z-index order */}
           {sortedItems.map((rawItem) => {
             const item = getItemLiveBounds(rawItem);
@@ -1543,31 +1461,26 @@ export function MoodboardStage({
             );
           })()}
 
-          {/* Cardinal Anchor Handles on Selected or Candidate Items (rendered above transformer for clean hit capture) */}
+          {/* Cardinal Anchor Handles on actively selected card only (far from corners, zero extra listeners during drag) */}
           {!readOnly &&
-            sortedItems.map((rawItem) => {
-              if (rawItem.type === 'stroke') return null;
-              const isSelected = effectiveSelectedIds.includes(rawItem.id);
-              const isConnectingTarget = connectingTarget?.itemId === rawItem.id;
-              const isCandidate = connectingFrom !== null && connectingFrom.itemId !== rawItem.id;
-
-              if (!isSelected && !isConnectingTarget && !isCandidate) return null;
-
+            activeTool === 'select' &&
+            !connectorDrag.isConnecting &&
+            effectiveSelectedIds.length === 1 &&
+            (() => {
+              const rawItem = items.find((i) => i.id === effectiveSelectedIds[0]);
+              if (!rawItem || rawItem.type === 'stroke') return null;
               const item = getItemLiveBounds(rawItem);
-
               return (
-                <CanvasItemAnchors
+                <CanvasItemAnchorHandles
                   key={`anchors-${item.id}`}
                   item={item}
                   scale={viewport.scale}
                   onStartConnect={(itemId, anchor, pt) => {
-                    setConnectingFrom({ itemId, anchor, startPoint: pt });
-                    setConnectingPointerPos(pt);
-                    setConnectingTarget(null);
+                    connectorDrag.startConnecting(itemId, anchor, pt);
                   }}
                 />
               );
-            })}
+            })()}
         </Layer>
 
         {/* Dedicated high-performance Drawing Layer (isolated canvas: 0 item/background redraws during drawing) */}

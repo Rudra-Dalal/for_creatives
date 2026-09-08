@@ -26,7 +26,7 @@ import {
   type AlignmentType,
   type DistributionType,
 } from '../utils/layoutUtils';
-import { extractActiveConnections } from '../canvas/connectorUtils';
+import { extractActiveConnections, getConnectedReferenceIdsForIdea } from '../connectors';
 
 export type UndoAction =
   | {
@@ -1266,25 +1266,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
   // Helper to get all reference IDs connected to an item (used for Idea -> Direction promotion)
   const getConnectedReferenceIds = useCallback(
     (itemId: string): string[] => {
-      const activeConns = extractActiveConnections(items);
-      const connectedItemIds = new Set<string>();
-
-      for (const conn of activeConns) {
-        if (conn.fromId === itemId) {
-          connectedItemIds.add(conn.targetId);
-        } else if (conn.targetId === itemId) {
-          connectedItemIds.add(conn.fromId);
-        }
-      }
-
-      const referenceIds: string[] = [];
-      for (const id of connectedItemIds) {
-        const itm = items.find((i) => i.id === id);
-        if (itm && itm.type === 'reference' && itm.reference_id) {
-          referenceIds.push(itm.reference_id);
-        }
-      }
-      return referenceIds;
+      return getConnectedReferenceIdsForIdea(itemId, items);
     },
     [items]
   );
