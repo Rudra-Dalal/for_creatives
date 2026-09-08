@@ -49,6 +49,13 @@ export type UndoAction =
       }>;
     }
   | {
+      type: 'PARTIAL_ERASE';
+      originalStrokes: MoodboardItem[];
+      createdItemIds: string[];
+      updatedItems: Array<{ id: string; prevItem: MoodboardItem }>;
+      deletedItemIds: string[];
+    }
+  | {
       type: 'CONNECT_ITEMS';
       fromId: string;
       connection: ItemConnection;
@@ -345,10 +352,44 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
           setItems((prev) =>
             prev.map((i) => (i.id === actionToRevert.fromId ? { ...i, content: updatedContent as unknown as MoodboardItemContent } : i))
           );
-          await moodboardService.updateItem(actionToRevert.fromId, {
-            content: updatedContent as unknown as Json,
-          });
         }
+      } else if (actionToRevert.type === 'PARTIAL_ERASE') {
+        // Undo Partial Erase:
+        // 1. Delete created split sub-strokes
+        if (actionToRevert.createdItemIds.length > 0) {
+          await Promise.all(actionToRevert.createdItemIds.map((id) => moodboardService.softDeleteItem(id)));
+        }
+        // 2. Restore deleted strokes
+        if (actionToRevert.deletedItemIds.length > 0) {
+          await Promise.all(actionToRevert.deletedItemIds.map((id) => moodboardService.restoreItem(id)));
+        }
+        // 3. Restore updated strokes back to their previous item state
+        if (actionToRevert.updatedItems.length > 0) {
+          await Promise.all(
+            actionToRevert.updatedItems.map((u) =>
+              moodboardService.updateItem(u.id, {
+                x: u.prevItem.x,
+                y: u.prevItem.y,
+                width: u.prevItem.width,
+                height: u.prevItem.height,
+                content: u.prevItem.content as unknown as Json,
+              })
+            )
+          );
+        }
+        // 4. Update React state: remove created, restore updated/deleted with originalStrokes
+        setItems((prev) => {
+          const createdSet = new Set(actionToRevert.createdItemIds);
+          const origMap = new Map(actionToRevert.originalStrokes.map((s) => [s.id, s]));
+          const withoutCreated = prev.filter((i) => !createdSet.has(i.id));
+          const reverted = withoutCreated.map((i) => origMap.get(i.id) ?? i);
+          for (const orig of actionToRevert.originalStrokes) {
+            if (!reverted.some((i) => i.id === orig.id)) {
+              reverted.push(orig);
+            }
+          }
+          return reverted;
+        });
       }
     } catch (err) {
       console.error('Failed to execute undo:', err);
@@ -875,6 +916,114 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     [items, recordUndoAction, beginSave, endSave, setSelectedIds]
   );
 
+  // Commit partial stroke erasing (updates, splits, and deletions) with 1-step atomic undo
+  const commitPartialErase = useCallback(
+    async (
+      updates: Array<{ id: string; x: number; y: number; width: number; height: number; relativePoints: number[] }>,
+      newStrokes: Array<{
+        referenceId?: string | null;
+        content: StrokeItemContent;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        zIndex: number;
+      }>,
+      deletedIds: string[],
+      originalStrokes: MoodboardItem[]
+    ) => {
+      if (updates.length === 0 && newStrokes.length === 0 && deletedIds.length === 0) {
+        return;
+      }
+
+      beginSave();
+      try {
+        const deletedSet = new Set(deletedIds);
+        const updateMap = new Map(updates.map((u) => [u.id, u]));
+
+        // 1. Create split sub-strokes in DB
+        const createdItems: MoodboardItem[] = [];
+        for (const stroke of newStrokes) {
+          const created = await moodboardService.createItem({
+            projectId,
+            referenceId: stroke.referenceId,
+            type: 'stroke',
+            content: stroke.content as unknown as Json,
+            x: stroke.x,
+            y: stroke.y,
+            width: stroke.width,
+            height: stroke.height,
+            zIndex: stroke.zIndex,
+          });
+          createdItems.push(created);
+        }
+
+        // 2. Persist geometry & points for updated strokes
+        await Promise.all(
+          updates.map((u) => {
+            const original = originalStrokes.find((s) => s.id === u.id);
+            const origContent = (original?.content as StrokeItemContent) || {};
+            const nextContent: StrokeItemContent = {
+              ...origContent,
+              points: u.relativePoints,
+            };
+            return moodboardService.updateItem(u.id, {
+              x: u.x,
+              y: u.y,
+              width: u.width,
+              height: u.height,
+              content: nextContent as unknown as Json,
+            });
+          })
+        );
+
+        // 3. Soft-delete fully erased strokes
+        if (deletedIds.length > 0) {
+          await Promise.all(deletedIds.map((id) => moodboardService.softDeleteItem(id)));
+        }
+
+        // 4. Update React state atomically
+        setItems((prev) => {
+          const withoutDeleted = prev.filter((i) => !deletedSet.has(i.id));
+          const withUpdates = withoutDeleted.map((i) => {
+            const u = updateMap.get(i.id);
+            if (!u) return i;
+            const origContent = (i.content as StrokeItemContent) || {};
+            return {
+              ...i,
+              x: u.x,
+              y: u.y,
+              width: u.width,
+              height: u.height,
+              content: {
+                ...origContent,
+                points: u.relativePoints,
+              },
+            };
+          });
+          return [...withUpdates, ...createdItems];
+        });
+
+        // 5. Record single atomic undo action
+        recordUndoAction({
+          type: 'PARTIAL_ERASE',
+          originalStrokes,
+          createdItemIds: createdItems.map((i) => i.id),
+          updatedItems: updates.map((u) => ({
+            id: u.id,
+            prevItem: originalStrokes.find((s) => s.id === u.id)!,
+          })),
+          deletedItemIds: deletedIds,
+        });
+
+        endSave();
+      } catch (err) {
+        endSave(err);
+      }
+    },
+    [beginSave, endSave, projectId, recordUndoAction]
+  );
+
   // Bulk delete all selected items
   const deleteSelectedItems = async () => {
     if (selectedIds.length === 0) return;
@@ -1314,6 +1463,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     deleteItem,
     deleteSelectedItems,
     batchDeleteItems,
+    commitPartialErase,
     zoomIn,
     zoomOut,
     resetViewport,

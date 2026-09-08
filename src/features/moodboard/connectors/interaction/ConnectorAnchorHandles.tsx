@@ -61,7 +61,6 @@ export function ConnectorAnchorHandles({
             listening={true}
             onMouseDown={handlePointerDown}
             onTouchStart={handlePointerDown}
-            onPointerDown={handlePointerDown}
             onMouseEnter={() => {
               setHoveredAnchor(anchor);
               const container = window.document.querySelector('.konvajs-content') as HTMLElement;
@@ -73,9 +72,9 @@ export function ConnectorAnchorHandles({
               if (container) container.style.cursor = 'default';
             }}
           >
-            {/* Comfortable hit target (16px radius, non-zero alpha fill) */}
+            {/* Comfortable hit target (18px radius local to anchor handles, non-zero alpha fill) */}
             <Circle
-              radius={16 / zoomDivisor}
+              radius={18 / zoomDivisor}
               fill="rgba(217, 119, 6, 0.01)"
               listening={true}
             />

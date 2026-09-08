@@ -138,6 +138,15 @@ describe('Stage 5 — Connectors & Semantic Direction Engine', () => {
       expect(resTop?.point).toEqual({ x: 200, y: 100 });
     });
 
+    it('snaps cleanly when pointer is dropped directly over the card body', () => {
+      // Pointer at (240, 150) inside the card bounds [100, 100, 200, 100]
+      // Nearest anchor is right (300, 150)
+      const resInside = findClosestCardinalAnchor({ x: 240, y: 150 }, sampleBounds, 1, CONNECTOR_SNAP_PROXIMITY_PX);
+      expect(resInside).not.toBeNull();
+      expect(resInside?.anchor).toBe('right');
+      expect(resInside?.point).toEqual({ x: 300, y: 150 });
+    });
+
     it('rejects candidate anchors when outside the 28px screen envelope', () => {
       // Pointer 40px away from right edge at scale = 1 -> exceeds 28px
       const resFar = findClosestCardinalAnchor({ x: 345, y: 150 }, sampleBounds, 1, CONNECTOR_SNAP_PROXIMITY_PX);

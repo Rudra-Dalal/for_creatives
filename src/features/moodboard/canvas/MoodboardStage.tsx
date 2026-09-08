@@ -9,6 +9,7 @@ import type {
   TextItemContent,
   ColorItemContent,
   IdeaItemContent,
+  StrokeItemContent,
   ResolvedConnection,
   AnchorPosition,
 } from '../types';
@@ -22,10 +23,10 @@ import { CanvasStrokeItem } from './CanvasStrokeItem';
 import { HexColorPicker } from 'react-colorful';
 import { Compass } from 'lucide-react';
 import { useCanvasViewport, CanvasBackground } from '../viewport';
-import { getPointerCanvasPosition, canvasToScreen } from '../coordinates';
+import { getPointerCanvasPosition, canvasToScreen, type CanvasPoint } from '../coordinates';
 import { usePenTool } from '../items/usePenTool';
 import { CanvasTransformer } from '../selection';
-import { isPathIntersectingStroke } from '../utils/strokeUtils';
+import { sliceStrokeItem } from '../utils/strokeSlicing';
 import {
   ConnectorsLayer,
   ConnectorAnchorHandles,
@@ -52,6 +53,20 @@ interface MoodboardStageProps {
     bbox: { x: number; y: number; width: number; height: number }
   ) => Promise<unknown>;
   onBatchDeleteStrokes?: (items: MoodboardItem[]) => void;
+  onCommitPartialErase?: (
+    updates: Array<{ id: string; x: number; y: number; width: number; height: number; relativePoints: number[] }>,
+    newStrokes: Array<{
+      referenceId?: string | null;
+      content: StrokeItemContent;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      zIndex: number;
+    }>,
+    deletedIds: string[],
+    originalStrokes: MoodboardItem[]
+  ) => void;
   connections?: ResolvedConnection[];
   selectedConnectionId?: string | null;
   onSelectConnection?: (connectionId: string | null) => void;
@@ -110,6 +125,7 @@ export function MoodboardStage({
   onChangeActiveTool,
   onAddStroke,
   onBatchDeleteStrokes,
+  onCommitPartialErase,
   connections = [],
   selectedConnectionId = null,
   onSelectConnection,
@@ -164,36 +180,185 @@ export function MoodboardStage({
     },
   });
 
-  // Whole-stroke eraser state
+  // Partial stroke eraser state
   const isErasingRef = useRef(false);
   const lastEraserPointerRef = useRef<{ x: number; y: number } | null>(null);
-  const erasedIdsRef = useRef<Set<string>>(new Set());
-  const erasedItemsRef = useRef<MoodboardItem[]>([]);
-  const [erasedTick, setErasedTick] = useState(0);
+  const eraserInitialStrokesRef = useRef<MoodboardItem[]>([]);
+  const workingStrokesRef = useRef<Map<string, { stroke: MoodboardItem; isOriginal: boolean }>>(new Map());
+  const [eraserTick, setEraserTick] = useState(0);
 
-  // Check and erase active strokes along a pointer movement path
-  const checkAndEraseStrokes = useCallback(
+  // Slices active strokes along an eraser movement segment
+  const sliceStrokesAlongPath = useCallback(
     (fromX: number, fromY: number, toX: number, toY: number) => {
-      // Confirmed: Strictly considers currently active (non-deleted) strokes
-      const activeStrokes = items.filter(
-        (i) => i.type === 'stroke' && !i.deleted_at && !erasedIdsRef.current.has(i.id)
-      );
+      const map = workingStrokesRef.current;
+      if (!map || map.size === 0) return;
 
-      let erasedAny = false;
-      for (const stroke of activeStrokes) {
-        if (isPathIntersectingStroke(fromX, fromY, toX, toY, stroke, 20)) {
-          erasedIdsRef.current.add(stroke.id);
-          erasedItemsRef.current.push(stroke);
-          erasedAny = true;
+      const radius = 14 / Math.max(0.4, viewport.scale);
+      const dist = Math.hypot(toX - fromX, toY - fromY);
+      const steps = Math.max(1, Math.ceil(dist / 8));
+
+      let modifiedAny = false;
+
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const cx = fromX + (toX - fromX) * t;
+        const cy = fromY + (toY - fromY) * t;
+
+        const currentEntries = Array.from(map.entries());
+        for (const [id, entry] of currentEntries) {
+          const item = entry.stroke;
+          const content = (item.content as StrokeItemContent) || {};
+          const relPoints = content.points || [];
+          if (relPoints.length < 2) continue;
+
+          const effectiveRadius = radius + (content.strokeWidth || 4) / 2;
+          if (
+            cx < item.x - effectiveRadius ||
+            cx > item.x + item.width + effectiveRadius ||
+            cy < item.y - effectiveRadius ||
+            cy > item.y + item.height + effectiveRadius
+          ) {
+            continue;
+          }
+
+          const slicedBoxes = sliceStrokeItem(item.x, item.y, relPoints, cx, cy, radius);
+
+          const isUnchanged =
+            slicedBoxes.length === 1 &&
+            slicedBoxes[0].relativePoints.length === relPoints.length &&
+            Math.abs(slicedBoxes[0].x - item.x) < 0.5 &&
+            Math.abs(slicedBoxes[0].y - item.y) < 0.5;
+
+          if (isUnchanged) {
+            continue;
+          }
+
+          modifiedAny = true;
+
+          if (slicedBoxes.length === 0) {
+            map.delete(id);
+          } else {
+            const b0 = slicedBoxes[0];
+            entry.stroke = {
+              ...item,
+              x: b0.x,
+              y: b0.y,
+              width: b0.width,
+              height: b0.height,
+              content: {
+                ...content,
+                points: b0.relativePoints,
+              },
+            };
+
+            for (let k = 1; k < slicedBoxes.length; k++) {
+              const bk = slicedBoxes[k];
+              const newSubId = `sub-stroke-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+              map.set(newSubId, {
+                stroke: {
+                  ...item,
+                  id: newSubId,
+                  x: bk.x,
+                  y: bk.y,
+                  width: bk.width,
+                  height: bk.height,
+                  content: {
+                    ...content,
+                    points: bk.relativePoints,
+                  },
+                },
+                isOriginal: false,
+              });
+            }
+          }
         }
       }
 
-      if (erasedAny) {
-        setErasedTick((t) => (t + 1) % 10000);
+      if (modifiedAny) {
+        setEraserTick((t) => (t + 1) % 10000);
       }
     },
-    [items]
+    [viewport.scale]
   );
+
+  // Commits partial stroke eraser results on pointerup with atomic single-step undo
+  const finishErasing = useCallback(() => {
+    if (!isErasingRef.current) return;
+    isErasingRef.current = false;
+    lastEraserPointerRef.current = null;
+
+    const initialStrokes = eraserInitialStrokesRef.current;
+    const workingMap = workingStrokesRef.current;
+
+    const deletedIds: string[] = [];
+    const updates: Array<{ id: string; x: number; y: number; width: number; height: number; relativePoints: number[] }> = [];
+    const newStrokes: Array<{
+      referenceId?: string | null;
+      content: StrokeItemContent;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      zIndex: number;
+    }> = [];
+
+    for (const initStroke of initialStrokes) {
+      const current = workingMap.get(initStroke.id);
+      if (!current) {
+        deletedIds.push(initStroke.id);
+      } else {
+        const curStroke = current.stroke;
+        const curContent = (curStroke.content as StrokeItemContent) || {};
+        const initContent = (initStroke.content as StrokeItemContent) || {};
+        const curPoints = curContent.points || [];
+        const initPoints = initContent.points || [];
+
+        if (
+          curStroke.x !== initStroke.x ||
+          curStroke.y !== initStroke.y ||
+          curStroke.width !== initStroke.width ||
+          curStroke.height !== initStroke.height ||
+          curPoints.length !== initPoints.length ||
+          curPoints.some((pt: number, idx: number) => pt !== initPoints[idx])
+        ) {
+          updates.push({
+            id: initStroke.id,
+            x: curStroke.x,
+            y: curStroke.y,
+            width: curStroke.width,
+            height: curStroke.height,
+            relativePoints: curPoints,
+          });
+        }
+      }
+    }
+
+    for (const entry of workingMap.values()) {
+      if (!entry.isOriginal) {
+        const stroke = entry.stroke;
+        newStrokes.push({
+          referenceId: stroke.reference_id,
+          content: stroke.content as StrokeItemContent,
+          x: stroke.x,
+          y: stroke.y,
+          width: stroke.width,
+          height: stroke.height,
+          zIndex: stroke.z_index,
+        });
+      }
+    }
+
+    workingStrokesRef.current.clear();
+    eraserInitialStrokesRef.current = [];
+
+    if (onCommitPartialErase && (updates.length > 0 || newStrokes.length > 0 || deletedIds.length > 0)) {
+      onCommitPartialErase(updates, newStrokes, deletedIds, initialStrokes);
+    } else if (onBatchDeleteStrokes && deletedIds.length > 0) {
+      const targets = initialStrokes.filter((s) => deletedIds.includes(s.id));
+      onBatchDeleteStrokes(targets);
+    }
+    setEraserTick((t) => (t + 1) % 10000);
+  }, [onCommitPartialErase, onBatchDeleteStrokes]);
 
   // Authoritative connection drag controller
   const connectorDrag = useConnectorDrag({
@@ -249,11 +414,14 @@ export function MoodboardStage({
   }, [items, effectiveSelectedIds]);
 
   const sortedItems = React.useMemo(() => {
-    void erasedTick;
-    return [...items]
-      .filter((i) => !erasedIdsRef.current.has(i.id))
-      .sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
-  }, [items, erasedTick]);
+    void eraserTick;
+    if (isErasingRef.current && workingStrokesRef.current.size > 0) {
+      const nonStrokes = items.filter((i) => i.type !== 'stroke');
+      const activeWorking = Array.from(workingStrokesRef.current.values()).map((e) => e.stroke);
+      return [...nonStrokes, ...activeWorking].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
+    }
+    return [...items].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
+  }, [items, eraserTick]);
 
   const [selectedNodes, setSelectedNodes] = useState<Konva.Node[]>([]);
   const [selectedNode, setSelectedNode] = useState<Konva.Node | null>(null);
@@ -346,9 +514,15 @@ export function MoodboardStage({
     };
   }, []);
 
-  // Global mouseup cleanup for marquee and live drag
+  // Global mouseup cleanup for marquee, live drag, partial eraser, and connectors
   useEffect(() => {
     const handleGlobalMouseUp = () => {
+      if (isErasingRef.current) {
+        finishErasing();
+      }
+      if (connectorDrag.isConnecting) {
+        connectorDrag.finishConnecting();
+      }
       if (isMarqueeSelectingRef.current) {
         isMarqueeSelectingRef.current = false;
         marqueeStartPointerRef.current = null;
@@ -369,7 +543,46 @@ export function MoodboardStage({
     return () => {
       window.removeEventListener('mouseup', handleGlobalMouseUp);
     };
-  }, []);
+  }, [finishErasing, connectorDrag]);
+
+  // Active connection drag global pointer listeners (guarantees continuous tracking and commit across all DOM boundaries)
+  useEffect(() => {
+    if (!connectorDrag.isConnecting) return;
+
+    const handleWindowPointerMove = (e: PointerEvent | MouseEvent) => {
+      let canvasPos: CanvasPoint | null = null;
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        canvasPos = {
+          x: (screenX - viewport.x) / viewport.scale,
+          y: (screenY - viewport.y) / viewport.scale,
+        };
+      } else if (stageRef.current) {
+        canvasPos = getPointerCanvasPosition(stageRef.current, viewport);
+      }
+      if (canvasPos) {
+        connectorDrag.updateConnecting(canvasPos, items, viewport.scale);
+      }
+    };
+
+    const handleWindowPointerUp = () => {
+      connectorDrag.finishConnecting();
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+    };
+  }, [
+    connectorDrag,
+    containerRef,
+    items,
+    viewport,
+  ]);
 
   // Update selectedNodes and selectedNode when selection changes
   useEffect(() => {
@@ -937,7 +1150,7 @@ export function MoodboardStage({
       return;
     }
 
-    // Whole-stroke eraser: hit-test and erase active strokes
+    // Partial-stroke eraser: hit-test and slice active strokes
     if (!readOnly && activeTool === 'eraser') {
       const stage = stageRef.current;
       if (!stage) return;
@@ -957,7 +1170,14 @@ export function MoodboardStage({
         setSelectedNodes([]);
       }
 
-      checkAndEraseStrokes(canvasX, canvasY, canvasX, canvasY);
+      // Populate working strokes map with all active strokes
+      const activeStrokes = items.filter((i) => i.type === 'stroke' && !i.deleted_at);
+      eraserInitialStrokesRef.current = activeStrokes;
+      const map = new Map<string, { stroke: MoodboardItem; isOriginal: boolean }>();
+      activeStrokes.forEach((s) => map.set(s.id, { stroke: { ...s }, isOriginal: true }));
+      workingStrokesRef.current = map;
+
+      sliceStrokesAlongPath(canvasX, canvasY, canvasX, canvasY);
       return;
     }
 
@@ -1025,7 +1245,7 @@ export function MoodboardStage({
       return;
     }
 
-    // Handle in-progress whole-stroke erasing drag
+    // Handle in-progress partial-stroke erasing drag
     if (isErasingRef.current) {
       const stage = stageRef.current;
       if (!stage) return;
@@ -1037,7 +1257,7 @@ export function MoodboardStage({
       const prev = lastEraserPointerRef.current || { x: currentCanvasX, y: currentCanvasY };
       lastEraserPointerRef.current = { x: currentCanvasX, y: currentCanvasY };
 
-      checkAndEraseStrokes(prev.x, prev.y, currentCanvasX, currentCanvasY);
+      sliceStrokesAlongPath(prev.x, prev.y, currentCanvasX, currentCanvasY);
       return;
     }
 
@@ -1130,17 +1350,9 @@ export function MoodboardStage({
       return;
     }
 
-    // Finish whole-stroke eraser drag and dispatch batch soft-delete
+    // Finish partial-stroke eraser drag and commit changes
     if (isErasingRef.current) {
-      isErasingRef.current = false;
-      lastEraserPointerRef.current = null;
-      const itemsToDelete = [...erasedItemsRef.current];
-      erasedItemsRef.current = [];
-      erasedIdsRef.current.clear();
-
-      if (itemsToDelete.length > 0 && onBatchDeleteStrokes) {
-        onBatchDeleteStrokes(itemsToDelete);
-      }
+      finishErasing();
       return;
     }
 
@@ -1370,6 +1582,8 @@ export function MoodboardStage({
           items={items}
           selectedConnectionId={selectedConnectionId}
           scale={viewport.scale}
+          liveDragPositionsRef={liveDragPositionsRef}
+          liveDragTick={liveDragTick}
           onSelectConnection={(id) => {
             onSelectConnection?.(id);
             if (onSelectIds) onSelectIds([]);

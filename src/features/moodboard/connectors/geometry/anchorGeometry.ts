@@ -118,10 +118,6 @@ export function findClosestCardinalAnchor(
     }
   }
 
-  if (minDistance > worldProximity) {
-    return null;
-  }
-
   return {
     anchor: bestAnchor,
     point: bestPoint,

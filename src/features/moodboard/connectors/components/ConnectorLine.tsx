@@ -11,6 +11,8 @@ export interface ConnectorLineProps {
   connection: ResolvedConnection;
   sourceItem: MoodboardItem;
   targetItem: MoodboardItem;
+  liveSourcePos?: { x: number; y: number };
+  liveTargetPos?: { x: number; y: number };
   isSelected?: boolean;
   scale?: number;
   onSelect?: (connectionId: string) => void;
@@ -25,11 +27,14 @@ export interface ConnectorLineProps {
  *  - 16px transparent hit target for comfortable pointer selection at any zoom.
  *  - High-contrast directed arrowhead indicating relationship direction.
  *  - Centered midpoint relationship label tag with double-click inline editing.
+ *  - Supports real-time live follow during card dragging via liveSourcePos / liveTargetPos.
  */
 export function ConnectorLine({
   connection,
   sourceItem,
   targetItem,
+  liveSourcePos,
+  liveTargetPos,
   isSelected = false,
   scale = 1,
   onSelect,
@@ -37,12 +42,17 @@ export function ConnectorLine({
 }: ConnectorLineProps) {
   const [isHovered, setIsHovered] = useState(false);
 
+  const srcX = liveSourcePos ? liveSourcePos.x : sourceItem.x;
+  const srcY = liveSourcePos ? liveSourcePos.y : sourceItem.y;
+  const tgtX = liveTargetPos ? liveTargetPos.x : targetItem.x;
+  const tgtY = liveTargetPos ? liveTargetPos.y : targetItem.y;
+
   const start = getAnchorPoint(
-    { x: sourceItem.x, y: sourceItem.y, width: sourceItem.width, height: sourceItem.height },
+    { x: srcX, y: srcY, width: sourceItem.width, height: sourceItem.height },
     connection.fromAnchor
   );
   const end = getAnchorPoint(
-    { x: targetItem.x, y: targetItem.y, width: targetItem.width, height: targetItem.height },
+    { x: tgtX, y: tgtY, width: targetItem.width, height: targetItem.height },
     connection.toAnchor
   );
   const curve = calculateBezierCurve(start, end, connection.fromAnchor, connection.toAnchor);

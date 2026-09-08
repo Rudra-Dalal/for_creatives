@@ -84,6 +84,7 @@ export function MoodboardCanvas({
     deleteItem,
     deleteSelectedItems,
     batchDeleteItems,
+    commitPartialErase,
     addStrokeItem,
     alignSelectedItems,
     distributeSelectedItems,
@@ -502,6 +503,7 @@ export function MoodboardCanvas({
         onChangeActiveTool={setActiveTool}
         onAddStroke={addStrokeItem}
         onBatchDeleteStrokes={batchDeleteItems}
+        onCommitPartialErase={commitPartialErase}
         connections={connections}
         selectedConnectionId={selectedConnectionId}
         onSelectConnection={setSelectedConnectionId}
