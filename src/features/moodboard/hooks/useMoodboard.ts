@@ -26,7 +26,8 @@ import {
   type AlignmentType,
   type DistributionType,
 } from '../utils/layoutUtils';
-import { extractActiveConnections, getConnectedReferenceIdsForIdea } from '../connectors';
+import { extractActiveConnections } from '../connectors/connectionResolution';
+import { getConnectedReferenceIdsForIdea } from '../connectors/semanticDirection';
 
 export type UndoAction =
   | {
