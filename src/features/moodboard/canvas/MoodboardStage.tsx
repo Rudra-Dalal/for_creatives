@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Stage, Layer, Rect, Arrow, Line } from 'react-konva';
+import { Stage, Layer, Rect, Arrow, Line, Circle } from 'react-konva';
 import Konva from 'konva';
 import type {
   MoodboardItem,
@@ -557,6 +557,30 @@ export function MoodboardStage({
     onChangeActiveTool,
     isTextInputActive,
   ]);
+
+  // Global window pointer listeners for reliable connector dragging & release
+  useEffect(() => {
+    if (!connectorDrag.isConnecting) return;
+
+    const handleGlobalPointerMove = () => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pos = getPointerCanvasPosition(stage, viewport);
+      if (!pos) return;
+      connectorDrag.updateConnecting(pos, items, viewport.scale);
+    };
+
+    const handleGlobalPointerUp = () => {
+      connectorDrag.finishConnecting();
+    };
+
+    window.addEventListener('pointermove', handleGlobalPointerMove);
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handleGlobalPointerMove);
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+    };
+  }, [connectorDrag, items, viewport]);
 
   // Export stage to PNG
   const handleExportPNG = useCallback(
@@ -1496,7 +1520,6 @@ export function MoodboardStage({
           {/* Cardinal Anchor Handles on actively selected card only */}
           {!readOnly &&
             activeTool === 'select' &&
-            !connectorDrag.isConnecting &&
             effectiveSelectedIds.length === 1 &&
             (() => {
               const rawItem = items.find((i) => i.id === effectiveSelectedIds[0]);
@@ -1507,8 +1530,8 @@ export function MoodboardStage({
                   key={`anchors-${item.id}`}
                   item={item}
                   scale={viewport.scale}
-                  onStartConnect={(itemId, anchor, pt) => {
-                    connectorDrag.startConnecting(itemId, anchor, pt);
+                  onStartConnect={(itemId, anchor, pt, pointerPos) => {
+                    connectorDrag.startConnecting(itemId, anchor, pt, pointerPos);
                   }}
                 />
               );
@@ -1516,17 +1539,34 @@ export function MoodboardStage({
 
           {/* Live Elastic Drag-to-Connect Arrow (activates only after 4px threshold) */}
           {connectorDrag.isConnecting && liveElasticCurve && connectorDrag.isDragThresholdExceeded && (
-            <Arrow
-              points={liveElasticCurve.points}
-              bezier={liveElasticCurve.bezier}
-              stroke="#D97706"
-              fill="#D97706"
-              strokeWidth={2 / Math.max(0.4, viewport.scale)}
-              dash={[6 / Math.max(0.4, viewport.scale), 4 / Math.max(0.4, viewport.scale)]}
-              pointerLength={8 / Math.max(0.4, viewport.scale)}
-              pointerWidth={6 / Math.max(0.4, viewport.scale)}
-              listening={false}
-            />
+            <>
+              <Arrow
+                points={liveElasticCurve.points}
+                bezier={liveElasticCurve.bezier}
+                stroke="#D97706"
+                fill="#D97706"
+                strokeWidth={2 / Math.max(0.4, viewport.scale)}
+                dash={[6 / Math.max(0.4, viewport.scale), 4 / Math.max(0.4, viewport.scale)]}
+                pointerLength={8 / Math.max(0.4, viewport.scale)}
+                pointerWidth={6 / Math.max(0.4, viewport.scale)}
+                listening={false}
+              />
+              {/* Magnetic snap target pulse indicator */}
+              {connectorDrag.connectingTarget && (
+                <Circle
+                  x={connectorDrag.connectingTarget.snapPoint.x}
+                  y={connectorDrag.connectingTarget.snapPoint.y}
+                  radius={8 / Math.max(0.4, viewport.scale)}
+                  fill="#D97706"
+                  stroke="#FFFFFF"
+                  strokeWidth={2 / Math.max(0.4, viewport.scale)}
+                  shadowColor="#D97706"
+                  shadowBlur={10}
+                  shadowOpacity={0.9}
+                  listening={false}
+                />
+              )}
+            </>
           )}
         </Layer>
 

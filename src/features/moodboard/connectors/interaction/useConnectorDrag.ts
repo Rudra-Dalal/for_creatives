@@ -135,6 +135,7 @@ export function useConnectorDrag({
 
       // Magnetic snapping: evaluate proximity to other items purely mathematically
       let foundTarget: ConnectingTarget | null = null;
+      let minDistance = Infinity;
 
       for (const item of candidateItems) {
         if (item.id === currentSource.itemId) continue;
@@ -144,13 +145,13 @@ export function useConnectorDrag({
 
         // findClosestCardinalAnchor converts snapProximityPx and corner protection to world units via scale
         const closest = findClosestCardinalAnchor(pointerPos, bounds, scale, snapProximityPx);
-        if (closest) {
+        if (closest && closest.distance < minDistance) {
+          minDistance = closest.distance;
           foundTarget = {
             itemId: item.id,
             anchor: closest.anchor,
             snapPoint: closest.point,
           };
-          break;
         }
       }
 

@@ -74,7 +74,8 @@ export function ConnectorLine({
       <Arrow
         points={curve.points}
         bezier={true}
-        stroke="transparent"
+        stroke="rgba(0,0,0,0.01)"
+        fill="rgba(0,0,0,0.01)"
         strokeWidth={16 / zoomDivisor}
         pointerLength={10 / zoomDivisor}
         pointerWidth={8 / zoomDivisor}

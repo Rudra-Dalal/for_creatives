@@ -5,12 +5,18 @@ import { Group, Circle } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type { AnchorPosition, MoodboardItem } from '../../types';
 import type { CanvasPoint } from '../../coordinates/geometryTypes';
+import { getPointerCanvasPosition } from '../../coordinates/canvasCoordinates';
 import { getAnchorPoint, CARDINAL_ANCHORS } from '../geometry/anchorGeometry';
 
 export interface ConnectorAnchorHandlesProps {
   item: MoodboardItem;
   scale?: number;
-  onStartConnect: (itemId: string, anchor: AnchorPosition, startPoint: CanvasPoint) => void;
+  onStartConnect: (
+    itemId: string,
+    anchor: AnchorPosition,
+    startPoint: CanvasPoint,
+    pointerPos?: CanvasPoint
+  ) => void;
 }
 
 /**
@@ -29,8 +35,8 @@ export function ConnectorAnchorHandles({
   const [hoveredAnchor, setHoveredAnchor] = useState<AnchorPosition | null>(null);
 
   const zoomDivisor = Math.max(0.4, scale);
-  const baseRadius = 5 / zoomDivisor;
-  const hoverRadius = 7 / zoomDivisor;
+  const baseRadius = 6 / zoomDivisor;
+  const hoverRadius = 8 / zoomDivisor;
 
   const bounds = { x: item.x, y: item.y, width: item.width, height: item.height };
 
@@ -42,39 +48,47 @@ export function ConnectorAnchorHandles({
 
         const handlePointerDown = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
           e.cancelBubble = true;
-          onStartConnect(item.id, anchor, pt);
+          const stage = e.target.getStage();
+          const pointer = stage ? getPointerCanvasPosition(stage) : pt;
+          onStartConnect(item.id, anchor, pt, pointer || pt);
         };
 
         return (
-          <Group key={anchor} x={pt.x} y={pt.y}>
-            {/* Comfortable hit target (14px radius) */}
+          <Group
+            key={anchor}
+            x={pt.x}
+            y={pt.y}
+            listening={true}
+            onMouseDown={handlePointerDown}
+            onTouchStart={handlePointerDown}
+            onPointerDown={handlePointerDown}
+            onMouseEnter={() => {
+              setHoveredAnchor(anchor);
+              const container = window.document.querySelector('.konvajs-content') as HTMLElement;
+              if (container) container.style.cursor = 'crosshair';
+            }}
+            onMouseLeave={() => {
+              setHoveredAnchor(null);
+              const container = window.document.querySelector('.konvajs-content') as HTMLElement;
+              if (container) container.style.cursor = 'default';
+            }}
+          >
+            {/* Comfortable hit target (16px radius, non-zero alpha fill) */}
             <Circle
-              radius={14 / zoomDivisor}
-              fill="transparent"
-              onMouseDown={handlePointerDown}
-              onTouchStart={handlePointerDown}
-              onPointerDown={handlePointerDown}
-              onMouseEnter={() => {
-                setHoveredAnchor(anchor);
-                const container = window.document.querySelector('.konvajs-content') as HTMLElement;
-                if (container) container.style.cursor = 'crosshair';
-              }}
-              onMouseLeave={() => {
-                setHoveredAnchor(null);
-                const container = window.document.querySelector('.konvajs-content') as HTMLElement;
-                if (container) container.style.cursor = 'default';
-              }}
+              radius={16 / zoomDivisor}
+              fill="rgba(217, 119, 6, 0.01)"
+              listening={true}
             />
-            {/* Tactile anchor dot */}
+            {/* Tactile high-contrast anchor dot */}
             <Circle
               radius={isHovered ? hoverRadius : baseRadius}
-              fill={isHovered ? '#D97706' : '#1E1E1C'}
-              stroke={isHovered ? '#FFFFFF' : '#8C8A82'}
-              strokeWidth={1.5 / zoomDivisor}
-              listening={false}
-              shadowColor="#000000"
-              shadowBlur={isHovered ? 4 : 2}
-              shadowOpacity={0.6}
+              fill={isHovered ? '#D97706' : '#FFFFFF'}
+              stroke={isHovered ? '#FFFFFF' : '#D97706'}
+              strokeWidth={2 / zoomDivisor}
+              listening={true}
+              shadowColor={isHovered ? '#D97706' : '#000000'}
+              shadowBlur={isHovered ? 8 : 4}
+              shadowOpacity={isHovered ? 0.8 : 0.6}
             />
           </Group>
         );

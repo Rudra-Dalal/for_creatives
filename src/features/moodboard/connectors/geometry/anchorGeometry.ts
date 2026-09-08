@@ -42,7 +42,10 @@ export function isPointInCornerProtectionZone(
   scale = 1,
   zonePx: number = CORNER_PRIORITY_ZONE_PX
 ): boolean {
-  const worldZone = zonePx / Math.max(0.2, scale);
+  // Clamp corner protection zone so it never exceeds 35% of bounds dimension,
+  // ensuring edge midpoints are never swallowed by corner zones on small cards or high zoom-out
+  const maxCornerWorld = Math.min(bounds.width, bounds.height) * 0.35;
+  const worldZone = Math.min(zonePx / Math.max(0.2, scale), maxCornerWorld);
 
   const corners: CanvasPoint[] = [
     { x: bounds.x, y: bounds.y },                                    // Top-Left
@@ -113,6 +116,10 @@ export function findClosestCardinalAnchor(
       bestAnchor = anchor;
       bestPoint = pt;
     }
+  }
+
+  if (minDistance > worldProximity) {
+    return null;
   }
 
   return {
