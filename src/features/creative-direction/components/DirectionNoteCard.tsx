@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { renderSanitizedMarkdown } from '../utils/markdown';
 import type { DirectionNoteWithReferences } from '../types';
 import type { Reference } from '@/features/references/types';
 import { Button } from '@/components/ui/button';
@@ -8,19 +9,26 @@ import { Badge } from '@/components/ui/badge';
 import {
   Edit3,
   Trash2,
+  Copy,
+  ChevronUp,
+  ChevronDown,
   Plus,
   X,
   Globe,
   ArrowUpRight,
-  Sparkles,
 } from 'lucide-react';
 import Image from 'next/image';
 
 interface DirectionNoteCardProps {
   note: DirectionNoteWithReferences;
   readOnly?: boolean;
+  isFirst?: boolean;
+  isLast?: boolean;
+  isJustDuplicated?: boolean;
   onEdit?: (note: DirectionNoteWithReferences) => void;
   onDeleteRequest?: (note: DirectionNoteWithReferences) => void;
+  onDuplicate?: (note: DirectionNoteWithReferences) => void;
+  onReorder?: (note: DirectionNoteWithReferences, direction: 'up' | 'down') => void;
   onUnlinkReference?: (directionNoteId: string, referenceId: string) => Promise<void>;
   onOpenReferencePicker?: (note: DirectionNoteWithReferences) => void;
 }
@@ -28,28 +36,62 @@ interface DirectionNoteCardProps {
 export function DirectionNoteCard({
   note,
   readOnly = false,
+  isFirst = false,
+  isLast = false,
+  isJustDuplicated = false,
   onEdit,
   onDeleteRequest,
+  onDuplicate,
+  onReorder,
   onUnlinkReference,
   onOpenReferencePicker,
 }: DirectionNoteCardProps) {
-  const formattedDate = new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(new Date(note.created_at));
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const formattedDate = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }).format(new Date(note.created_at));
+    } catch {
+      return '';
+    }
+  }, [note.created_at]);
+
+  const sanitizedHtml = useMemo(() => {
+    if (!note.description || !isMounted) return '';
+    return renderSanitizedMarkdown(note.description);
+  }, [note.description, isMounted]);
 
   return (
-    <article className="group relative flex flex-col rounded-xl border border-border bg-surface p-6 transition-all duration-200 hover:border-border-strong shadow-subtle space-y-5">
-      {/* Top Header: Statement & Actions */}
+    <article
+      className={`group relative flex flex-col rounded-xl border bg-surface p-6 transition-all duration-300 shadow-subtle space-y-5 ${
+        isJustDuplicated
+          ? 'border-accent ring-1 ring-accent/40 animate-pulse'
+          : 'border-border hover:border-border-strong'
+      }`}
+    >
+      {/* Top Header: Category, Date, Statement & Actions */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1 flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-accent">
-              <Sparkles className="h-3 w-3" /> Creative Statement
+            {note.category && (
+              <>
+                <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-accent/80 font-medium">
+                  {note.category}
+                </span>
+                <span className="text-border-strong">•</span>
+              </>
+            )}
+            <span className="font-mono text-[11px] text-muted-foreground/60">
+              {formattedDate}
             </span>
-            <span className="text-border-strong">•</span>
-            <span className="text-[11px] text-muted-foreground/60">{formattedDate}</span>
           </div>
 
           <h3 className="font-display text-2xl font-medium tracking-tight text-foreground leading-tight pt-1">
@@ -57,32 +99,90 @@ export function DirectionNoteCard({
           </h3>
 
           {note.description && (
-            <p className="text-xs text-muted-foreground leading-relaxed pt-1 whitespace-pre-line max-w-3xl">
-              {note.description}
-            </p>
+            isMounted && sanitizedHtml ? (
+              <div
+                className="prose-direction pt-1 max-w-3xl"
+                dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground leading-relaxed pt-1 whitespace-pre-line max-w-3xl">
+                {note.description}
+              </p>
+            )
           )}
         </div>
 
-        {/* Action Controls (Only for project owner) */}
-        {!readOnly && onEdit && onDeleteRequest && (
-          <div className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
-            <button
-              type="button"
-              onClick={() => onEdit(note)}
-              className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors"
-              title="Edit statement"
-            >
-              <Edit3 className="h-4 w-4" />
-            </button>
+        {/* Action Controls (Hidden until group-hover; only for project owner) */}
+        {!readOnly && (
+          <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+            {onReorder && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onReorder(note, 'up')}
+                  disabled={isFirst}
+                  className={`flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors ${
+                    isFirst
+                      ? 'opacity-30 cursor-not-allowed'
+                      : 'hover:bg-surface-hover hover:text-foreground cursor-pointer'
+                  }`}
+                  title="Move up"
+                  aria-label="Move statement up"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onReorder(note, 'down')}
+                  disabled={isLast}
+                  className={`flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors ${
+                    isLast
+                      ? 'opacity-30 cursor-not-allowed'
+                      : 'hover:bg-surface-hover hover:text-foreground cursor-pointer'
+                  }`}
+                  title="Move down"
+                  aria-label="Move statement down"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+              </>
+            )}
 
-            <button
-              type="button"
-              onClick={() => onDeleteRequest(note)}
-              className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:bg-danger/10 hover:text-red-400 transition-colors"
-              title="Delete statement"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
+            {onDuplicate && (
+              <button
+                type="button"
+                onClick={() => onDuplicate(note)}
+                className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors"
+                title="Duplicate statement"
+                aria-label="Duplicate statement"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+            )}
+
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => onEdit(note)}
+                className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors"
+                title="Edit statement"
+                aria-label="Edit statement"
+              >
+                <Edit3 className="h-4 w-4" />
+              </button>
+            )}
+
+            {onDeleteRequest && (
+              <button
+                type="button"
+                onClick={() => onDeleteRequest(note)}
+                className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:bg-danger/10 hover:text-red-400 transition-colors"
+                title="Delete statement"
+                aria-label="Delete statement"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -182,11 +282,9 @@ export function DirectionNoteCard({
             ))}
           </div>
         ) : (
-          <div className="rounded-lg border border-dashed border-border-subtle p-4 text-center">
-            <p className="text-xs text-muted-foreground/60 italic">
-              No references connected to this direction statement yet.
-            </p>
-          </div>
+          <p className="text-xs text-muted-foreground/50 italic py-1">
+            No references connected yet.
+          </p>
         )}
       </div>
     </article>

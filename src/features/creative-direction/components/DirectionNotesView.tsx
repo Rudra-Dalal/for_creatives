@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useDirectionNotes } from '../hooks/useDirectionNotes';
 import { DirectionNoteCard } from './DirectionNoteCard';
 import { CreateDirectionDialog } from './CreateDirectionDialog';
@@ -10,8 +10,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import type { DirectionNoteWithReferences } from '../types';
+import { DIRECTION_CATEGORIES, type DirectionCategory, type DirectionNoteWithReferences } from '../types';
 import { Plus, Compass, RefreshCw, FileText } from 'lucide-react';
 
 interface DirectionNotesViewProps {
@@ -34,6 +33,8 @@ export function DirectionNotesView({
     refetch,
     createDirectionNote,
     updateDirectionNote,
+    duplicateDirectionNote,
+    reorderDirectionNote,
     deleteDirectionNote,
     unlinkReference,
   } = useDirectionNotes(projectId, initialNotes, readOnly);
@@ -43,6 +44,19 @@ export function DirectionNotesView({
   const [editingNote, setEditingNote] = useState<DirectionNoteWithReferences | null>(null);
   const [noteToDelete, setNoteToDelete] = useState<DirectionNoteWithReferences | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [recentlyDuplicatedId, setRecentlyDuplicatedId] = useState<string | null>(null);
+
+  const handleDuplicate = async (note: DirectionNoteWithReferences) => {
+    try {
+      const created = await duplicateDirectionNote(note.id);
+      setRecentlyDuplicatedId(created.id);
+      setTimeout(() => {
+        setRecentlyDuplicatedId(null);
+      }, 2000);
+    } catch {
+      // Error handled in service
+    }
+  };
 
   const handleConfirmDelete = async () => {
     if (!noteToDelete) return;
@@ -57,6 +71,38 @@ export function DirectionNotesView({
     }
   };
 
+  const hasAnyCategorized = useMemo(() => {
+    return directionNotes.some((n) => !!n.category);
+  }, [directionNotes]);
+
+  const categoryGroups = useMemo(() => {
+    if (!hasAnyCategorized) return [];
+
+    const orderKeys: (DirectionCategory | 'uncategorized')[] = [
+      ...DIRECTION_CATEGORIES,
+      'uncategorized',
+    ];
+
+    const map = new Map<string, DirectionNoteWithReferences[]>();
+    for (const key of orderKeys) {
+      map.set(key, []);
+    }
+
+    for (const note of directionNotes) {
+      const key = note.category || 'uncategorized';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(note);
+    }
+
+    return orderKeys
+      .map((key) => ({
+        key,
+        label: key === 'uncategorized' ? '—' : key,
+        notes: map.get(key) || [],
+      }))
+      .filter((group) => group.notes.length > 0);
+  }, [directionNotes, hasAnyCategorized]);
+
   return (
     <div className="flex-1 flex flex-col min-h-full px-6 py-6 max-w-5xl w-full mx-auto">
       {/* Header & Primary Action Bar */}
@@ -65,11 +111,6 @@ export function DirectionNotesView({
           <h2 className="font-display text-2xl font-medium tracking-tight text-foreground">
             Creative Direction
           </h2>
-          {!isLoading && !error && (
-            <Badge variant="secondary" className="font-mono text-xs px-2 py-0.5">
-              {directionNotes.length} {directionNotes.length === 1 ? 'statement' : 'statements'}
-            </Badge>
-          )}
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -145,16 +186,60 @@ export function DirectionNotesView({
           />
         )}
 
-        {/* Direction Notes Stream */}
-        {!isLoading && !error && directionNotes.length > 0 && (
+        {/* Categorized Groups View */}
+        {!isLoading && !error && directionNotes.length > 0 && hasAnyCategorized && (
+          <div className="space-y-12">
+            {categoryGroups.map((group) => (
+              <section key={group.key} className="space-y-4">
+                {/* Section Header */}
+                <div className="flex items-center justify-between pb-2 border-b border-border-subtle">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground font-medium">
+                    {group.label}
+                  </span>
+                  <span className="font-mono text-[10px] text-muted-foreground/60">
+                    {group.notes.length}
+                  </span>
+                </div>
+
+                {/* Section Cards */}
+                <div className="space-y-6">
+                  {group.notes.map((note, idx) => (
+                    <DirectionNoteCard
+                      key={note.id}
+                      note={note}
+                      readOnly={readOnly}
+                      isFirst={idx === 0}
+                      isLast={idx === group.notes.length - 1}
+                      isJustDuplicated={note.id === recentlyDuplicatedId}
+                      onEdit={(n) => setEditingNote(n)}
+                      onDeleteRequest={(n) => setNoteToDelete(n)}
+                      onDuplicate={handleDuplicate}
+                      onReorder={(n, dir) => reorderDirectionNote(n.id, dir)}
+                      onUnlinkReference={unlinkReference}
+                      onOpenReferencePicker={(n) => setEditingNote(n)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+
+        {/* Flat View (when no note has a category assigned) */}
+        {!isLoading && !error && directionNotes.length > 0 && !hasAnyCategorized && (
           <div className="space-y-6">
-            {directionNotes.map((note) => (
+            {directionNotes.map((note, idx) => (
               <DirectionNoteCard
                 key={note.id}
                 note={note}
                 readOnly={readOnly}
+                isFirst={idx === 0}
+                isLast={idx === directionNotes.length - 1}
+                isJustDuplicated={note.id === recentlyDuplicatedId}
                 onEdit={(n) => setEditingNote(n)}
                 onDeleteRequest={(n) => setNoteToDelete(n)}
+                onDuplicate={handleDuplicate}
+                onReorder={(n, dir) => reorderDirectionNote(n.id, dir)}
                 onUnlinkReference={unlinkReference}
                 onOpenReferencePicker={(n) => setEditingNote(n)}
               />

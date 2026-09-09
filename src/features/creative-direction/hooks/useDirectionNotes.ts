@@ -50,9 +50,11 @@ export function useDirectionNotes(
       projectId: input.projectId,
       title: input.title,
       description: input.description,
+      category: input.category,
+      displayOrder: input.displayOrder,
       referenceIds: input.referenceIds,
     });
-    setDirectionNotes((prev) => [created, ...prev]);
+    await fetchDirectionNotes();
     return created;
   };
 
@@ -61,8 +63,24 @@ export function useDirectionNotes(
     input: UpdateDirectionInput
   ): Promise<DirectionNoteWithReferences> => {
     const updated = await directionService.updateDirectionNote(id, input);
-    setDirectionNotes((prev) => prev.map((n) => (n.id === id ? updated : n)));
+    await fetchDirectionNotes();
     return updated;
+  };
+
+  const duplicateDirectionNote = async (
+    id: string
+  ): Promise<DirectionNoteWithReferences> => {
+    const duplicated = await directionService.duplicateDirectionNote(id);
+    await fetchDirectionNotes();
+    return duplicated;
+  };
+
+  const reorderDirectionNote = async (
+    id: string,
+    direction: 'up' | 'down'
+  ): Promise<void> => {
+    await directionService.reorderDirectionNote(id, direction);
+    await fetchDirectionNotes();
   };
 
   const deleteDirectionNote = async (id: string): Promise<void> => {
@@ -75,7 +93,6 @@ export function useDirectionNotes(
     referenceId: string
   ): Promise<void> => {
     await directionService.linkReference(directionNoteId, referenceId);
-    // Refresh to get full updated reference object in direction state
     await fetchDirectionNotes();
   };
 
@@ -102,6 +119,8 @@ export function useDirectionNotes(
     refetch: fetchDirectionNotes,
     createDirectionNote,
     updateDirectionNote,
+    duplicateDirectionNote,
+    reorderDirectionNote,
     deleteDirectionNote,
     linkReference,
     unlinkReference,

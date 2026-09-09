@@ -13,9 +13,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { LinkedReferencePicker } from './LinkedReferencePicker';
+import { CategorySelector } from './CategorySelector';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { updateDirectionSchema, type UpdateDirectionInput } from '../validation/directionSchema';
-import type { DirectionNoteWithReferences } from '../types';
+import type { DirectionNoteWithReferences, DirectionCategory } from '../types';
 import { Loader2, AlertCircle, Trash2, Save } from 'lucide-react';
 
 interface EditDirectionModalProps {
@@ -40,6 +41,7 @@ export function EditDirectionModal({
 }: EditDirectionModalProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState<DirectionCategory | null>(null);
   const [selectedReferenceIds, setSelectedReferenceIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -50,6 +52,7 @@ export function EditDirectionModal({
     if (note) {
       setTitle(note.title);
       setDescription(note.description || '');
+      setCategory((note.category as DirectionCategory) || null);
       setSelectedReferenceIds(note.references.map((r) => r.id));
       setError(null);
     }
@@ -64,6 +67,7 @@ export function EditDirectionModal({
     const payload: UpdateDirectionInput = {
       title: title.trim(),
       description: description.trim(),
+      category,
       referenceIds: selectedReferenceIds,
     };
 
@@ -142,6 +146,13 @@ export function EditDirectionModal({
                 />
               </div>
 
+              {/* Category */}
+              <CategorySelector
+                value={category}
+                onChange={setCategory}
+                disabled={isLoading}
+              />
+
               {/* Description */}
               <div className="space-y-1.5">
                 <label htmlFor="edit-direction-desc" className="text-xs font-medium text-muted-foreground">
@@ -154,6 +165,9 @@ export function EditDirectionModal({
                   disabled={isLoading}
                   rows={3}
                 />
+                <p className="text-[10px] text-muted-foreground/60">
+                  Markdown supported: **bold**, *italic*, - list
+                </p>
               </div>
 
               {/* Reference Picker */}

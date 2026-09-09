@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import { DIRECTION_CATEGORIES } from '../types';
+
+const categorySchema = z
+  .enum(DIRECTION_CATEGORIES)
+  .nullable()
+  .optional();
 
 export const createDirectionSchema = z.object({
   projectId: z.string().uuid('Invalid project ID'),
@@ -12,6 +18,8 @@ export const createDirectionSchema = z.object({
     .trim()
     .max(2000, 'Description must be 2000 characters or less')
     .default(''),
+  category: categorySchema,
+  displayOrder: z.number().int().optional(),
   referenceIds: z.array(z.string().uuid()).default([]),
 });
 
@@ -27,6 +35,8 @@ export const updateDirectionSchema = z.object({
     .trim()
     .max(2000, 'Description must be 2000 characters or less')
     .optional(),
+  category: categorySchema,
+  displayOrder: z.number().int().optional(),
   referenceIds: z.array(z.string().uuid()).optional(),
 });
 

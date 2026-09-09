@@ -129,6 +129,8 @@ export interface Database {
           project_id: string;
           title: string;
           description: string;
+          category: string | null;
+          display_order: number;
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -138,6 +140,8 @@ export interface Database {
           project_id: string;
           title: string;
           description?: string;
+          category?: string | null;
+          display_order?: number;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -147,6 +151,8 @@ export interface Database {
           project_id?: string;
           title?: string;
           description?: string;
+          category?: string | null;
+          display_order?: number;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;

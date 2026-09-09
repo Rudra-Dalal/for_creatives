@@ -94,3 +94,37 @@
     background: #3A3A35;
   }
 }
+
+/* Scoped markdown prose for creative direction note descriptions.
+   DOMPurify-sanitized output only — only the ALLOWED_TAGS set is ever rendered here. */
+.prose-direction p {
+  @apply text-xs text-muted-foreground leading-relaxed;
+}
+.prose-direction p + p {
+  @apply mt-2;
+}
+.prose-direction strong,
+.prose-direction b {
+  @apply font-semibold text-foreground;
+  opacity: 0.95;
+}
+.prose-direction em,
+.prose-direction i {
+  @apply italic text-foreground;
+  opacity: 0.85;
+}
+.prose-direction ul {
+  @apply list-disc list-outside ml-4 mt-1.5 space-y-1 text-xs text-muted-foreground;
+}
+.prose-direction ol {
+  @apply list-decimal list-outside ml-4 mt-1.5 space-y-1 text-xs text-muted-foreground;
+}
+.prose-direction li {
+  @apply leading-relaxed;
+}
+.prose-direction code {
+  @apply font-mono text-[11px] bg-surface-subtle border border-border px-1 py-0.5 rounded text-foreground;
+}
+.prose-direction blockquote {
+  @apply border-l-2 border-accent pl-3 my-1.5 italic text-muted-foreground;
+}

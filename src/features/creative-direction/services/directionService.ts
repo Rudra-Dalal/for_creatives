@@ -4,24 +4,26 @@ import type {
   DirectionNoteInsert,
   DirectionNoteUpdate,
   DirectionNoteWithReferences,
+  DirectionCategory,
 } from '../types';
 import type { Reference } from '@/features/references/types';
 
 export const directionService = {
   /**
    * Fetch all creative direction notes for a project,
-   * including their linked references.
+   * ordered by display_order ascending, including their linked references.
    */
   async getDirectionNotes(projectId: string): Promise<DirectionNoteWithReferences[]> {
     const supabase = createClient();
 
-    // 1. Fetch active (non-deleted) notes
+    // 1. Fetch active (non-deleted) notes ordered by display_order
     const { data: notes, error: notesError } = await supabase
       .from('direction_notes')
       .select('*')
       .eq('project_id', projectId)
       .is('deleted_at', null)
-      .order('created_at', { ascending: false });
+      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: true });
 
     if (notesError) throw notesError;
     if (!notes || notes.length === 0) return [];
@@ -52,7 +54,6 @@ export const directionService = {
     if (links) {
       for (const link of links) {
         const note = notesMap.get(link.direction_note_id);
-        // Supabase returns the joined single object or array
         const ref = link.references as unknown as Reference | null;
         if (note && ref && typeof ref === 'object' && 'id' in ref) {
           note.references.push(ref);
@@ -158,19 +159,45 @@ export const directionService = {
 
   /**
    * Create a new direction note and optionally link initial references.
+   * Automatically computes display_order to place the note at the end of its category group.
    */
   async createDirectionNote(input: {
     projectId: string;
     title: string;
     description?: string;
+    category?: DirectionCategory | null;
+    displayOrder?: number;
     referenceIds?: string[];
   }): Promise<DirectionNoteWithReferences> {
     const supabase = createClient();
+
+    let targetOrder = input.displayOrder;
+    if (targetOrder === undefined) {
+      let orderQuery = supabase
+        .from('direction_notes')
+        .select('display_order')
+        .eq('project_id', input.projectId)
+        .is('deleted_at', null);
+
+      if (input.category) {
+        orderQuery = orderQuery.eq('category', input.category);
+      } else {
+        orderQuery = orderQuery.is('category', null);
+      }
+
+      const { data: existing } = await orderQuery
+        .order('display_order', { ascending: false })
+        .limit(1);
+
+      targetOrder = existing && existing.length > 0 ? existing[0].display_order + 1 : 0;
+    }
 
     const payload: DirectionNoteInsert = {
       project_id: input.projectId,
       title: input.title.trim(),
       description: input.description?.trim() || '',
+      category: input.category || null,
+      display_order: targetOrder,
     };
 
     const { data: note, error: noteError } = await supabase
@@ -214,12 +241,15 @@ export const directionService = {
 
   /**
    * Update an existing direction note and sync its linked references.
+   * If category changes and displayOrder is not provided, places at bottom of new category.
    */
   async updateDirectionNote(
     id: string,
     input: {
       title?: string;
       description?: string;
+      category?: DirectionCategory | null;
+      displayOrder?: number;
       referenceIds?: string[];
     }
   ): Promise<DirectionNoteWithReferences> {
@@ -228,6 +258,39 @@ export const directionService = {
     const payload: DirectionNoteUpdate = {};
     if (input.title !== undefined) payload.title = input.title.trim();
     if (input.description !== undefined) payload.description = input.description.trim();
+
+    if (input.category !== undefined) {
+      payload.category = input.category || null;
+
+      // If category is changing and displayOrder not explicitly provided, place at bottom of category
+      if (input.displayOrder === undefined) {
+        // Fetch current note to check if category changed
+        const current = await directionService.getDirectionNoteById(id);
+        if (current && current.category !== payload.category) {
+          let orderQuery = supabase
+            .from('direction_notes')
+            .select('display_order')
+            .eq('project_id', current.project_id)
+            .is('deleted_at', null);
+
+          if (payload.category) {
+            orderQuery = orderQuery.eq('category', payload.category);
+          } else {
+            orderQuery = orderQuery.is('category', null);
+          }
+
+          const { data: existing } = await orderQuery
+            .order('display_order', { ascending: false })
+            .limit(1);
+
+          payload.display_order = existing && existing.length > 0 ? existing[0].display_order + 1 : 0;
+        }
+      }
+    }
+
+    if (input.displayOrder !== undefined) {
+      payload.display_order = input.displayOrder;
+    }
 
     const { data: note, error: noteError } = await supabase
       .from('direction_notes')
@@ -269,6 +332,89 @@ export const directionService = {
       throw new Error('Direction note not found after update');
     }
     return fullNote;
+  },
+
+  /**
+   * Duplicate a direction note:
+   * Copies title, description, and category, places it at the bottom of the same category,
+   * and starts with zero linked references.
+   */
+  async duplicateDirectionNote(id: string): Promise<DirectionNoteWithReferences> {
+    const original = await directionService.getDirectionNoteById(id);
+    if (!original) {
+      throw new Error('Direction note not found for duplication');
+    }
+
+    return directionService.createDirectionNote({
+      projectId: original.project_id,
+      title: original.title,
+      description: original.description,
+      category: original.category as DirectionCategory | null,
+      referenceIds: [],
+    });
+  },
+
+  /**
+   * Reorder a direction note up or down within its category group.
+   * Swaps display_order with the adjacent active note in the same category.
+   */
+  async reorderDirectionNote(id: string, direction: 'up' | 'down'): Promise<void> {
+    const supabase = createClient();
+
+    const note = await directionService.getDirectionNoteById(id);
+    if (!note) return;
+
+    // Fetch all active notes in the same project and category
+    let query = supabase
+      .from('direction_notes')
+      .select('id, display_order, created_at')
+      .eq('project_id', note.project_id)
+      .is('deleted_at', null);
+
+    if (note.category) {
+      query = query.eq('category', note.category);
+    } else {
+      query = query.is('category', null);
+    }
+
+    const { data: siblings, error } = await query
+      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error || !siblings || siblings.length <= 1) return;
+
+    const currentIndex = siblings.findIndex((s) => s.id === id);
+    if (currentIndex === -1) return;
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= siblings.length) return;
+
+    const currentSibling = siblings[currentIndex];
+    const targetSibling = siblings[targetIndex];
+
+    let currentOrder = currentSibling.display_order;
+    let targetOrder = targetSibling.display_order;
+
+    // If both have the same display_order, normalize whole list first
+    if (currentOrder === targetOrder) {
+      currentOrder = currentIndex;
+      targetOrder = targetIndex;
+    }
+
+    // Swap display_order
+    const { error: err1 } = await supabase
+      .from('direction_notes')
+      .update({ display_order: targetOrder })
+      .eq('id', currentSibling.id);
+
+    if (err1) throw err1;
+
+    const { error: err2 } = await supabase
+      .from('direction_notes')
+      .update({ display_order: currentOrder })
+      .eq('id', targetSibling.id);
+
+    if (err2) throw err2;
   },
 
   /**

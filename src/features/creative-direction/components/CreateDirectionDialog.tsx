@@ -13,8 +13,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { LinkedReferencePicker } from './LinkedReferencePicker';
+import { CategorySelector } from './CategorySelector';
 import { createDirectionSchema, type CreateDirectionInput } from '../validation/directionSchema';
-import type { DirectionNoteWithReferences } from '../types';
+import type { DirectionNoteWithReferences, DirectionCategory } from '../types';
 import { Loader2, AlertCircle, Sparkles } from 'lucide-react';
 
 interface CreateDirectionDialogProps {
@@ -36,6 +37,7 @@ export function CreateDirectionDialog({
 }: CreateDirectionDialogProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState<DirectionCategory | null>(null);
   const [selectedReferenceIds, setSelectedReferenceIds] = useState<string[]>(
     initialReferenceId ? [initialReferenceId] : []
   );
@@ -45,6 +47,7 @@ export function CreateDirectionDialog({
   const resetForm = () => {
     setTitle('');
     setDescription('');
+    setCategory(null);
     setSelectedReferenceIds(initialReferenceId ? [initialReferenceId] : []);
     setError(null);
     setIsLoading(false);
@@ -65,6 +68,7 @@ export function CreateDirectionDialog({
       projectId,
       title: title.trim(),
       description: description.trim(),
+      category,
       referenceIds: selectedReferenceIds,
     };
 
@@ -133,6 +137,13 @@ export function CreateDirectionDialog({
               />
             </div>
 
+            {/* Category */}
+            <CategorySelector
+              value={category}
+              onChange={setCategory}
+              disabled={isLoading}
+            />
+
             {/* Description / Thesis */}
             <div className="space-y-1.5">
               <label htmlFor="direction-desc" className="text-xs font-medium text-muted-foreground">
@@ -146,6 +157,9 @@ export function CreateDirectionDialog({
                 disabled={isLoading}
                 rows={3}
               />
+              <p className="text-[10px] text-muted-foreground/60">
+                Markdown supported: **bold**, *italic*, - list
+              </p>
             </div>
 
             {/* Connected References Picker */}
