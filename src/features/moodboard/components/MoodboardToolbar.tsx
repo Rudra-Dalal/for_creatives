@@ -35,6 +35,7 @@ import {
   Rows,
   PenTool,
   Eraser,
+  RotateCw,
 } from 'lucide-react';
 import type { MoodboardItem, EraserSize } from '../types';
 import {
@@ -63,6 +64,8 @@ interface MoodboardToolbarProps {
   onChangeEraserSize?: (size: EraserSize) => void;
   canUndo?: boolean;
   onUndo?: () => void;
+  canRedo?: boolean;
+  onRedo?: () => void;
   isLibraryOpen: boolean;
   onToggleLibrary: () => void;
   onUploadImageFile: (file: File) => void;
@@ -103,6 +106,8 @@ export function MoodboardToolbar({
   onChangeEraserSize,
   canUndo,
   onUndo,
+  canRedo,
+  onRedo,
   isLibraryOpen,
   onToggleLibrary,
   onUploadImageFile,
@@ -303,18 +308,27 @@ export function MoodboardToolbar({
             </div>
           )}
 
-          {/* Undo Button (Subtle, contextual) */}
-          {canUndo && (
-            <button
-              type="button"
-              onClick={onUndo}
-              className="flex h-7 items-center gap-1 px-2 rounded-full text-xs text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors"
-              title="Undo last canvas action (Cmd/Ctrl+Z)"
-            >
-              <RotateCcw className="h-3 w-3" />
-              <span>Undo</span>
-            </button>
-          )}
+          {/* Undo / Redo Buttons (always visible, disabled when unavailable) */}
+          <button
+            type="button"
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="flex h-7 items-center gap-1 px-2 rounded-full text-xs text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            title="Undo last canvas action (Cmd/Ctrl+Z)"
+          >
+            <RotateCcw className="h-3 w-3" />
+            <span>Undo</span>
+          </button>
+          <button
+            type="button"
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="flex h-7 items-center gap-1 px-2 rounded-full text-xs text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            title="Redo (Cmd/Ctrl+Shift+Z)"
+          >
+            <RotateCw className="h-3 w-3" />
+            <span>Redo</span>
+          </button>
 
           {/* Auto-Arrange Grid Button */}
           {onAutoArrange && (

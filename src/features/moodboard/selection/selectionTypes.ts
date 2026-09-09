@@ -140,6 +140,8 @@ export interface UseCanvasKeyboardShortcutsOptions {
   onNudgeSelected?: (dx: number, dy: number) => void;
   /** Callback to trigger canvas undo. */
   onUndo?: () => void;
+  /** Callback to trigger canvas redo. */
+  onRedo?: () => void;
   /** Callback to switch active tool. */
   onToolChange?: (tool: 'select' | 'pen' | 'eraser') => void;
   /** Custom check for whether a text input / modal is currently capturing keystrokes. */

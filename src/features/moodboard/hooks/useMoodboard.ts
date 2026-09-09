@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { pushToStack, popFromStack, reconcileStack } from './historyStack';
 import { moodboardService } from '../services/moodboardService';
 import type {
   MoodboardItem,
@@ -52,8 +53,19 @@ export type UndoAction =
   | {
       type: 'PARTIAL_ERASE';
       originalStrokes: MoodboardItem[];
+      /** Full optimistic items — needed to restore them on redo after undo soft-deleted them. */
+      createdItems: MoodboardItem[];
       createdItemIds: string[];
-      updatedItems: Array<{ id: string; prevItem: MoodboardItem }>;
+      updatedItems: Array<{
+        id: string;
+        prevItem: MoodboardItem;
+        /** Post-erase geometry — needed to reapply on redo. */
+        nextX: number;
+        nextY: number;
+        nextWidth: number;
+        nextHeight: number;
+        nextRelativePoints: number[];
+      }>;
       deletedItemIds: string[];
     }
   | {
@@ -140,8 +152,11 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     }
   }, [initialItems, normalizeItem]);
 
-  // Single-level undo action state
-  const [lastAction, setLastAction] = useState<UndoAction | null>(null);
+  // Multi-step undo/redo history stacks (refs for O(1) mutation; boolean state for reactive UI)
+  const undoStackRef = useRef<UndoAction[]>([]);
+  const redoStackRef = useRef<UndoAction[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   // Save status tracking for visible persistence feedback (no silent failures)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -224,17 +239,56 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     [viewport]
   );
 
-  // Record an undo action
+  // Push an action onto the undo stack, clear redo branch, enforce depth limit
   const recordUndoAction = useCallback((action: UndoAction) => {
-    setLastAction(action);
+    undoStackRef.current = pushToStack(undoStackRef.current, action);
+    redoStackRef.current = [];
+    setCanUndo(true);
+    setCanRedo(false);
   }, []);
 
-  // One-level Undo execution
-  const undo = useCallback(async () => {
-    if (!lastAction) return;
+  // Reconcile temporary IDs (temp-stroke-..., temp-erase-...) across both history stacks.
+  // Must be called after any optimistic DB write resolves with a real UUID.
+  // The reconcileAction function is kept inline to avoid a circular dependency with historyStack.ts.
+  const reconcileHistoryIds = useCallback((oldToNew: Map<string, MoodboardItem>) => {
+    const reconcileAction = (action: UndoAction): UndoAction => {
+      if (
+        (action.type === 'ADD' || action.type === 'DUPLICATE') &&
+        oldToNew.has(action.itemId)
+      ) {
+        const real = oldToNew.get(action.itemId)!;
+        return { ...action, itemId: real.id, item: real };
+      }
+      if (action.type === 'PARTIAL_ERASE') {
+        const needsReconcile = action.createdItemIds.some((id) => oldToNew.has(id));
+        if (!needsReconcile) return action;
+        return {
+          ...action,
+          createdItemIds: action.createdItemIds.map((id) =>
+            oldToNew.has(id) ? oldToNew.get(id)!.id : id
+          ),
+          createdItems: action.createdItems.map((item) => {
+            const real = oldToNew.get(item.id);
+            if (!real) return item;
+            return { ...real, content: item.content };
+          }),
+        };
+      }
+      return action;
+    };
+    undoStackRef.current = reconcileStack(undoStackRef.current, reconcileAction);
+    redoStackRef.current = reconcileStack(redoStackRef.current, reconcileAction);
+  }, []);
 
-    const actionToRevert = lastAction;
-    setLastAction(null); // Clear single-level undo immediately
+  // Multi-step Undo — reverts the most recent action
+  const undo = useCallback(async () => {
+    const { action: actionToRevert, remaining } = popFromStack(undoStackRef.current);
+    if (!actionToRevert) return;
+
+    undoStackRef.current = remaining;
+    redoStackRef.current = pushToStack(redoStackRef.current, actionToRevert);
+    setCanUndo(remaining.length > 0);
+    setCanRedo(true);
 
     try {
       if (actionToRevert.type === 'ADD' || actionToRevert.type === 'DUPLICATE') {
@@ -290,19 +344,13 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
         const revertMap = new Map(
           actionToRevert.items.map((i) => [i.id, i.prevPosition])
         );
-
         setItems((prev) =>
           prev.map((item) => {
             const prevPos = revertMap.get(item.id);
             if (!prevPos) return item;
-            return {
-              ...item,
-              x: prevPos.x,
-              y: prevPos.y,
-            };
+            return { ...item, x: prevPos.x, y: prevPos.y };
           })
         );
-
         for (const i of actionToRevert.items) {
           const itm = items.find((it) => it.id === i.id);
           if (itm) {
@@ -358,7 +406,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
         }
       } else if (actionToRevert.type === 'PARTIAL_ERASE') {
         // Undo Partial Erase:
-        // 1. Delete created split sub-strokes
+        // 1. Soft-delete created split sub-strokes
         if (actionToRevert.createdItemIds.length > 0) {
           await Promise.all(
             actionToRevert.createdItemIds.map((id) => {
@@ -367,11 +415,11 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
             })
           );
         }
-        // 2. Restore deleted strokes
+        // 2. Restore originally erased strokes
         if (actionToRevert.deletedItemIds.length > 0) {
           await Promise.all(actionToRevert.deletedItemIds.map((id) => moodboardService.restoreItem(id)));
         }
-        // 3. Restore updated strokes back to their previous item state
+        // 3. Restore updated strokes to their pre-erase state
         if (actionToRevert.updatedItems.length > 0) {
           await Promise.all(
             actionToRevert.updatedItems.map((u) =>
@@ -385,7 +433,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
             )
           );
         }
-        // 4. Update React state: remove created, restore updated/deleted with originalStrokes
+        // 4. Update React state: remove created, restore originalStrokes
         setItems((prev) => {
           const createdSet = new Set(actionToRevert.createdItemIds);
           const origMap = new Map(actionToRevert.originalStrokes.map((s) => [s.id, s]));
@@ -402,7 +450,197 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     } catch (err) {
       console.error('Failed to execute undo:', err);
     }
-  }, [lastAction, selectedId, setSelectedId, setSelectedIds, items]);
+  }, [selectedId, setSelectedId, setSelectedIds, items]);
+
+  // Multi-step Redo — reapplies the most recently undone action
+  const redo = useCallback(async () => {
+    const { action: actionToRedo, remaining } = popFromStack(redoStackRef.current);
+    if (!actionToRedo) return;
+
+    redoStackRef.current = remaining;
+    undoStackRef.current = pushToStack(undoStackRef.current, actionToRedo);
+    setCanRedo(remaining.length > 0);
+    setCanUndo(true);
+
+    try {
+      if (actionToRedo.type === 'ADD' || actionToRedo.type === 'DUPLICATE') {
+        // Redo Add/Duplicate -> restore the soft-deleted item
+        setItems((prev) => {
+          if (prev.some((i) => i.id === actionToRedo.itemId)) return prev;
+          return [...prev, actionToRedo.item!];
+        });
+        setSelectedId(actionToRedo.itemId);
+        await moodboardService.restoreItem(actionToRedo.itemId);
+      } else if (actionToRedo.type === 'DELETE') {
+        // Redo Delete -> soft-delete again
+        setItems((prev) => prev.filter((i) => i.id !== actionToRedo.itemId));
+        if (selectedId === actionToRedo.itemId) setSelectedId(null);
+        await moodboardService.softDeleteItem(actionToRedo.itemId);
+      } else if (actionToRedo.type === 'BATCH_DELETE') {
+        // Redo Batch Delete -> soft-delete all again
+        const ids = new Set(actionToRedo.items.map((i) => i.id));
+        setItems((prev) => prev.filter((i) => !ids.has(i.id)));
+        setSelectedIds((prev) => prev.filter((id) => !ids.has(id)));
+        await Promise.all(actionToRedo.items.map((i) => moodboardService.softDeleteItem(i.id)));
+      } else if (
+        (actionToRedo.type === 'MOVE' || actionToRedo.type === 'RESIZE') &&
+        actionToRedo.nextGeometry
+      ) {
+        // Redo Move/Resize -> restore next geometry
+        const nextGeo = actionToRedo.nextGeometry;
+        setItems((prev) =>
+          prev.map((i) => {
+            if (i.id !== actionToRedo.itemId) return i;
+            return {
+              ...i,
+              x: nextGeo.x,
+              y: nextGeo.y,
+              width: nextGeo.width,
+              height: nextGeo.height,
+              z_index: nextGeo.zIndex ?? i.z_index,
+            };
+          })
+        );
+        await moodboardService.updateItem(actionToRedo.itemId, {
+          x: nextGeo.x,
+          y: nextGeo.y,
+          width: nextGeo.width,
+          height: nextGeo.height,
+          zIndex: nextGeo.zIndex,
+        });
+      } else if (actionToRedo.type === 'BATCH_MOVE') {
+        // Redo Batch Move -> restore next positions
+        const nextMap = new Map(
+          actionToRedo.items.map((i) => [i.id, i.nextPosition])
+        );
+        setItems((prev) =>
+          prev.map((item) => {
+            const nextPos = nextMap.get(item.id);
+            if (!nextPos) return item;
+            return { ...item, x: nextPos.x, y: nextPos.y };
+          })
+        );
+        for (const i of actionToRedo.items) {
+          const itm = items.find((it) => it.id === i.id);
+          if (itm) {
+            await moodboardService.updateItem(i.id, {
+              x: i.nextPosition.x,
+              y: i.nextPosition.y,
+              width: itm.width,
+              height: itm.height,
+              zIndex: itm.z_index,
+            });
+          }
+        }
+      } else if (actionToRedo.type === 'CONNECT_ITEMS') {
+        // Redo Connect -> re-add the connection
+        const fromItem = items.find((i) => i.id === actionToRedo.fromId);
+        if (fromItem) {
+          const rawConns = (fromItem.content as { connections?: ItemConnection[] })?.connections || [];
+          if (!rawConns.some((c) => c.id === actionToRedo.connection.id)) {
+            const updatedConns = [...rawConns, actionToRedo.connection];
+            const updatedContent = { ...(fromItem.content as object), connections: updatedConns };
+            setItems((prev) =>
+              prev.map((i) => (i.id === actionToRedo.fromId ? { ...i, content: updatedContent as unknown as MoodboardItemContent } : i))
+            );
+            await moodboardService.updateItem(actionToRedo.fromId, {
+              content: updatedContent as unknown as Json,
+            });
+          }
+        }
+      } else if (actionToRedo.type === 'DISCONNECT_ITEMS') {
+        // Redo Disconnect -> remove the connection again
+        const fromItem = items.find((i) => i.id === actionToRedo.fromId);
+        if (fromItem) {
+          const rawConns = (fromItem.content as { connections?: ItemConnection[] })?.connections || [];
+          const updatedConns = rawConns.filter((c) => c.id !== actionToRedo.connection.id);
+          const updatedContent = { ...(fromItem.content as object), connections: updatedConns };
+          setItems((prev) =>
+            prev.map((i) => (i.id === actionToRedo.fromId ? { ...i, content: updatedContent as unknown as MoodboardItemContent } : i))
+          );
+          await moodboardService.updateItem(actionToRedo.fromId, {
+            content: updatedContent as unknown as Json,
+          });
+        }
+      } else if (actionToRedo.type === 'UPDATE_CONNECTION_LABEL') {
+        // Redo Label Edit -> apply next label
+        const fromItem = items.find((i) => i.id === actionToRedo.fromId);
+        if (fromItem) {
+          const rawConns = (fromItem.content as { connections?: ItemConnection[] })?.connections || [];
+          const updatedConns = rawConns.map((c) =>
+            c.id === actionToRedo.connectionId ? { ...c, label: actionToRedo.nextLabel } : c
+          );
+          const updatedContent = { ...(fromItem.content as object), connections: updatedConns };
+          setItems((prev) =>
+            prev.map((i) => (i.id === actionToRedo.fromId ? { ...i, content: updatedContent as unknown as MoodboardItemContent } : i))
+          );
+          await moodboardService.updateItem(actionToRedo.fromId, {
+            content: updatedContent as unknown as Json,
+          });
+        }
+      } else if (actionToRedo.type === 'PARTIAL_ERASE') {
+        // Redo Partial Erase:
+        // 1. Re-soft-delete the originally erased strokes
+        if (actionToRedo.deletedItemIds.length > 0) {
+          await Promise.all(
+            actionToRedo.deletedItemIds.map((id) => moodboardService.softDeleteItem(id))
+          );
+        }
+        // 2. Restore the created split sub-strokes (soft-deleted by undo)
+        if (actionToRedo.createdItemIds.length > 0) {
+          await Promise.all(
+            actionToRedo.createdItemIds.map((id) => {
+              if (id.startsWith('temp-')) return Promise.resolve();
+              return moodboardService.restoreItem(id);
+            })
+          );
+        }
+        // 3. Re-apply post-erase geometry to updated strokes
+        if (actionToRedo.updatedItems.length > 0) {
+          await Promise.all(
+            actionToRedo.updatedItems.map((u) => {
+              const origContent = (u.prevItem.content as StrokeItemContent) || {};
+              const nextContent: StrokeItemContent = { ...origContent, points: u.nextRelativePoints };
+              return moodboardService.updateItem(u.id, {
+                x: u.nextX,
+                y: u.nextY,
+                width: u.nextWidth,
+                height: u.nextHeight,
+                content: nextContent as unknown as Json,
+              });
+            })
+          );
+        }
+        // 4. Update React state
+        setItems((prev) => {
+          const deletedSet = new Set(actionToRedo.deletedItemIds);
+          const updateMap = new Map(actionToRedo.updatedItems.map((u) => [u.id, u]));
+          // Remove originally deleted strokes
+          const withoutDeleted = prev.filter((i) => !deletedSet.has(i.id));
+          // Re-apply next geometry to updated strokes
+          const withUpdates = withoutDeleted.map((item) => {
+            const u = updateMap.get(item.id);
+            if (!u) return item;
+            const origContent = (item.content as StrokeItemContent) || {};
+            return {
+              ...item,
+              x: u.nextX,
+              y: u.nextY,
+              width: u.nextWidth,
+              height: u.nextHeight,
+              content: { ...origContent, points: u.nextRelativePoints } as unknown as MoodboardItemContent,
+            };
+          });
+          // Re-add created sub-strokes if they were removed by undo
+          const existingIds = new Set(withUpdates.map((i) => i.id));
+          const toAdd = actionToRedo.createdItems.filter((i) => !existingIds.has(i.id));
+          return [...withUpdates, ...toAdd];
+        });
+      }
+    } catch (err) {
+      console.error('Failed to execute redo:', err);
+    }
+  }, [selectedId, setSelectedId, setSelectedIds, items]);
 
   // Add reference item to canvas
   const addReferenceItem = async (
@@ -1015,14 +1253,20 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
         return [...withUpdates, ...optimisticCreated];
       });
 
-      // 3. Record single atomic undo action immediately
+      // 3. Record single atomic undo action immediately (with full redo-safe payload)
       recordUndoAction({
         type: 'PARTIAL_ERASE',
         originalStrokes,
+        createdItems: optimisticCreated,
         createdItemIds: optimisticCreated.map((i) => i.id),
         updatedItems: updates.map((u) => ({
           id: u.id,
           prevItem: originalStrokes.find((s) => s.id === u.id)!,
+          nextX: u.x,
+          nextY: u.y,
+          nextWidth: u.width,
+          nextHeight: u.height,
+          nextRelativePoints: u.relativePoints,
         })),
         deletedItemIds: deletedIds,
       });
@@ -1068,7 +1312,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
             : Promise.resolve([]),
         ]);
 
-        // Reconcile optimistic IDs to persistent DB IDs
+        // Reconcile optimistic IDs to persistent DB IDs across items state and both history stacks
         if (createdItems.length > 0) {
           const tempToReal = new Map<string, MoodboardItem>();
           optimisticCreated.forEach((temp, i) => {
@@ -1084,15 +1328,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
             })
           );
 
-          setLastAction((prevAction) => {
-            if (prevAction && prevAction.type === 'PARTIAL_ERASE') {
-              return {
-                ...prevAction,
-                createdItemIds: createdItems.map((c) => c.id),
-              };
-            }
-            return prevAction;
-          });
+          reconcileHistoryIds(tempToReal);
         }
 
         endSave();
@@ -1100,7 +1336,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
         endSave(err);
       }
     },
-    [beginSave, endSave, projectId, recordUndoAction]
+    [beginSave, endSave, projectId, recordUndoAction, reconcileHistoryIds]
   );
 
   // Bulk delete all selected items
@@ -1513,10 +1749,11 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     saveStatus,
     saveError,
     clearSaveError: () => setSaveError(null),
-    canUndo: !!lastAction,
-    lastAction,
+    canUndo,
+    canRedo,
     recordUndoAction,
     undo,
+    redo,
     nudgeItem,
     nudgeSelectedItems,
     alignSelectedItems,

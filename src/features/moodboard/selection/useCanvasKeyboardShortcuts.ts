@@ -38,6 +38,7 @@ export function useCanvasKeyboardShortcuts({
   onDuplicateSelected,
   onNudgeSelected,
   onUndo,
+  onRedo,
   onToolChange,
   isTextInputActive = isKeyboardTargetActive,
 }: UseCanvasKeyboardShortcutsOptions) {
@@ -97,6 +98,13 @@ export function useCanvasKeyboardShortcuts({
         return;
       }
 
+      // Redo: Cmd/Ctrl + Shift + Z (checked before Undo so Shift+Z is not swallowed)
+      if (isCmdOrCtrl && e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        onRedo?.();
+        return;
+      }
+
       // Undo: Cmd/Ctrl + Z (without Shift)
       if (isCmdOrCtrl && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -147,6 +155,7 @@ export function useCanvasKeyboardShortcuts({
       readOnly,
       onSelectAll,
       onUndo,
+      onRedo,
       selectedIds,
       onDeleteSelected,
       onDuplicateSelected,

@@ -115,6 +115,7 @@ interface MoodboardStageProps {
   onDropReference: (referenceData: unknown, canvasPosition: { x: number; y: number }) => void;
   onDropFiles: (files: FileList, canvasPosition: { x: number; y: number }) => void;
   onUndo?: () => void;
+  onRedo?: () => void;
   onNudge?: (id: string, dx: number, dy: number) => void;
   onZoomToFit?: (containerWidth?: number, containerHeight?: number) => void;
   onRecordUndoAction?: (action: UndoAction) => void;
@@ -163,6 +164,7 @@ export function MoodboardStage({
   onDropReference,
   onDropFiles,
   onUndo,
+  onRedo,
   onNudge,
   onZoomToFit,
   onRecordUndoAction,
@@ -696,6 +698,13 @@ export function MoodboardStage({
         return;
       }
 
+      // Redo: Cmd/Ctrl + Shift + Z (checked before Undo so Shift+Z is not swallowed)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        onRedo?.();
+        return;
+      }
+
       // Undo: Cmd/Ctrl + Z
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -775,6 +784,7 @@ export function MoodboardStage({
     editingColorItem,
     editingIdeaItem,
     onUndo,
+    onRedo,
     onDeleteItem,
     onDeleteSelected,
     onDuplicateItem,

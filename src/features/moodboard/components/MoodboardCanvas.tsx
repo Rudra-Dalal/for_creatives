@@ -64,7 +64,9 @@ export function MoodboardCanvas({
     saveError,
     clearSaveError,
     canUndo,
+    canRedo,
     undo,
+    redo,
     nudgeItem,
     nudgeSelectedItems,
     zoomToFit,
@@ -220,6 +222,10 @@ export function MoodboardCanvas({
   const handleUndo = useCallback(async () => {
     await undo();
   }, [undo]);
+
+  const handleRedo = useCallback(async () => {
+    await redo();
+  }, [redo]);
 
   const handlePlaceReference = async (reference: Reference) => {
     try {
@@ -534,6 +540,7 @@ export function MoodboardCanvas({
         onDropReference={handleDropReference}
         onDropFiles={handleDropFiles}
         onUndo={handleUndo}
+        onRedo={handleRedo}
         onNudge={nudgeItem}
         onZoomToFit={zoomToFit}
         onRecordUndoAction={recordUndoAction}
@@ -621,6 +628,8 @@ export function MoodboardCanvas({
         onChangeEraserSize={setEraserSize}
         canUndo={canUndo}
         onUndo={handleUndo}
+        canRedo={canRedo}
+        onRedo={handleRedo}
         isLibraryOpen={isLibraryOpen}
         onToggleLibrary={() => setIsLibraryOpen((prev) => !prev)}
         onUploadImageFile={(file) => handleUploadImageFile(file, file.name)}
