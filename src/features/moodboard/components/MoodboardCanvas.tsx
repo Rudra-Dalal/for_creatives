@@ -504,6 +504,7 @@ export function MoodboardCanvas({
         selectedIds={selectedIds}
         viewport={viewport}
         readOnly={readOnly}
+        isLoading={isLoading}
         shareToken={shareToken}
         activeTool={activeTool}
         penColor={penColor}
@@ -641,7 +642,11 @@ export function MoodboardCanvas({
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onResetZoom={resetViewport}
-        onZoomToFit={() => zoomToFit()}
+        onZoomToFit={() => {
+          const w = typeof window !== 'undefined' ? window.innerWidth : 800;
+          const h = typeof window !== 'undefined' ? window.innerHeight : 600;
+          zoomToFit(w, h);
+        }}
         onExportImage={() => exportFnRef.current?.(projectName || 'moodboard')}
         selectedItemType={selectedItemType}
         selectedReferenceLinksCount={selectedReferenceLinksCount}

@@ -29,6 +29,7 @@ import {
 } from '../utils/layoutUtils';
 import { extractActiveConnections } from '../connectors/connectionResolution';
 import { getConnectedReferenceIdsForIdea } from '../connectors/semanticDirection';
+import { calculateZoomToFit } from '../coordinates';
 
 export type UndoAction =
   | {
@@ -1519,34 +1520,8 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
   // Zoom to fit all canvas items
   const zoomToFit = useCallback(
     (containerWidth = 800, containerHeight = 600) => {
-      if (items.length === 0) {
-        setViewport({ x: 0, y: 0, scale: 1 });
-        return;
-      }
-      const minX = Math.min(...items.map((i) => i.x));
-      const minY = Math.min(...items.map((i) => i.y));
-      const maxX = Math.max(...items.map((i) => i.x + i.width));
-      const maxY = Math.max(...items.map((i) => i.y + i.height));
-
-      const contentWidth = Math.max(maxX - minX, 100);
-      const contentHeight = Math.max(maxY - minY, 100);
-      const padding = 80;
-
-      const scaleX = (containerWidth - padding * 2) / contentWidth;
-      const scaleY = (containerHeight - padding * 2) / contentHeight;
-      const newScale = Math.min(Math.max(Math.min(scaleX, scaleY), 0.25), 1.5);
-
-      const centerX = (minX + maxX) / 2;
-      const centerY = (minY + maxY) / 2;
-
-      const newX = containerWidth / 2 - centerX * newScale;
-      const newY = containerHeight / 2 - centerY * newScale;
-
-      setViewport({
-        x: Math.round(newX),
-        y: Math.round(newY),
-        scale: Number(newScale.toFixed(2)),
-      });
+      const fit = calculateZoomToFit(items, containerWidth, containerHeight);
+      setViewport(fit);
     },
     [items]
   );

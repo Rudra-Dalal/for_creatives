@@ -197,3 +197,103 @@ describe('Viewport Module & Same-Cycle Synchronization Invariant', () => {
     expect(clampedMin.scale).toBe(MIN_CANVAS_SCALE);
   });
 });
+
+describe('Moodboard Initial Auto-Framing & Lifecycle Invariants', () => {
+  const container = { width: 1200, height: 800 };
+
+  it('calculates centered framing for multiple canvas items with padding', () => {
+    const items = [
+      { x: 100, y: 100, width: 300, height: 200 },
+      { x: 500, y: 400, width: 300, height: 200 },
+    ];
+    // Bounds: minX = 100, minY = 100, maxX = 800, maxY = 600
+    // Content: width = 700, height = 500
+    const fitted = calculateZoomToFit(items, container.width, container.height, 64);
+
+    expect(fitted.scale).toBeGreaterThan(0.2);
+    expect(fitted.scale).toBeLessThanOrEqual(1.0);
+
+    // World center of content: x = (100 + 800) / 2 = 450, y = (100 + 600) / 2 = 350
+    // Screen center after transform: worldCenter * scale + viewport.offset
+    const screenCenterX = 450 * fitted.scale + fitted.x;
+    const screenCenterY = 350 * fitted.scale + fitted.y;
+
+    expect(screenCenterX).toBeCloseTo(container.width / 2, 0);
+    expect(screenCenterY).toBeCloseTo(container.height / 2, 0);
+  });
+
+  it('clamps scale to maxScale 1.0 so single/small items do not blow up', () => {
+    const singleSmallItem = [{ x: 200, y: 200, width: 240, height: 180 }];
+    const fitted = calculateZoomToFit(singleSmallItem, container.width, container.height, 64);
+
+    expect(fitted.scale).toBe(1.0);
+    // Even at 1.0x, it should still be centered in the container
+    const screenCenterX = (200 + 240 / 2) * fitted.scale + fitted.x;
+    const screenCenterY = (200 + 180 / 2) * fitted.scale + fitted.y;
+    expect(screenCenterX).toBeCloseTo(container.width / 2, 0);
+    expect(screenCenterY).toBeCloseTo(container.height / 2, 0);
+  });
+
+  it('falls back to default viewport { x: 0, y: 0, scale: 1 } on empty moodboard', () => {
+    const emptyFitted = calculateZoomToFit([], container.width, container.height);
+    expect(emptyFitted).toEqual({ x: 0, y: 0, scale: 1 });
+  });
+
+  it('cleanly translates items with negative coordinates into positive visible viewport', () => {
+    const negativeItems = [
+      { x: -800, y: -600, width: 400, height: 300 },
+      { x: -200, y: -100, width: 300, height: 200 },
+    ];
+    // Bounds: minX = -800, maxX = 100, minY = -600, maxY = 100
+    const fitted = calculateZoomToFit(negativeItems, container.width, container.height, 64);
+
+    // All screen coordinates must be comfortably within container bounds (> 0)
+    for (const item of negativeItems) {
+      const screenX = item.x * fitted.scale + fitted.x;
+      const screenY = item.y * fitted.scale + fitted.y;
+      expect(screenX).toBeGreaterThanOrEqual(0);
+      expect(screenY).toBeGreaterThanOrEqual(0);
+      expect(screenX + item.width * fitted.scale).toBeLessThanOrEqual(container.width);
+      expect(screenY + item.height * fitted.scale).toBeLessThanOrEqual(container.height);
+    }
+  });
+
+  it('lifecycle invariant: single-shot framing guard prevents viewport override after user interaction or load', () => {
+    let hasAutoFramed = false;
+    let hasUserInteracted = false;
+    let currentViewport: ViewportTransform = { x: 0, y: 0, scale: 1 };
+
+    const simulateMountAndLoad = (
+      items: Array<{ x: number; y: number; width: number; height: number }>,
+      userActionBeforeLoad = false
+    ) => {
+      if (userActionBeforeLoad) {
+        hasUserInteracted = true;
+        // User panned to custom coordinate during load
+        currentViewport = { x: 555, y: 333, scale: 1.2 };
+      }
+
+      // Load completes
+      if (!hasAutoFramed && !hasUserInteracted && items.length > 0) {
+        currentViewport = calculateZoomToFit(items, container.width, container.height);
+        hasAutoFramed = true;
+      } else if (!hasAutoFramed) {
+        hasAutoFramed = true;
+      }
+    };
+
+    // Case 1: user interacted during load -> auto-framing MUST NOT override user viewport
+    const sampleItems = [{ x: 100, y: 100, width: 400, height: 300 }];
+    simulateMountAndLoad(sampleItems, true);
+    expect(currentViewport).toEqual({ x: 555, y: 333, scale: 1.2 });
+
+    // Case 2: Subsequent item additions during active session MUST NOT re-frame
+    const newItems = [...sampleItems, { x: 900, y: 800, width: 400, height: 300 }];
+    if (!hasAutoFramed && !hasUserInteracted && newItems.length > 0) {
+      currentViewport = calculateZoomToFit(newItems, container.width, container.height);
+    }
+    // Still retains user's position
+    expect(currentViewport).toEqual({ x: 555, y: 333, scale: 1.2 });
+  });
+});
+

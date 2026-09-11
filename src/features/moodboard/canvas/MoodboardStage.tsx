@@ -29,6 +29,7 @@ import {
   getPointerCanvasPosition,
   canvasToScreen,
   screenDistanceToCanvas,
+  calculateZoomToFit,
   type CanvasPoint,
 } from '../coordinates';
 import { usePenTool } from '../items/usePenTool';
@@ -49,6 +50,7 @@ interface MoodboardStageProps {
   selectedIds?: string[];
   viewport: CanvasViewport;
   readOnly?: boolean;
+  isLoading?: boolean;
   shareToken?: string;
   activeTool?: 'select' | 'pen' | 'eraser';
   penColor?: string;
@@ -128,6 +130,7 @@ export function MoodboardStage({
   selectedIds,
   viewport,
   readOnly = false,
+  isLoading = false,
   shareToken,
   activeTool = 'select',
   penColor = '#D97706',
@@ -505,6 +508,45 @@ export function MoodboardStage({
     onZoomToFit,
     isTextInputActive,
   });
+
+  // Single-shot auto-framing on initial load and user interaction tracking
+  const hasAutoFramedRef = useRef(false);
+  const hasUserInteractedRef = useRef(false);
+
+  const markUserInteracted = useCallback(() => {
+    hasUserInteractedRef.current = true;
+  }, []);
+
+  // Frame visible content on initial load once items & real container dimensions are available
+  useEffect(() => {
+    if (hasAutoFramedRef.current || hasUserInteractedRef.current) return;
+    if (isLoading) return;
+    if (dimensions.width <= 0 || dimensions.height <= 0) return;
+
+    if (items.length > 0) {
+      const fitted = calculateZoomToFit(
+        items,
+        dimensions.width,
+        dimensions.height,
+        64,
+        0.2,
+        1.0
+      );
+
+      const stage = stageRef.current;
+      if (stage) {
+        stage.x(fitted.x);
+        stage.y(fitted.y);
+        stage.scaleX(fitted.scale);
+        stage.scaleY(fitted.scale);
+        stage.batchDraw();
+      }
+
+      onViewportChange(fitted);
+    }
+
+    hasAutoFramedRef.current = true;
+  }, [items, dimensions.width, dimensions.height, isLoading, onViewportChange]);
 
   // Real-time live coordinates lookup during active dragging (keeps anchors and connector lines attached)
   const getItemLiveBounds = useCallback(
@@ -890,6 +932,7 @@ export function MoodboardStage({
 
   // Synchronized drag move for items, connector arrows, and anchor handles
   const handleStageDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
+    markUserInteracted();
     if (handleViewportDragMove(e)) return;
     handleItemDragMove(e);
   };
@@ -931,6 +974,7 @@ export function MoodboardStage({
 
   const handleItemPointerDown = useCallback(
     (id: string, node: Konva.Node) => {
+      markUserInteracted();
       if (activeTool === 'pen' || activeTool === 'eraser') return;
       nodeMapRef.current.set(id, node);
       // When holding shift, toggle happens on click to allow shift-drag
@@ -944,7 +988,7 @@ export function MoodboardStage({
         setSelectedNodes([node]);
       }
     },
-    [activeTool, isShiftPressed, effectiveSelectedIds, onSelectIds, onSelectId]
+    [markUserInteracted, activeTool, isShiftPressed, effectiveSelectedIds, onSelectIds, onSelectId]
   );
 
   const handleItemClick = useCallback(
@@ -971,6 +1015,7 @@ export function MoodboardStage({
 
   // Handle Stage Mouse Down for Marquee selection or freehand pen stroke
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    markUserInteracted();
     if ('button' in e.evt && e.evt.button === 1) return;
     if (isSpacePressed) return;
 
@@ -1354,7 +1399,10 @@ export function MoodboardStage({
   return (
     <div
       ref={containerRef}
-      onMouseDown={handleContainerMouseDown}
+      onMouseDown={(e) => {
+        markUserInteracted();
+        handleContainerMouseDown(e);
+      }}
       onAuxClick={(e) => {
         if (e.button === 1) e.preventDefault();
       }}
@@ -1388,7 +1436,10 @@ export function MoodboardStage({
         scaleX={viewport.scale}
         scaleY={viewport.scale}
         draggable={isSpacePressed}
-        onWheel={handleWheel}
+        onWheel={(e) => {
+          markUserInteracted();
+          handleWheel(e);
+        }}
         onDragEnd={handleStageDragEnd}
         onDragMove={handleStageDragMove}
         onMouseDown={handleStageMouseDown}
