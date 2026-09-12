@@ -2,6 +2,7 @@
 
 import React, { useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '../../../components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -330,17 +331,35 @@ export function MoodboardToolbar({
             <span>Redo</span>
           </button>
 
-          {/* Auto-Arrange Grid Button */}
+          {/* Smart Arrange Button with Contextual Tooltip */}
           {onAutoArrange && (
-            <button
-              type="button"
-              onClick={onAutoArrange}
-              className="flex h-7 items-center gap-1.5 px-2.5 rounded-full text-xs text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors cursor-pointer"
-              title="Auto-arrange items into an organized grid"
-            >
-              <LayoutGrid className="h-3.5 w-3.5 text-accent" />
-              <span>Arrange</span>
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onAutoArrange}
+                  aria-label={selectedCount >= 2 ? `Arrange Selection (${selectedCount} items)` : 'Arrange Board'}
+                  title={selectedCount >= 2 ? `Arrange Selection (${selectedCount} items)` : 'Arrange Board'}
+                  className="flex h-7 items-center gap-1.5 px-2.5 rounded-full text-xs text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5 text-accent" />
+                  <span>Arrange</span>
+                  <span className="sr-only">
+                    {selectedCount >= 2 ? ` Selection (${selectedCount} items)` : ' Board'}
+                  </span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8} className="text-center max-w-[220px]">
+                <p className="font-medium text-foreground">
+                  {selectedCount >= 2 ? `Arrange Selection (${selectedCount} items)` : 'Arrange Board'}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {selectedCount >= 2
+                    ? 'Smart organize selected items without moving the rest of the board'
+                    : 'Smart organize all items on the canvas'}
+                </p>
+              </TooltipContent>
+            </Tooltip>
           )}
 
           <div className="h-4 w-px bg-border-subtle mx-1" />

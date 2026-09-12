@@ -18,12 +18,13 @@ import type {
 } from '../types';
 import type { Json } from '@/types/database.types';
 import type { Reference } from '@/features/references/types';
-import { getImageNaturalDimensions } from '@/lib/utils/image';
+import { getImageNaturalDimensions } from '../../../lib/utils/image';
 import { getCanvasSafeImageUrl } from '../utils/canvasImageUtils';
 import {
   calculateAlignment,
   calculateDistribution,
   calculateAutoArrange,
+  calculateSmartArrange,
   type AlignmentType,
   type DistributionType,
 } from '../utils/layoutUtils';
@@ -1419,25 +1420,40 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
   // Batch move items with single undo step (used by Align, Distribute, Auto-Arrange)
   const batchMoveItems = useCallback(
     (updates: Array<{ id: string; x: number; y: number }>) => {
-      if (updates.length === 0) return;
+      if (updates.length === 0) return false;
 
+      const updateMap = new Map(updates.map((u) => [u.id, { x: u.x, y: u.y }]));
+
+      // Identify items that actually changed position
       const undoItems: Array<{
         id: string;
         prevPosition: { x: number; y: number };
         nextPosition: { x: number; y: number };
       }> = [];
 
-      const updateMap = new Map(updates.map((u) => [u.id, { x: u.x, y: u.y }]));
-
-      setItems((prev) =>
-        prev.map((item) => {
-          const nextPos = updateMap.get(item.id);
-          if (!nextPos) return item;
+      for (const item of items) {
+        const nextPos = updateMap.get(item.id);
+        if (
+          nextPos &&
+          (Math.round(nextPos.x) !== Math.round(item.x) ||
+            Math.round(nextPos.y) !== Math.round(item.y))
+        ) {
           undoItems.push({
             id: item.id,
             prevPosition: { x: item.x, y: item.y },
             nextPosition: { x: nextPos.x, y: nextPos.y },
           });
+        }
+      }
+
+      if (undoItems.length === 0) return false;
+
+      const movedMap = new Map(undoItems.map((u) => [u.id, u.nextPosition]));
+
+      setItems((prev) =>
+        prev.map((item) => {
+          const nextPos = movedMap.get(item.id);
+          if (!nextPos) return item;
           return {
             ...item,
             x: nextPos.x,
@@ -1446,25 +1462,25 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
         })
       );
 
-      if (undoItems.length > 0) {
-        recordUndoAction({
-          type: 'BATCH_MOVE',
-          items: undoItems,
-        });
+      recordUndoAction({
+        type: 'BATCH_MOVE',
+        items: undoItems,
+      });
 
-        for (const update of updates) {
-          const itm = items.find((i) => i.id === update.id);
-          if (itm) {
-            persistItemGeometry(update.id, {
-              x: update.x,
-              y: update.y,
-              width: itm.width,
-              height: itm.height,
-              zIndex: itm.z_index,
-            });
-          }
+      for (const undoItem of undoItems) {
+        const itm = items.find((i) => i.id === undoItem.id);
+        if (itm) {
+          persistItemGeometry(undoItem.id, {
+            x: undoItem.nextPosition.x,
+            y: undoItem.nextPosition.y,
+            width: itm.width,
+            height: itm.height,
+            zIndex: itm.z_index,
+          });
         }
       }
+
+      return true;
     },
     [items, persistItemGeometry, recordUndoAction]
   );
@@ -1491,12 +1507,49 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     [items, selectedIds, selectedId, batchMoveItems]
   );
 
-  // Auto-arrange items into an organized grid
-  const autoArrange = useCallback(() => {
-    const activeIds = selectedIds.length > 1 ? selectedIds : undefined;
-    const updates = calculateAutoArrange(items, activeIds);
-    batchMoveItems(updates);
-  }, [items, selectedIds, batchMoveItems]);
+  // Smart Arrange items preserving creative structure, relationships, and hierarchy
+  const autoArrange = useCallback(
+    (
+      containerWidth?: number | unknown,
+      containerHeight?: number,
+      targetIdsOverride?: string[]
+    ) => {
+      const activeIds = targetIdsOverride ?? (selectedIds.length > 1 ? selectedIds : undefined);
+      const isSelectionArrange = Boolean(activeIds && activeIds.length >= 2);
+      const updates = calculateSmartArrange(items, activeIds);
+      const didMove = batchMoveItems(updates);
+
+      // Reframe viewport only for full-board arrange and only if positions actually changed
+      if (didMove && !isSelectionArrange) {
+        const updateMap = new Map(updates.map((u) => [u.id, u]));
+        const nextItems = items
+          .filter((i) => !i.deleted_at)
+          .map((i) => {
+            const up = updateMap.get(i.id);
+            return up ? { ...i, x: up.x, y: up.y } : i;
+          });
+
+        const w =
+          typeof containerWidth === 'number' && containerWidth > 0
+            ? containerWidth
+            : typeof window !== 'undefined'
+              ? window.innerWidth
+              : 800;
+        const h =
+          typeof containerHeight === 'number' && containerHeight > 0
+            ? containerHeight
+            : typeof window !== 'undefined'
+              ? window.innerHeight
+              : 600;
+
+        const fitted = calculateZoomToFit(nextItems, w, h, 80);
+        setViewport(fitted);
+      }
+
+      return didMove;
+    },
+    [items, selectedIds, batchMoveItems, setViewport]
+  );
 
   // Viewport Zoom & Pan Helpers
   const zoomIn = () => {
@@ -1734,6 +1787,7 @@ export function useMoodboard(projectId: string, initialItems?: MoodboardItem[], 
     alignSelectedItems,
     distributeSelectedItems,
     autoArrange,
+    smartArrange: autoArrange,
     zoomToFit,
     refetch: fetchItems,
     addReferenceItem,
