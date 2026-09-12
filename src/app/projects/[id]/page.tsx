@@ -16,14 +16,20 @@ import { ArrowLeft } from 'lucide-react';
 import { ReferenceLibrary } from '@/features/references/components/ReferenceLibrary';
 import { DirectionNotesView } from '@/features/creative-direction/components/DirectionNotesView';
 import { MoodboardCanvas } from '@/features/moodboard/components/MoodboardCanvas';
+import { StoryboardView } from '@/features/storyboard/components/StoryboardView';
 import { AddReferenceDialog } from '@/features/references/components/AddReferenceDialog';
 import { referenceService } from '@/features/references/services/referenceService';
 import type { CreateReferenceInput } from '@/features/references/validation/referenceSchema';
 
-type TabType = 'references' | 'moodboard' | 'direction';
+type TabType = 'references' | 'moodboard' | 'direction' | 'storyboard';
 
 function isValidTab(val: unknown): val is TabType {
-  return val === 'references' || val === 'moodboard' || val === 'direction';
+  return (
+    val === 'references' ||
+    val === 'moodboard' ||
+    val === 'direction' ||
+    val === 'storyboard'
+  );
 }
 
 export default function ProjectWorkspacePage() {
@@ -216,6 +222,11 @@ export default function ProjectWorkspacePage() {
           {/* Creative Direction Tab: Fully Functional Statements & Bidirectional Links */}
           <TabsContent value="direction" className="flex-1 flex flex-col mt-0">
             <DirectionNotesView key={`dir-${refreshKey}`} projectId={project.id} projectName={project.name} />
+          </TabsContent>
+
+          {/* Storyboard Tab: Narrative Sequence & Shot Shell */}
+          <TabsContent value="storyboard" className="flex-1 flex flex-col mt-0">
+            <StoryboardView key={`sb-${refreshKey}`} projectId={project.id} projectName={project.name} />
           </TabsContent>
         </Tabs>
       </main>

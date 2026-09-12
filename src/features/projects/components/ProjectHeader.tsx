@@ -106,6 +106,17 @@ export function ProjectHeader({
             >
               <span className="hidden md:inline">Creative </span>Direction
             </button>
+            <button
+              type="button"
+              onClick={() => onTabChange('storyboard')}
+              className={`rounded px-2 sm:px-3 py-1 text-[11px] sm:text-xs font-medium transition-colors ${
+                activeTab === 'storyboard'
+                  ? 'bg-muted text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Storyboard
+            </button>
           </nav>
         )}
 

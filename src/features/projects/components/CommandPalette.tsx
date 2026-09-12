@@ -13,6 +13,7 @@ import {
   Bookmark,
   LayoutGrid,
   Compass,
+  Clapperboard,
   Plus,
   Type,
   Palette,
@@ -36,7 +37,7 @@ export interface CommandItem {
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
-  onNavigate: (tab: 'references' | 'moodboard' | 'direction') => void;
+  onNavigate: (tab: 'references' | 'moodboard' | 'direction' | 'storyboard') => void;
   onAddReference?: () => void;
   onOpenTrash?: () => void;
   onOpenShare?: () => void;
@@ -95,6 +96,17 @@ export function CommandPalette({
         icon: Compass,
         action: () => {
           onNavigate('direction');
+          onClose();
+        },
+      },
+      {
+        id: 'nav-storyboard',
+        category: 'Navigation',
+        label: 'Go to Storyboard',
+        keywords: 'storyboard shots scenes script visual sequence frames narrative',
+        icon: Clapperboard,
+        action: () => {
+          onNavigate('storyboard');
           onClose();
         },
       },
