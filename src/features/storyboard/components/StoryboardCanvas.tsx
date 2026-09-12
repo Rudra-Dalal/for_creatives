@@ -21,6 +21,8 @@ import {
   findIntersectingShots,
   SCENE_MIN_WIDTH,
   SCENE_MIN_HEIGHT,
+  SCENE_PADDING,
+  SCENE_HEADER_HEIGHT,
 } from '../utils/storyboardGeometry';
 import type {
   StoryboardViewport,
@@ -472,7 +474,7 @@ export function StoryboardCanvas({
   // --------------------------------------------------------------------------
 
   const handleStageMouseDown = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
+    async (e: Konva.KonvaEventObject<MouseEvent>) => {
       // If user clicks on stage background directly with select tool -> initiate marquee
       const isLeftClick = e.evt.button === 0;
       if (!isLeftClick) return;
@@ -487,14 +489,18 @@ export function StoryboardCanvas({
 
       // If tool is 'scene': create a scene at this position
       if (activeTool === 'scene' && onCreateScene && !readOnly) {
-        onCreateScene(`Scene ${scenes.length + 1}`, '', worldPos.x, worldPos.y);
+        const newScene = await onCreateScene(`Scene ${scenes.length + 1}`, '', worldPos.x, worldPos.y);
+        if (newScene) {
+          setSelectedSceneId(newScene.id);
+          setSelectedShotIds(new Set());
+        }
         setActiveTool('select');
         return;
       }
 
       // If tool is 'shot': create a shot inside target scene
       if (activeTool === 'shot' && onCreateShot && !readOnly) {
-        const targetScene =
+        let targetScene =
           selectedScene ||
           scenes.find(
             (s) =>
@@ -505,18 +511,40 @@ export function StoryboardCanvas({
           ) ||
           scenes[0];
 
+        if (!targetScene && onCreateScene) {
+          // Zero scenes exist: auto-create Scene 1 enclosing the clicked position
+          const sceneX = Math.round(worldPos.x - SCENE_PADDING);
+          const sceneY = Math.round(worldPos.y - SCENE_HEADER_HEIGHT - SCENE_PADDING);
+          const newScene = await onCreateScene('Scene 1', '', sceneX, sceneY);
+          if (newScene) {
+            targetScene = {
+              ...newScene,
+              shots: [],
+            };
+          }
+        }
+
         if (targetScene) {
-          onCreateShot(targetScene.id, {
+          const newShot = await onCreateShot(targetScene.id, {
             x: worldPos.x,
             y: worldPos.y,
           });
+          if (newShot) {
+            setSelectedSceneId(null);
+            setSelectedShotIds(new Set([newShot.id]));
+          }
         }
         setActiveTool('select');
         return;
       }
 
       // If clicked on stage background, start marquee
-      if (e.target === stage && activeTool === 'select') {
+      const isBackground =
+        e.target === stage ||
+        e.target.name() === 'storyboard-background-layer' ||
+        e.target.name() === 'storyboard-objects-layer';
+
+      if (isBackground && activeTool === 'select') {
         isMarqueeActiveRef.current = true;
         marqueeStartPointRef.current = worldPos;
         setMarqueeBounds({
@@ -593,7 +621,12 @@ export function StoryboardCanvas({
   const handleStageClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       const stage = e.target.getStage();
-      if (e.target === stage) {
+      const isBackground =
+        e.target === stage ||
+        e.target.name() === 'storyboard-background-layer' ||
+        e.target.name() === 'storyboard-objects-layer';
+
+      if (isBackground) {
         handleClearSelection();
       }
     },

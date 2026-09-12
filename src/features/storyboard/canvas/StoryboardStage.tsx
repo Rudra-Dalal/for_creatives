@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { Stage } from 'react-konva';
+import { Stage, Layer } from 'react-konva';
 import type Konva from 'konva';
 import { StoryboardBackground } from './StoryboardBackground';
 import { StoryboardMarquee } from './StoryboardMarquee';
@@ -49,7 +49,16 @@ export function StoryboardStage({
   const panStartViewportRef = useRef<StoryboardViewport>(viewport);
 
   // Local cursor styling
-  const [cursorStyle, setCursorStyle] = useState<string>('default');
+  const [cursorStyle, setCursorStyle] = useState<string>(
+    activeTool === 'select' ? 'default' : 'crosshair'
+  );
+
+  // Synchronize cursor style when active tool changes
+  useEffect(() => {
+    if (!isPanningRef.current && !isSpacePressedRef.current) {
+      setCursorStyle(activeTool === 'select' ? 'default' : 'crosshair');
+    }
+  }, [activeTool]);
 
   // Spacebar key tracking for pan shortcut
   useEffect(() => {
@@ -227,11 +236,11 @@ export function StoryboardStage({
           viewport={viewport}
         />
 
-        {/* Storyboard Objects (Scenes, Shots) */}
-        {children}
-
-        {/* Marquee Selection Layer */}
-        <StoryboardMarquee bounds={marqueeBounds} />
+        {/* Storyboard Interactive Objects & Marquee Layer */}
+        <Layer name="storyboard-objects-layer">
+          {children}
+          <StoryboardMarquee bounds={marqueeBounds} />
+        </Layer>
       </Stage>
     </div>
   );

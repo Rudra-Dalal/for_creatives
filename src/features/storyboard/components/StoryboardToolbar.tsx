@@ -57,8 +57,8 @@ export function StoryboardToolbar({
             onClick={() => onChangeActiveTool('select')}
             className={`flex items-center justify-center h-8 w-8 rounded transition-colors ${
               activeTool === 'select'
-                ? 'bg-muted text-accent shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle'
+                ? 'bg-accent/15 text-accent border border-accent/40 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle border border-transparent'
             }`}
             title="Select & Move (V)"
           >
@@ -70,8 +70,8 @@ export function StoryboardToolbar({
             onClick={() => onChangeActiveTool('shot')}
             className={`flex items-center justify-center h-8 w-8 rounded transition-colors ${
               activeTool === 'shot'
-                ? 'bg-muted text-accent shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle'
+                ? 'bg-accent/15 text-accent border border-accent/40 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle border border-transparent'
             }`}
             title="Add Shot (S)"
           >
@@ -83,8 +83,8 @@ export function StoryboardToolbar({
             onClick={() => onChangeActiveTool('scene')}
             className={`flex items-center justify-center h-8 w-8 rounded transition-colors ${
               activeTool === 'scene'
-                ? 'bg-muted text-accent shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle'
+                ? 'bg-accent/15 text-accent border border-accent/40 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle border border-transparent'
             }`}
             title="Add Scene Territory (C)"
           >
@@ -96,8 +96,8 @@ export function StoryboardToolbar({
             onClick={() => onChangeActiveTool('connect')}
             className={`flex items-center justify-center h-8 w-8 rounded transition-colors ${
               activeTool === 'connect'
-                ? 'bg-muted text-accent shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle'
+                ? 'bg-accent/15 text-accent border border-accent/40 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle border border-transparent'
             }`}
             title="Sequence Connection (X)"
           >
@@ -109,8 +109,8 @@ export function StoryboardToolbar({
             onClick={() => onChangeActiveTool('pen')}
             className={`flex items-center justify-center h-8 w-8 rounded transition-colors ${
               activeTool === 'pen'
-                ? 'bg-muted text-accent shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle'
+                ? 'bg-accent/15 text-accent border border-accent/40 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle border border-transparent'
             }`}
             title="Freehand Pen (P)"
           >
@@ -122,8 +122,8 @@ export function StoryboardToolbar({
             onClick={() => onChangeActiveTool('eraser')}
             className={`flex items-center justify-center h-8 w-8 rounded transition-colors ${
               activeTool === 'eraser'
-                ? 'bg-muted text-accent shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle'
+                ? 'bg-accent/15 text-accent border border-accent/40 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-surface-subtle border border-transparent'
             }`}
             title="Eraser (E)"
           >
