@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     const domain = extractDomain(targetUrl);
 
     try {
-      const { html, finalUrl } = await safeFetchHtml(targetUrl);
+      const { html, finalUrl } = await safeFetchHtml(targetUrl, 5);
       const $ = cheerio.load(html);
 
       // 1. Extract Title
@@ -108,6 +108,24 @@ export async function POST(request: Request) {
     } catch (fetchError: unknown) {
       // If it is an intentional SSRF security block, reject with 400
       if (fetchError instanceof SSRFValidationError) {
+        // If the error is redirect-chain exhaustion, gracefully fall back
+        // to manual entry rather than failing the request with HTTP 400
+        if (fetchError.message === 'Too many redirects') {
+          return NextResponse.json({
+            success: false,
+            fallbackNeeded: true,
+            data: {
+              url: targetUrl,
+              title: domain,
+              thumbnail_url: '',
+              source_domain: domain,
+              description: '',
+              fallbackNeeded: true,
+            } satisfies ScrapedMetadata,
+            error: 'Too many redirects',
+          });
+        }
+
         return NextResponse.json(
           { error: fetchError.message },
           { status: 400 }

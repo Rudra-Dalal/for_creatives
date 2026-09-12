@@ -180,17 +180,39 @@ export function CanvasReferenceItem({
             y={1}
             width={item.width - 2}
             height={item.height - 2}
-            fill="#1f1e1a"
+            fill="#1c1b18"
+            stroke="#2e2c26"
+            strokeWidth={1}
             cornerRadius={cornerRadius - 1}
+          />
+          {/* Subtle Globe Glyph Badge */}
+          <Rect
+            x={(item.width - 32) / 2}
+            y={Math.max(12, item.height / 2 - 42)}
+            width={32}
+            height={32}
+            fill="#262521"
+            stroke="#38362e"
+            strokeWidth={1}
+            cornerRadius={16}
+          />
+          <Path
+            data="M 12 2 A 10 10 0 1 0 12 22 A 10 10 0 1 0 12 2 Z M 12 2 C 8.5 2 6.5 6.5 6.5 12 C 6.5 17.5 8.5 22 12 22 C 15.5 22 17.5 17.5 17.5 12 C 17.5 6.5 15.5 2 12 2 Z M 2 12 L 22 12"
+            x={(item.width - 32) / 2 + 8}
+            y={Math.max(12, item.height / 2 - 42) + 8}
+            scale={{ x: 0.67, y: 0.67 }}
+            stroke="#8c8a82"
+            strokeWidth={1.5}
           />
           <Text
             text={title}
             x={16}
-            y={item.height / 2 - 12}
+            y={Math.max(48, item.height / 2 - 4)}
             width={item.width - 32}
             fill="#e6e4df"
             fontSize={13}
             fontFamily="Inter"
+            fontStyle="500"
             align="center"
             ellipsis
           />
@@ -198,7 +220,7 @@ export function CanvasReferenceItem({
             <Text
               text={domain}
               x={16}
-              y={item.height / 2 + 10}
+              y={Math.max(68, item.height / 2 + 16)}
               width={item.width - 32}
               fill="#8c8a82"
               fontSize={10}
@@ -210,8 +232,8 @@ export function CanvasReferenceItem({
         </Group>
       )}
 
-      {/* Subtle Domain Tag Overlay on bottom left */}
-      {domain && (
+      {/* Subtle Domain Tag Overlay on bottom left (shown over loaded images) */}
+      {isImageLoaded && domain && (
         <Group x={6} y={item.height - 22}>
           <Rect
             width={Math.min(domain.length * 6 + 12, item.width - 12)}

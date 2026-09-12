@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -62,12 +62,47 @@ export function ManualEntryFallback({
     setTags(tags.filter((t) => t !== tagToRemove));
   };
 
+  const [urlInputError, setUrlInputError] = useState<string | null>(null);
+
+  const handleThumbnailUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setThumbnailUrl('');
+      setUrlInputError(null);
+      return;
+    }
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        setUrlInputError('URL must start with http:// or https://');
+      } else {
+        setUrlInputError(null);
+      }
+    } catch {
+      setUrlInputError('Please enter a valid URL');
+    }
+    setThumbnailUrl(val);
+  };
+
+  const isValidImageUrl = useMemo(() => {
+    const trimmed = thumbnailUrl.trim();
+    if (!trimmed) return false;
+    try {
+      const parsed = new URL(trimmed);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }, [thumbnailUrl]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsUploading(true);
     setError(null);
+    setUrlInputError(null);
     try {
       const publicUrl = await thumbnailService.uploadThumbnail(projectId, file);
       setThumbnailUrl(publicUrl);
@@ -166,26 +201,31 @@ export function ManualEntryFallback({
       </div>
 
       {/* Thumbnail Upload or Preview */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium text-muted-foreground">
-          Thumbnail <span className="text-muted-foreground/60">(optional)</span>
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-muted-foreground" htmlFor="manual-thumbnail-url">
+          Thumbnail <span className="text-muted-foreground/60">(optional image URL or file upload)</span>
         </label>
 
-        <div className="flex items-start gap-4">
-          <div className="relative h-24 w-24 shrink-0 rounded-md border border-border bg-surface-subtle overflow-hidden flex items-center justify-center">
-            {thumbnailUrl ? (
+        <div className="flex items-start gap-3.5">
+          <div className="relative h-20 w-20 shrink-0 rounded-md border border-border bg-surface-subtle overflow-hidden flex items-center justify-center">
+            {isValidImageUrl ? (
               <>
-                <Image
-                  src={thumbnailUrl}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={thumbnailUrl.trim()}
                   alt="Thumbnail preview"
-                  fill
-                  className="object-cover"
-                  unoptimized
+                  className="h-full w-full object-cover"
+                  onError={() => setUrlInputError('Could not load image from this URL')}
                 />
                 <button
                   type="button"
-                  onClick={() => setThumbnailUrl('')}
-                  className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/70 text-white flex items-center justify-center hover:bg-black"
+                  onClick={() => {
+                    setThumbnailUrl('');
+                    setUrlInputError(null);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }}
+                  className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/70 text-white flex items-center justify-center hover:bg-black transition-colors"
+                  title="Remove thumbnail"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -195,32 +235,49 @@ export function ManualEntryFallback({
             )}
           </div>
 
-          <div className="flex-1 space-y-2">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              className="hidden"
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading || isSubmitting}
-              className="gap-1.5 text-xs w-full sm:w-auto"
-            >
-              {isUploading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Upload className="h-3.5 w-3.5" />
+          <div className="flex-1 space-y-2 min-w-0">
+            <div className="space-y-1">
+              <Input
+                id="manual-thumbnail-url"
+                type="url"
+                value={thumbnailUrl}
+                onChange={handleThumbnailUrlChange}
+                placeholder="https://example.com/image.jpg"
+                disabled={isSubmitting || isUploading}
+                className="h-8 text-xs font-mono"
+              />
+              {urlInputError && (
+                <p className="text-[11px] text-amber-400">{urlInputError}</p>
               )}
-              <span>Upload Custom Thumbnail</span>
-            </Button>
-            <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
-              Resized & compressed to ~400px before uploading to conserve storage.
-            </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading || isSubmitting}
+                className="gap-1.5 text-xs h-7 px-2.5"
+              >
+                {isUploading ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Upload className="h-3 w-3" />
+                )}
+                <span>Upload File</span>
+              </Button>
+              <span className="text-[11px] text-muted-foreground/60 truncate">
+                Paste image link or upload file (~400px WebP)
+              </span>
+            </div>
           </div>
         </div>
       </div>
