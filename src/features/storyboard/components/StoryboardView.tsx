@@ -36,6 +36,14 @@ export function StoryboardView({
     error,
     refresh,
     createScene,
+    updateScene,
+    deleteScene,
+    createShot,
+    updateShot,
+    deleteShot,
+    duplicateShot,
+    reassignShotScene,
+    batchUpdateShotPositions,
   } = useStoryboard(projectId);
 
   // Loading State
@@ -74,6 +82,15 @@ export function StoryboardView({
         projectName={projectName}
         scenes={scenes}
         readOnly={readOnly}
+        onCreateScene={createScene}
+        onUpdateScene={updateScene}
+        onDeleteScene={deleteScene}
+        onCreateShot={createShot}
+        onUpdateShot={updateShot}
+        onDeleteShot={deleteShot}
+        onDuplicateShot={duplicateShot}
+        onReassignShotScene={reassignShotScene}
+        onBatchUpdateShotPositions={batchUpdateShotPositions}
       />
 
       {/* Floating Onboarding Helper when canvas has 0 scenes */}

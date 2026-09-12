@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { Stage } from 'react-konva';
 import type Konva from 'konva';
 import { StoryboardBackground } from './StoryboardBackground';
+import { StoryboardMarquee } from './StoryboardMarquee';
 import { clampScale } from '../utils/storyboardCoordinates';
 import type { StoryboardViewport, StoryboardTool } from '../types';
 
@@ -14,6 +15,12 @@ export interface StoryboardStageProps {
   containerWidth: number;
   containerHeight: number;
   readOnly?: boolean;
+  marqueeBounds?: { x: number; y: number; width: number; height: number } | null;
+  onStageMouseDown?: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onStageMouseMove?: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onStageMouseUp?: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onStageClick?: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+  stageRef?: React.MutableRefObject<Konva.Stage | null>;
   children?: React.ReactNode;
 }
 
@@ -24,9 +31,16 @@ export function StoryboardStage({
   containerWidth,
   containerHeight,
   readOnly = false,
+  marqueeBounds = null,
+  onStageMouseDown,
+  onStageMouseMove,
+  onStageMouseUp,
+  onStageClick,
+  stageRef: externalStageRef,
   children,
 }: StoryboardStageProps) {
-  const stageRef = useRef<Konva.Stage | null>(null);
+  const internalStageRef = useRef<Konva.Stage | null>(null);
+  const stageRef = externalStageRef || internalStageRef;
 
   // Transient interaction refs to avoid React re-renders during high-frequency panning
   const isPanningRef = useRef<boolean>(false);
@@ -69,7 +83,7 @@ export function StoryboardStage({
     };
   }, [activeTool]);
 
-  // Stage Mouse Down: Pan initiation
+  // Stage Mouse Down: Pan initiation or stage forward
   const handleMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       const isMiddleClick = e.evt.button === 1;
@@ -81,37 +95,46 @@ export function StoryboardStage({
         panStartPointerRef.current = { x: e.evt.clientX, y: e.evt.clientY };
         panStartViewportRef.current = { ...viewport };
         setCursorStyle('grabbing');
+      } else {
+        onStageMouseDown?.(e);
       }
     },
-    [viewport]
+    [viewport, onStageMouseDown]
   );
 
-  // Stage Mouse Move: Pan update
+  // Stage Mouse Move: Pan update or stage forward
   const handleMouseMove = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
-      if (!isPanningRef.current) return;
+      if (isPanningRef.current) {
+        const dx = e.evt.clientX - panStartPointerRef.current.x;
+        const dy = e.evt.clientY - panStartPointerRef.current.y;
 
-      const dx = e.evt.clientX - panStartPointerRef.current.x;
-      const dy = e.evt.clientY - panStartPointerRef.current.y;
+        const newViewport: StoryboardViewport = {
+          x: panStartViewportRef.current.x + dx,
+          y: panStartViewportRef.current.y + dy,
+          scale: panStartViewportRef.current.scale,
+        };
 
-      const newViewport: StoryboardViewport = {
-        x: panStartViewportRef.current.x + dx,
-        y: panStartViewportRef.current.y + dy,
-        scale: panStartViewportRef.current.scale,
-      };
-
-      onViewportChange(newViewport);
+        onViewportChange(newViewport);
+      } else {
+        onStageMouseMove?.(e);
+      }
     },
-    [onViewportChange]
+    [onViewportChange, onStageMouseMove]
   );
 
-  // Stage Mouse Up: Pan end
-  const handleMouseUp = useCallback(() => {
-    if (isPanningRef.current) {
-      isPanningRef.current = false;
-      setCursorStyle(isSpacePressedRef.current ? 'grab' : activeTool === 'select' ? 'default' : 'crosshair');
-    }
-  }, [activeTool]);
+  // Stage Mouse Up: Pan end or stage forward
+  const handleMouseUp = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      if (isPanningRef.current) {
+        isPanningRef.current = false;
+        setCursorStyle(isSpacePressedRef.current ? 'grab' : activeTool === 'select' ? 'default' : 'crosshair');
+      } else {
+        onStageMouseUp?.(e);
+      }
+    },
+    [activeTool, onStageMouseUp]
+  );
 
   // Stage Wheel: Trackpad pan & Cmd/Ctrl pinch-zoom
   const handleWheel = useCallback(
@@ -158,7 +181,7 @@ export function StoryboardStage({
         onViewportChange(newViewport);
       }
     },
-    [viewport, onViewportChange]
+    [viewport, onViewportChange, stageRef]
   );
 
   // Global window mouseup in case pointer releases outside stage
@@ -194,6 +217,7 @@ export function StoryboardStage({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onClick={onStageClick}
         onWheel={handleWheel}
       >
         {/* Isolated Dotted Background Layer */}
@@ -203,8 +227,11 @@ export function StoryboardStage({
           viewport={viewport}
         />
 
-        {/* Future Storyboard Layers (Scenes, Shots, Connectors, Annotations) */}
+        {/* Storyboard Objects (Scenes, Shots) */}
         {children}
+
+        {/* Marquee Selection Layer */}
+        <StoryboardMarquee bounds={marqueeBounds} />
       </Stage>
     </div>
   );

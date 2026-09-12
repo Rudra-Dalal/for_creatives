@@ -39,6 +39,19 @@ export function screenToCanvas(
 }
 
 /**
+ * Converts a stage pointer position (relative to stage container) into canvas world coordinates.
+ */
+export function stagePointToCanvas(
+  point: { x: number; y: number },
+  viewport: StoryboardViewport
+): StoryboardPoint {
+  return {
+    x: (point.x - viewport.x) / viewport.scale,
+    y: (point.y - viewport.y) / viewport.scale,
+  };
+}
+
+/**
  * Converts canvas world coordinates into container pixel coordinates.
  */
 export function canvasToScreen(

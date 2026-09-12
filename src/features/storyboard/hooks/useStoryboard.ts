@@ -5,6 +5,7 @@ import { storyboardService } from '../services/storyboardService';
 import type {
   StoryboardSceneWithShots,
   StoryboardScene,
+  StoryboardSceneUpdate,
   StoryboardShotWithLinks,
   StoryboardShot,
   AspectRatio,
@@ -21,8 +22,8 @@ export interface UseStoryboardReturn {
   selectedShotId: string | null;
   totalShotsCount: number;
   refresh: () => Promise<void>;
-  createScene: (title?: string, description?: string) => Promise<StoryboardScene | null>;
-  updateScene: (id: string, updates: { title?: string; description?: string }) => Promise<void>;
+  createScene: (title?: string, description?: string, x?: number, y?: number, width?: number, height?: number) => Promise<StoryboardScene | null>;
+  updateScene: (id: string, updates: Partial<StoryboardSceneUpdate>) => Promise<void>;
   deleteScene: (id: string) => Promise<void>;
   createShot: (sceneId: string, data?: {
     shotNumber?: string;
@@ -34,10 +35,17 @@ export interface UseStoryboardReturn {
     cameraMovement?: CameraMovement | null;
     visualUrl?: string;
     visualSource?: ShotVisualSource;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    zIndex?: number;
   }) => Promise<StoryboardShotWithLinks | null>;
   updateShot: (id: string, updates: Partial<StoryboardShot>) => Promise<void>;
   deleteShot: (id: string) => Promise<void>;
   duplicateShot: (id: string) => Promise<StoryboardShotWithLinks | null>;
+  reassignShotScene: (shotId: string, targetSceneId: string) => Promise<void>;
+  batchUpdateShotPositions: (updates: Array<{ id: string; x: number; y: number; zIndex?: number }>) => Promise<void>;
   reorderShots: (sceneId: string, orderedShotIds: string[]) => Promise<void>;
   reorderScenes: (orderedSceneIds: string[]) => Promise<void>;
   selectScene: (id: string | null) => void;
@@ -77,12 +85,23 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
 
   const totalShotsCount = scenes.reduce((acc, scene) => acc + scene.shots.length, 0);
 
-  const handleCreateScene = async (title?: string, description?: string): Promise<StoryboardScene | null> => {
+  const handleCreateScene = async (
+    title?: string,
+    description?: string,
+    x?: number,
+    y?: number,
+    width?: number,
+    height?: number
+  ): Promise<StoryboardScene | null> => {
     try {
       const created = await storyboardService.createScene({
         projectId,
         title,
         description,
+        x,
+        y,
+        width,
+        height,
       });
       await fetchStoryboard();
       return created;
@@ -93,7 +112,7 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     }
   };
 
-  const handleUpdateScene = async (id: string, updates: { title?: string; description?: string }): Promise<void> => {
+  const handleUpdateScene = async (id: string, updates: Partial<StoryboardSceneUpdate>): Promise<void> => {
     try {
       await storyboardService.updateScene(id, updates);
       setScenes((prev) =>
@@ -194,6 +213,40 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     }
   };
 
+  const handleReassignShotScene = async (shotId: string, targetSceneId: string): Promise<void> => {
+    try {
+      await storyboardService.updateShot(shotId, { scene_id: targetSceneId });
+      await fetchStoryboard();
+    } catch (err) {
+      console.error('Failed to reassign shot scene:', err);
+      setError(err instanceof Error ? err.message : 'Failed to reassign shot');
+      throw err;
+    }
+  };
+
+  const handleBatchUpdateShotPositions = async (
+    updates: Array<{ id: string; x: number; y: number; zIndex?: number }>
+  ): Promise<void> => {
+    if (updates.length === 0) return;
+    try {
+      await storyboardService.batchUpdateShotPositions(updates);
+      setScenes((prev) => {
+        const updateMap = new Map(updates.map((u) => [u.id, u]));
+        return prev.map((scene) => ({
+          ...scene,
+          shots: scene.shots.map((shot) => {
+            const u = updateMap.get(shot.id);
+            return u ? { ...shot, x: u.x, y: u.y } : shot;
+          }),
+        }));
+      });
+    } catch (err) {
+      console.error('Failed to batch update shot positions:', err);
+      await fetchStoryboard();
+      throw err;
+    }
+  };
+
   const handleReorderShots = async (sceneId: string, orderedShotIds: string[]): Promise<void> => {
     // Optimistically reorder local state
     setScenes((prev) =>
@@ -247,6 +300,8 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     updateShot: handleUpdateShot,
     deleteShot: handleDeleteShot,
     duplicateShot: handleDuplicateShot,
+    reassignShotScene: handleReassignShotScene,
+    batchUpdateShotPositions: handleBatchUpdateShotPositions,
     reorderShots: handleReorderShots,
     reorderScenes: handleReorderScenes,
     selectScene: setSelectedSceneId,

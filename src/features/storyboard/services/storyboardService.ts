@@ -504,6 +504,30 @@ export const storyboardService = {
     if (error) throw error;
   },
 
+  /**
+   * Batch update spatial positions for multiple shots (e.g. when moving a scene or multi-selected shots).
+   */
+  async batchUpdateShotPositions(
+    updates: Array<{ id: string; x: number; y: number; zIndex?: number }>
+  ): Promise<void> {
+    if (updates.length === 0) return;
+    const supabase = createClient();
+
+    const promises = updates.map((u) => {
+      const payload: Partial<StoryboardShotUpdate> = { x: u.x, y: u.y };
+      if (u.zIndex !== undefined) payload.z_index = u.zIndex;
+      return supabase
+        .from('storyboard_shots')
+        .update(payload)
+        .eq('id', u.id);
+    });
+
+    const results = await Promise.all(promises);
+    for (const res of results) {
+      if (res.error) throw res.error;
+    }
+  },
+
   // --------------------------------------------------------------------------
   // SEQUENCE CONNECTION OPERATIONS
   // --------------------------------------------------------------------------
