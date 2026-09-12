@@ -8,6 +8,10 @@ import type {
   StoryboardShotInsert,
   StoryboardShotUpdate,
   StoryboardShotWithLinks,
+  StoryboardShotConnection,
+  StoryboardShotConnectionInsert,
+  StoryboardShotConnectionUpdate,
+  AnchorPosition,
   AspectRatio,
   ShotType,
   CameraMovement,
@@ -145,6 +149,10 @@ export const storyboardService = {
     projectId: string;
     title?: string;
     description?: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
     displayOrder?: number;
   }): Promise<StoryboardScene> {
     const supabase = createClient();
@@ -166,6 +174,10 @@ export const storyboardService = {
       project_id: input.projectId,
       title: input.title?.trim() || 'Scene 1',
       description: input.description?.trim() || '',
+      x: input.x !== undefined ? input.x : 100,
+      y: input.y !== undefined ? input.y : 100,
+      width: input.width !== undefined ? input.width : 880,
+      height: input.height !== undefined ? input.height : 560,
       display_order: targetOrder,
     };
 
@@ -180,7 +192,7 @@ export const storyboardService = {
   },
 
   /**
-   * Update an existing scene's title or description.
+   * Update an existing scene's title, description, or spatial geometry.
    */
   async updateScene(id: string, input: Partial<StoryboardSceneUpdate>): Promise<StoryboardScene> {
     const supabase = createClient();
@@ -258,6 +270,11 @@ export const storyboardService = {
     visualUrl?: string;
     visualSource?: ShotVisualSource;
     sketchData?: ShotSketchData | Json | null;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    zIndex?: number;
     displayOrder?: number;
     referenceIds?: string[];
     directionNoteIds?: string[];
@@ -290,6 +307,11 @@ export const storyboardService = {
       visual_url: input.visualUrl || '',
       visual_source: input.visualSource || 'none',
       sketch_data: (input.sketchData as Json) || null,
+      x: input.x !== undefined ? input.x : 140,
+      y: input.y !== undefined ? input.y : 160,
+      width: input.width !== undefined ? input.width : 280,
+      height: input.height !== undefined ? input.height : 220,
+      z_index: input.zIndex !== undefined ? input.zIndex : 0,
       display_order: targetOrder,
     };
 
@@ -460,6 +482,117 @@ export const storyboardService = {
     return duplicated;
   },
 
+  /**
+   * Update a shot's spatial world coordinates on the canvas.
+   */
+  async updateShotPosition(
+    id: string,
+    x: number,
+    y: number,
+    zIndex?: number
+  ): Promise<void> {
+    const supabase = createClient();
+
+    const updates: Partial<StoryboardShotUpdate> = { x, y };
+    if (zIndex !== undefined) updates.z_index = zIndex;
+
+    const { error } = await supabase
+      .from('storyboard_shots')
+      .update(updates)
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
+  // --------------------------------------------------------------------------
+  // SEQUENCE CONNECTION OPERATIONS
+  // --------------------------------------------------------------------------
+
+  /**
+   * Fetch all active sequence connections for a project.
+   */
+  async getConnections(projectId: string): Promise<StoryboardShotConnection[]> {
+    const supabase = createClient();
+
+    const { data, error } = await supabase
+      .from('storyboard_shot_connections')
+      .select('*')
+      .eq('project_id', projectId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    return (data || []) as StoryboardShotConnection[];
+  },
+
+  /**
+   * Create a new directed sequence connection between two shots.
+   */
+  async createConnection(input: {
+    projectId: string;
+    fromShotId: string;
+    toShotId: string;
+    fromAnchor?: AnchorPosition;
+    toAnchor?: AnchorPosition;
+    transitionLabel?: string;
+  }): Promise<StoryboardShotConnection> {
+    const supabase = createClient();
+
+    const payload: StoryboardShotConnectionInsert = {
+      project_id: input.projectId,
+      from_shot_id: input.fromShotId,
+      to_shot_id: input.toShotId,
+      from_anchor: input.fromAnchor || 'right',
+      to_anchor: input.toAnchor || 'left',
+      transition_label: input.transitionLabel?.trim() || '',
+    };
+
+    const { data, error } = await supabase
+      .from('storyboard_shot_connections')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as StoryboardShotConnection;
+  },
+
+  /**
+   * Update an existing sequence connection's anchors or transition label.
+   */
+  async updateConnection(
+    id: string,
+    input: Partial<StoryboardShotConnectionUpdate>
+  ): Promise<StoryboardShotConnection> {
+    const supabase = createClient();
+
+    const { data, error } = await supabase
+      .from('storyboard_shot_connections')
+      .update(input)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as StoryboardShotConnection;
+  },
+
+  /**
+   * Soft-delete a sequence connection.
+   */
+  async deleteConnection(id: string): Promise<void> {
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from('storyboard_shot_connections')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
+  // --------------------------------------------------------------------------
+  // JUNCTION LINK OPERATIONS
   // --------------------------------------------------------------------------
   // JUNCTION LINK OPERATIONS
   // --------------------------------------------------------------------------

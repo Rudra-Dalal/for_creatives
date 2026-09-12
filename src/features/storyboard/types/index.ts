@@ -22,6 +22,11 @@ export const SHOT_VISUAL_SOURCES = ['none', 'reference', 'upload', 'sketch'] as 
 export type ShotVisualSource = (typeof SHOT_VISUAL_SOURCES)[number];
 
 /**
+ * Cardinal magnetic anchor positions for sequence connections.
+ */
+export type AnchorPosition = 'top' | 'right' | 'bottom' | 'left';
+
+/**
  * Lightweight framing / shot types.
  */
 export const SHOT_TYPES = [
@@ -112,6 +117,10 @@ export type StoryboardShotReferenceInsert = Database['public']['Tables']['storyb
 export type StoryboardShotDirectionLink = Database['public']['Tables']['storyboard_shot_direction_links']['Row'];
 export type StoryboardShotDirectionLinkInsert = Database['public']['Tables']['storyboard_shot_direction_links']['Insert'];
 
+export type StoryboardShotConnection = Database['public']['Tables']['storyboard_shot_connections']['Row'];
+export type StoryboardShotConnectionInsert = Database['public']['Tables']['storyboard_shot_connections']['Insert'];
+export type StoryboardShotConnectionUpdate = Database['public']['Tables']['storyboard_shot_connections']['Update'];
+
 /**
  * Composite Shot model including resolved linked references and direction notes.
  */
@@ -126,4 +135,31 @@ export interface StoryboardShotWithLinks extends Omit<StoryboardShot, 'sketch_da
  */
 export interface StoryboardSceneWithShots extends StoryboardScene {
   shots: StoryboardShotWithLinks[];
+}
+
+/**
+ * Canvas Viewport & Coordinate Definitions.
+ */
+export interface StoryboardViewport {
+  x: number;
+  y: number;
+  scale: number;
+}
+
+export const MIN_STORYBOARD_SCALE = 0.15;
+export const MAX_STORYBOARD_SCALE = 3.0;
+export const DEFAULT_STORYBOARD_SCALE = 1.0;
+
+export type StoryboardTool = 'select' | 'shot' | 'scene' | 'connect' | 'pen' | 'eraser';
+
+export interface StoryboardPoint {
+  x: number;
+  y: number;
+}
+
+export interface StoryboardBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }

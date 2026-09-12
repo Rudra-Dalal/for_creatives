@@ -184,6 +184,10 @@ export interface Database {
           project_id: string;
           title: string;
           description: string;
+          x: number;
+          y: number;
+          width: number;
+          height: number;
           display_order: number;
           created_at: string;
           updated_at: string;
@@ -194,6 +198,10 @@ export interface Database {
           project_id: string;
           title?: string;
           description?: string;
+          x?: number;
+          y?: number;
+          width?: number;
+          height?: number;
           display_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -204,6 +212,10 @@ export interface Database {
           project_id?: string;
           title?: string;
           description?: string;
+          x?: number;
+          y?: number;
+          width?: number;
+          height?: number;
           display_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -225,6 +237,11 @@ export interface Database {
           visual_url: string;
           visual_source: 'none' | 'reference' | 'upload' | 'sketch';
           sketch_data: Json | null;
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+          z_index: number;
           display_order: number;
           created_at: string;
           updated_at: string;
@@ -244,6 +261,11 @@ export interface Database {
           visual_url?: string;
           visual_source?: 'none' | 'reference' | 'upload' | 'sketch';
           sketch_data?: Json | null;
+          x?: number;
+          y?: number;
+          width?: number;
+          height?: number;
+          z_index?: number;
           display_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -263,6 +285,11 @@ export interface Database {
           visual_url?: string;
           visual_source?: 'none' | 'reference' | 'upload' | 'sketch';
           sketch_data?: Json | null;
+          x?: number;
+          y?: number;
+          width?: number;
+          height?: number;
+          z_index?: number;
           display_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -307,6 +334,44 @@ export interface Database {
           shot_id?: string;
           direction_note_id?: string;
           created_at?: string;
+        };
+      };
+      storyboard_shot_connections: {
+        Row: {
+          id: string;
+          project_id: string;
+          from_shot_id: string;
+          to_shot_id: string;
+          from_anchor: 'top' | 'right' | 'bottom' | 'left';
+          to_anchor: 'top' | 'right' | 'bottom' | 'left';
+          transition_label: string;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          from_shot_id: string;
+          to_shot_id: string;
+          from_anchor?: 'top' | 'right' | 'bottom' | 'left';
+          to_anchor?: 'top' | 'right' | 'bottom' | 'left';
+          transition_label?: string;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          from_shot_id?: string;
+          to_shot_id?: string;
+          from_anchor?: 'top' | 'right' | 'bottom' | 'left';
+          to_anchor?: 'top' | 'right' | 'bottom' | 'left';
+          transition_label?: string;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
         };
       };
     };
