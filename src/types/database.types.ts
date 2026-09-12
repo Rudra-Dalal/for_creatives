@@ -178,6 +178,137 @@ export interface Database {
           created_at?: string;
         };
       };
+      storyboard_scenes: {
+        Row: {
+          id: string;
+          project_id: string;
+          title: string;
+          description: string;
+          display_order: number;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          title?: string;
+          description?: string;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          title?: string;
+          description?: string;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+      };
+      storyboard_shots: {
+        Row: {
+          id: string;
+          project_id: string;
+          scene_id: string;
+          shot_number: string;
+          title: string;
+          description: string;
+          dialogue: string;
+          aspect_ratio: '16:9' | '9:16' | '1:1' | '4:3';
+          shot_type: string | null;
+          camera_movement: string | null;
+          visual_url: string;
+          visual_source: 'none' | 'reference' | 'upload' | 'sketch';
+          sketch_data: Json | null;
+          display_order: number;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          scene_id: string;
+          shot_number?: string;
+          title?: string;
+          description?: string;
+          dialogue?: string;
+          aspect_ratio?: '16:9' | '9:16' | '1:1' | '4:3';
+          shot_type?: string | null;
+          camera_movement?: string | null;
+          visual_url?: string;
+          visual_source?: 'none' | 'reference' | 'upload' | 'sketch';
+          sketch_data?: Json | null;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          scene_id?: string;
+          shot_number?: string;
+          title?: string;
+          description?: string;
+          dialogue?: string;
+          aspect_ratio?: '16:9' | '9:16' | '1:1' | '4:3';
+          shot_type?: string | null;
+          camera_movement?: string | null;
+          visual_url?: string;
+          visual_source?: 'none' | 'reference' | 'upload' | 'sketch';
+          sketch_data?: Json | null;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+      };
+      storyboard_shot_references: {
+        Row: {
+          id: string;
+          shot_id: string;
+          reference_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          shot_id: string;
+          reference_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          shot_id?: string;
+          reference_id?: string;
+          created_at?: string;
+        };
+      };
+      storyboard_shot_direction_links: {
+        Row: {
+          id: string;
+          shot_id: string;
+          direction_note_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          shot_id: string;
+          direction_note_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          shot_id?: string;
+          direction_note_id?: string;
+          created_at?: string;
+        };
+      };
     };
     Views: {
       [_ in never]: never;
