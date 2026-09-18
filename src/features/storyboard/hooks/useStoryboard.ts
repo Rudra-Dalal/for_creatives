@@ -8,6 +8,8 @@ import type {
   StoryboardSceneUpdate,
   StoryboardShotWithLinks,
   StoryboardShot,
+  StoryboardShotConnection,
+  AnchorPosition,
   AspectRatio,
   ShotType,
   CameraMovement,
@@ -16,6 +18,7 @@ import type {
 
 export interface UseStoryboardReturn {
   scenes: StoryboardSceneWithShots[];
+  connections: StoryboardShotConnection[];
   isLoading: boolean;
   error: string | null;
   selectedSceneId: string | null;
@@ -48,12 +51,23 @@ export interface UseStoryboardReturn {
   batchUpdateShotPositions: (updates: Array<{ id: string; x: number; y: number; zIndex?: number }>) => Promise<void>;
   reorderShots: (sceneId: string, orderedShotIds: string[]) => Promise<void>;
   reorderScenes: (orderedSceneIds: string[]) => Promise<void>;
+  createConnection: (input: {
+    fromShotId: string;
+    toShotId: string;
+    fromAnchor?: AnchorPosition;
+    toAnchor?: AnchorPosition;
+    transitionLabel?: string;
+  }) => Promise<StoryboardShotConnection | null>;
+  updateConnection: (id: string, updates: { fromAnchor?: AnchorPosition; toAnchor?: AnchorPosition; transitionLabel?: string }) => Promise<void>;
+  deleteConnection: (id: string) => Promise<void>;
+  restoreConnection: (id: string) => Promise<StoryboardShotConnection | null>;
   selectScene: (id: string | null) => void;
   selectShot: (id: string | null) => void;
 }
 
 export function useStoryboard(projectId: string): UseStoryboardReturn {
   const [scenes, setScenes] = useState<StoryboardSceneWithShots[]>([]);
+  const [connections, setConnections] = useState<StoryboardShotConnection[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
@@ -62,6 +76,7 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
   const fetchStoryboard = useCallback(async () => {
     if (!projectId) {
       setScenes([]);
+      setConnections([]);
       setIsLoading(false);
       return;
     }
@@ -69,8 +84,12 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await storyboardService.getScenesWithShots(projectId);
+      const [data, conns] = await Promise.all([
+        storyboardService.getScenesWithShots(projectId),
+        storyboardService.getConnections(projectId),
+      ]);
       setScenes(data);
+      setConnections(conns);
     } catch (err) {
       console.error('Failed to load storyboard:', err);
       setError(err instanceof Error ? err.message : 'Failed to load storyboard');
@@ -285,8 +304,75 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     }
   };
 
+  const handleCreateConnection = async (input: {
+    fromShotId: string;
+    toShotId: string;
+    fromAnchor?: AnchorPosition;
+    toAnchor?: AnchorPosition;
+    transitionLabel?: string;
+  }): Promise<StoryboardShotConnection | null> => {
+    try {
+      const created = await storyboardService.createConnection({ projectId, ...input });
+      // Optimistic update: append or replace any soft-deleted entry for this pair
+      setConnections((prev) => {
+        const filtered = prev.filter(
+          (c) => !(c.from_shot_id === created.from_shot_id && c.to_shot_id === created.to_shot_id)
+        );
+        return [...filtered, created];
+      });
+      return created;
+    } catch (err) {
+      console.error('Failed to create connection:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create connection');
+      return null;
+    }
+  };
+
+  const handleUpdateConnection = async (
+    id: string,
+    updates: { fromAnchor?: AnchorPosition; toAnchor?: AnchorPosition; transitionLabel?: string }
+  ): Promise<void> => {
+    try {
+      const updated = await storyboardService.updateConnection(id, updates);
+      setConnections((prev) => prev.map((c) => (c.id === id ? updated : c)));
+    } catch (err) {
+      console.error('Failed to update connection:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update connection');
+      throw err;
+    }
+  };
+
+  const handleDeleteConnection = async (id: string): Promise<void> => {
+    try {
+      await storyboardService.deleteConnection(id);
+      // Remove from local state immediately — undo must call restoreConnection
+      setConnections((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      console.error('Failed to delete connection:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete connection');
+      throw err;
+    }
+  };
+
+  const handleRestoreConnection = async (id: string): Promise<StoryboardShotConnection | null> => {
+    try {
+      const restored = await storyboardService.restoreConnection(id);
+      setConnections((prev) => {
+        // Avoid duplicates if somehow still present in state
+        const filtered = prev.filter((c) => c.id !== restored.id);
+        return [...filtered, restored];
+      });
+      return restored;
+    } catch (err) {
+      console.error('Failed to restore connection:', err);
+      setError(err instanceof Error ? err.message : 'Failed to restore connection');
+      return null;
+    }
+  };
+
   return {
     scenes,
+    connections,
     isLoading,
     error,
     selectedSceneId,
@@ -304,6 +390,10 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     batchUpdateShotPositions: handleBatchUpdateShotPositions,
     reorderShots: handleReorderShots,
     reorderScenes: handleReorderScenes,
+    createConnection: handleCreateConnection,
+    updateConnection: handleUpdateConnection,
+    deleteConnection: handleDeleteConnection,
+    restoreConnection: handleRestoreConnection,
     selectScene: setSelectedSceneId,
     selectShot: setSelectedShotId,
   };

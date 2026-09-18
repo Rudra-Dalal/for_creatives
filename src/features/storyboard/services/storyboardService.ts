@@ -10,7 +10,6 @@ import type {
   StoryboardShotWithLinks,
   StoryboardShotConnection,
   StoryboardShotConnectionInsert,
-  StoryboardShotConnectionUpdate,
   AnchorPosition,
   AspectRatio,
   ShotType,
@@ -533,7 +532,8 @@ export const storyboardService = {
   // --------------------------------------------------------------------------
 
   /**
-   * Fetch all active sequence connections for a project.
+   * Fetch all active (non-deleted) sequence connections for a project.
+   * Results are deterministically ordered by creation time.
    */
   async getConnections(projectId: string): Promise<StoryboardShotConnection[]> {
     const supabase = createClient();
@@ -550,7 +550,17 @@ export const storyboardService = {
   },
 
   /**
-   * Create a new directed sequence connection between two shots.
+   * Create a directed sequence connection between two shots (A → B).
+   *
+   * Soft-delete / unique constraint safety:
+   * The DB enforces UNIQUE(from_shot_id, to_shot_id) across all rows including
+   * soft-deleted ones.  Therefore we must:
+   *  1. Reject A → A self-connections immediately.
+   *  2. Check for an existing active A → B: return a DuplicateConnection error.
+   *  3. Check for a soft-deleted A → B: restore it (update deleted_at = null,
+   *     anchors, label) instead of INSERTing a second row that would violate
+   *     the unique constraint.
+   *  4. Otherwise INSERT normally.
    */
   async createConnection(input: {
     projectId: string;
@@ -560,15 +570,63 @@ export const storyboardService = {
     toAnchor?: AnchorPosition;
     transitionLabel?: string;
   }): Promise<StoryboardShotConnection> {
-    const supabase = createClient();
+    // 1. Self-connection guard
+    if (input.fromShotId === input.toShotId) {
+      throw new Error('SelfConnection: cannot connect a shot to itself');
+    }
 
+    const supabase = createClient();
+    const fromAnchor: AnchorPosition = input.fromAnchor || 'right';
+    const toAnchor: AnchorPosition = input.toAnchor || 'left';
+    const transitionLabel = input.transitionLabel?.trim() || '';
+
+    // 2. Look up any existing row (active or soft-deleted) for this directed pair
+    const { data: existing, error: lookupError } = await supabase
+      .from('storyboard_shot_connections')
+      .select('*')
+      .eq('from_shot_id', input.fromShotId)
+      .eq('to_shot_id', input.toShotId)
+      .limit(1);
+
+    if (lookupError) throw lookupError;
+
+    const existingRow = (existing && existing.length > 0)
+      ? existing[0] as StoryboardShotConnection
+      : null;
+
+    if (existingRow) {
+      if (!existingRow.deleted_at) {
+        // 2a. Active duplicate — reject explicitly
+        throw new Error(
+          'DuplicateConnection: an active connection from this shot to the target already exists'
+        );
+      }
+
+      // 2b. Soft-deleted row — restore it instead of inserting (avoids unique violation)
+      const { data: restored, error: restoreError } = await supabase
+        .from('storyboard_shot_connections')
+        .update({
+          deleted_at: null,
+          from_anchor: fromAnchor,
+          to_anchor: toAnchor,
+          transition_label: transitionLabel,
+        })
+        .eq('id', existingRow.id)
+        .select()
+        .single();
+
+      if (restoreError) throw restoreError;
+      return restored as StoryboardShotConnection;
+    }
+
+    // 3. No existing row — safe to INSERT
     const payload: StoryboardShotConnectionInsert = {
       project_id: input.projectId,
       from_shot_id: input.fromShotId,
       to_shot_id: input.toShotId,
-      from_anchor: input.fromAnchor || 'right',
-      to_anchor: input.toAnchor || 'left',
-      transition_label: input.transitionLabel?.trim() || '',
+      from_anchor: fromAnchor,
+      to_anchor: toAnchor,
+      transition_label: transitionLabel,
     };
 
     const { data, error } = await supabase
@@ -582,17 +640,35 @@ export const storyboardService = {
   },
 
   /**
-   * Update an existing sequence connection's anchors or transition label.
+   * Update a sequence connection's mutable display fields.
+   *
+   * Only from_anchor, to_anchor, and transition_label may be changed.
+   * Structural fields (ids, timestamps, project, deleted_at) are explicitly
+   * stripped to prevent accidental state corruption.
    */
   async updateConnection(
     id: string,
-    input: Partial<StoryboardShotConnectionUpdate>
+    input: {
+      fromAnchor?: AnchorPosition;
+      toAnchor?: AnchorPosition;
+      transitionLabel?: string;
+    }
   ): Promise<StoryboardShotConnection> {
     const supabase = createClient();
 
+    // Allowlist: only send the fields that are permitted to change
+    const payload: Record<string, unknown> = {};
+    if (input.fromAnchor !== undefined) payload.from_anchor = input.fromAnchor;
+    if (input.toAnchor !== undefined) payload.to_anchor = input.toAnchor;
+    if (input.transitionLabel !== undefined) payload.transition_label = input.transitionLabel.trim();
+
+    if (Object.keys(payload).length === 0) {
+      throw new Error('updateConnection: no mutable fields provided');
+    }
+
     const { data, error } = await supabase
       .from('storyboard_shot_connections')
-      .update(input)
+      .update(payload)
       .eq('id', id)
       .select()
       .single();
@@ -602,7 +678,7 @@ export const storyboardService = {
   },
 
   /**
-   * Soft-delete a sequence connection.
+   * Soft-delete a sequence connection by setting deleted_at.
    */
   async deleteConnection(id: string): Promise<void> {
     const supabase = createClient();
@@ -615,8 +691,24 @@ export const storyboardService = {
     if (error) throw error;
   },
 
-  // --------------------------------------------------------------------------
-  // JUNCTION LINK OPERATIONS
+  /**
+   * Restore a previously soft-deleted connection.
+   * Used by undo operations to reinstate a deleted connection.
+   */
+  async restoreConnection(id: string): Promise<StoryboardShotConnection> {
+    const supabase = createClient();
+
+    const { data, error } = await supabase
+      .from('storyboard_shot_connections')
+      .update({ deleted_at: null })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as StoryboardShotConnection;
+  },
+
   // --------------------------------------------------------------------------
   // JUNCTION LINK OPERATIONS
   // --------------------------------------------------------------------------
