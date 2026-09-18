@@ -21,6 +21,9 @@ export interface StoryboardStageProps {
   onStageMouseUp?: (e: Konva.KonvaEventObject<MouseEvent>) => void;
   onStageClick?: (e: Konva.KonvaEventObject<MouseEvent>) => void;
   stageRef?: React.MutableRefObject<Konva.Stage | null>;
+  /** A Konva Layer node (e.g. StoryboardConnectionsLayer) rendered between
+   *  the background and the main objects layer. Optional. */
+  connectionsLayer?: React.ReactNode;
   children?: React.ReactNode;
 }
 
@@ -37,6 +40,7 @@ export function StoryboardStage({
   onStageMouseUp,
   onStageClick,
   stageRef: externalStageRef,
+  connectionsLayer,
   children,
 }: StoryboardStageProps) {
   const internalStageRef = useRef<Konva.Stage | null>(null);
@@ -235,6 +239,9 @@ export function StoryboardStage({
           height={containerHeight}
           viewport={viewport}
         />
+
+        {/* Sequence Connection Layer: renders between background and shot cards */}
+        {connectionsLayer}
 
         {/* Storyboard Interactive Objects & Marquee Layer */}
         <Layer name="storyboard-objects-layer">

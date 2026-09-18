@@ -6,6 +6,9 @@ import { StoryboardStage } from '../canvas/StoryboardStage';
 import { StoryboardToolbar } from './StoryboardToolbar';
 import { SceneRegionNode } from '../canvas/SceneRegionNode';
 import { ShotCardNode } from '../canvas/ShotCardNode';
+import { StoryboardShotAnchorHandles } from '../canvas/StoryboardShotAnchorHandles';
+import { StoryboardConnectionsLayer } from '../canvas/StoryboardConnectionsLayer';
+import { useConnectionDrag, type ConnectionDragState } from '../canvas/useConnectionDrag';
 import { StoryboardShotInspector } from './StoryboardShotInspector';
 import { StoryboardSceneInspector } from './StoryboardSceneInspector';
 import {
@@ -34,12 +37,15 @@ import type {
   StoryboardPoint,
   StoryboardSceneUpdate,
   StoryboardShot,
+  StoryboardShotConnection,
+  AnchorPosition,
 } from '../types';
 
 export interface StoryboardCanvasProps {
   projectId: string;
   projectName?: string;
   scenes?: StoryboardSceneWithShots[];
+  connections?: StoryboardShotConnection[];
   readOnly?: boolean;
   onCreateScene?: (
     title?: string,
@@ -70,6 +76,12 @@ export interface StoryboardCanvasProps {
   onBatchUpdateShotPositions?: (
     updates: Array<{ id: string; x: number; y: number; zIndex?: number }>
   ) => Promise<void>;
+  onCreateConnection?: (input: {
+    fromShotId: string;
+    toShotId: string;
+    fromAnchor: AnchorPosition;
+    toAnchor: AnchorPosition;
+  }) => Promise<StoryboardShotConnection | null>;
   children?: React.ReactNode;
 }
 
@@ -77,6 +89,7 @@ export function StoryboardCanvas({
   projectId,
   projectName = 'Storyboard',
   scenes = [],
+  connections = [],
   readOnly = false,
   onCreateScene,
   onUpdateScene,
@@ -87,10 +100,13 @@ export function StoryboardCanvas({
   onDuplicateShot,
   onReassignShotScene,
   onBatchUpdateShotPositions,
+  onCreateConnection,
   children,
 }: StoryboardCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
+  /** Ref to the connections layer — used to batchDraw during connection drag */
+  const connectionsLayerRef = useRef<Konva.Layer | null>(null);
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({
     width: 1200,
     height: 800,
@@ -223,6 +239,39 @@ export function StoryboardCanvas({
   const allShots: StoryboardShotWithLinks[] = React.useMemo(() => {
     return scenes.flatMap((s) => s.shots);
   }, [scenes]);
+
+  // --------------------------------------------------------------------------
+  // CONNECTION DRAG INTERACTION
+  // --------------------------------------------------------------------------
+
+  const [activeSnapTarget, setActiveSnapTarget] = useState<{ shotId: string; anchor: AnchorPosition } | null>(null);
+
+  const handleConnectionDragStateChange = useCallback((state: ConnectionDragState | null) => {
+    // Imperatively batchDraw the connections layer so the preview repaints
+    // without touching React state — keeps pointer move at 60fps
+    connectionsLayerRef.current?.batchDraw();
+
+    const snap = state?.snapTarget ? { shotId: state.snapTarget.shotId, anchor: state.snapTarget.anchor } : null;
+    setActiveSnapTarget((prev) => {
+      if (prev?.shotId === snap?.shotId && prev?.anchor === snap?.anchor) return prev;
+      return snap;
+    });
+  }, []);
+
+  const {
+    dragStateRef,
+    handleAnchorMouseDown,
+    handleConnectionMouseMove,
+    handleConnectionMouseUp,
+    cancelDrag,
+  } = useConnectionDrag({
+    activeTool,
+    viewport,
+    allShots,
+    existingConnections: connections,
+    onCreateConnection: onCreateConnection ?? (() => Promise.resolve(null)),
+    onDragStateChange: handleConnectionDragStateChange,
+  });
 
   // Currently selected primary shot (for inspector)
   const selectedShot = React.useMemo(() => {
@@ -538,6 +587,9 @@ export function StoryboardCanvas({
         return;
       }
 
+      // If 'connect' tool: clicking on stage background does nothing (anchors are the entry point)
+      if (activeTool === 'connect') return;
+
       // If clicked on stage background, start marquee
       const isBackground =
         e.target === stage ||
@@ -573,6 +625,9 @@ export function StoryboardCanvas({
 
   const handleStageMouseMove = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
+      // Forward to connection drag handler first (it's a no-op if no drag active)
+      handleConnectionMouseMove(e);
+
       if (!isMarqueeActiveRef.current || !marqueeStartPointRef.current) return;
 
       const stage = e.target.getStage();
@@ -591,11 +646,14 @@ export function StoryboardCanvas({
         height: worldPos.y - start.y,
       });
     },
-    [viewport]
+    [viewport, handleConnectionMouseMove]
   );
 
   const handleStageMouseUp = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
+      // Forward to connection drag handler first (commits or cancels drag)
+      void handleConnectionMouseUp(e);
+
       if (isMarqueeActiveRef.current && marqueeBounds) {
         isMarqueeActiveRef.current = false;
         marqueeStartPointRef.current = null;
@@ -615,7 +673,7 @@ export function StoryboardCanvas({
         setMarqueeBounds(null);
       }
     },
-    [marqueeBounds, allShots]
+    [marqueeBounds, allShots, handleConnectionMouseUp]
   );
 
   const handleStageClick = useCallback(
@@ -648,8 +706,9 @@ export function StoryboardCanvas({
         return;
       }
 
-      // Escape -> Deselect
+      // Escape -> Deselect + cancel any active connection drag
       if (e.key === 'Escape') {
+        cancelDrag();
         handleClearSelection();
         return;
       }
@@ -722,12 +781,13 @@ export function StoryboardCanvas({
         return;
       }
 
-      // Tool shortcuts (V, S, C, Z)
+      // Tool shortcuts (V, S, C, N/X, Z)
       if (!e.metaKey && !e.ctrlKey && !e.altKey) {
         const key = e.key.toLowerCase();
-        if (key === 'v') setActiveTool('select');
-        else if (key === 's') setActiveTool('shot');
-        else if (key === 'c') setActiveTool('scene');
+        if (key === 'v') { cancelDrag(); setActiveTool('select'); }
+        else if (key === 's') { cancelDrag(); setActiveTool('shot'); }
+        else if (key === 'c') { cancelDrag(); setActiveTool('scene'); }
+        else if (key === 'n' || key === 'x') { setActiveTool('connect'); }
         else if (key === 'z' || (e.shiftKey && key === '!')) {
           handleZoomToFit();
         }
@@ -743,6 +803,7 @@ export function StoryboardCanvas({
     scenes,
     readOnly,
     handleClearSelection,
+    cancelDrag,
     onDuplicateShot,
     onDeleteShot,
     onDeleteScene,
@@ -832,6 +893,18 @@ export function StoryboardCanvas({
         onStageMouseMove={handleStageMouseMove}
         onStageMouseUp={handleStageMouseUp}
         onStageClick={handleStageClick}
+        connectionsLayer={
+          !readOnly && (
+            <StoryboardConnectionsLayer
+              connections={connections.filter((c) => !c.deleted_at)}
+              allShots={allShots}
+              dragStateRef={dragStateRef}
+              onRegisterLayerRef={(layer) => {
+                connectionsLayerRef.current = layer;
+              }}
+            />
+          )
+        }
       >
         {/* Layer 1: Scene Territories */}
         {scenes.map((scene) => (
@@ -853,23 +926,36 @@ export function StoryboardCanvas({
           />
         ))}
 
-        {/* Layer 2: Shot Cards */}
+        {/* Layer 2: Shot Cards + Anchor Handles */}
         {allShots.map((shot) => (
-          <ShotCardNode
-            key={shot.id}
-            shot={shot}
-            isSelected={selectedShotIds.has(shot.id) && selectedShotIds.size === 1}
-            isMultiSelected={selectedShotIds.has(shot.id) && selectedShotIds.size > 1}
-            readOnly={readOnly}
-            onSelect={handleSelectShot}
-            onDragStart={handleShotDragStart}
-            onDragMove={handleShotDragMove}
-            onDragEnd={handleShotDragEnd}
-            onDoubleClick={(s) => {
-              setSelectedSceneId(null);
-              setSelectedShotIds(new Set([s.id]));
-            }}
-          />
+          <React.Fragment key={shot.id}>
+            <ShotCardNode
+              shot={shot}
+              isSelected={selectedShotIds.has(shot.id) && selectedShotIds.size === 1}
+              isMultiSelected={selectedShotIds.has(shot.id) && selectedShotIds.size > 1}
+              readOnly={readOnly}
+              onSelect={handleSelectShot}
+              onDragStart={handleShotDragStart}
+              onDragMove={handleShotDragMove}
+              onDragEnd={handleShotDragEnd}
+              onDoubleClick={(s) => {
+                setSelectedSceneId(null);
+                setSelectedShotIds(new Set([s.id]));
+              }}
+            />
+            {!readOnly && (
+              <StoryboardShotAnchorHandles
+                shot={shot}
+                activeTool={activeTool}
+                highlightedAnchor={
+                  activeSnapTarget?.shotId === shot.id
+                    ? activeSnapTarget.anchor
+                    : null
+                }
+                onAnchorMouseDown={handleAnchorMouseDown}
+              />
+            )}
+          </React.Fragment>
         ))}
 
         {children}
