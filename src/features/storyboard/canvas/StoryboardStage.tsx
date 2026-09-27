@@ -24,6 +24,8 @@ export interface StoryboardStageProps {
   /** A Konva Layer node (e.g. StoryboardConnectionsLayer) rendered between
    *  the background and the main objects layer. Optional. */
   connectionsLayer?: React.ReactNode;
+  /** A Konva Layer node rendering canvas freehand strokes above shot cards. Optional. */
+  strokesLayer?: React.ReactNode;
   children?: React.ReactNode;
 }
 
@@ -41,6 +43,7 @@ export function StoryboardStage({
   onStageClick,
   stageRef: externalStageRef,
   connectionsLayer,
+  strokesLayer,
   children,
 }: StoryboardStageProps) {
   const internalStageRef = useRef<Konva.Stage | null>(null);
@@ -244,10 +247,16 @@ export function StoryboardStage({
         {connectionsLayer}
 
         {/* Storyboard Interactive Objects & Marquee Layer */}
-        <Layer name="storyboard-objects-layer">
+        <Layer
+          name="storyboard-objects-layer"
+          listening={activeTool !== 'pen' && activeTool !== 'eraser'}
+        >
           {children}
           <StoryboardMarquee bounds={marqueeBounds} />
         </Layer>
+
+        {/* Storyboard Freehand Canvas Strokes Layer: renders above shot objects */}
+        {strokesLayer}
       </Stage>
     </div>
   );

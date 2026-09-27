@@ -2,10 +2,14 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type Konva from 'konva';
+import { Layer, Line } from 'react-konva';
 import { StoryboardStage } from '../canvas/StoryboardStage';
 import { StoryboardToolbar } from './StoryboardToolbar';
 import { SceneRegionNode } from '../canvas/SceneRegionNode';
 import { ShotCardNode } from '../canvas/ShotCardNode';
+import { StoryboardStrokeNode } from '../canvas/StoryboardStrokeNode';
+import { useStoryboardPen } from '../canvas/useStoryboardPen';
+import { useStoryboardEraser } from '../canvas/useStoryboardEraser';
 import { StoryboardShotAnchorHandles } from '../canvas/StoryboardShotAnchorHandles';
 import { StoryboardConnectionsLayer } from '../canvas/StoryboardConnectionsLayer';
 import { useConnectionDrag, type ConnectionDragState } from '../canvas/useConnectionDrag';
@@ -38,6 +42,7 @@ import type {
   StoryboardSceneUpdate,
   StoryboardShot,
   StoryboardShotConnection,
+  StoryboardStroke,
   AnchorPosition,
 } from '../types';
 
@@ -46,6 +51,7 @@ export interface StoryboardCanvasProps {
   projectName?: string;
   scenes?: StoryboardSceneWithShots[];
   connections?: StoryboardShotConnection[];
+  strokes?: StoryboardStroke[];
   readOnly?: boolean;
   onCreateScene?: (
     title?: string,
@@ -82,6 +88,12 @@ export interface StoryboardCanvasProps {
     fromAnchor: AnchorPosition;
     toAnchor: AnchorPosition;
   }) => Promise<StoryboardShotConnection | null>;
+  onAddStroke?: (
+    points: number[],
+    strokeColor: string,
+    strokeWidth: number
+  ) => Promise<StoryboardStroke | null>;
+  onEraseStroke?: (id: string) => Promise<boolean>;
   children?: React.ReactNode;
 }
 
@@ -90,6 +102,7 @@ export function StoryboardCanvas({
   projectName = 'Storyboard',
   scenes = [],
   connections = [],
+  strokes = [],
   readOnly = false,
   onCreateScene,
   onUpdateScene,
@@ -101,6 +114,8 @@ export function StoryboardCanvas({
   onReassignShotScene,
   onBatchUpdateShotPositions,
   onCreateConnection,
+  onAddStroke,
+  onEraseStroke,
   children,
 }: StoryboardCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -325,6 +340,43 @@ export function StoryboardCanvas({
   }, []);
 
   // --------------------------------------------------------------------------
+  // PEN DRAWING HOOK
+  // --------------------------------------------------------------------------
+
+  const {
+    liveLineRef,
+    strokesLayerRef,
+    handlePenMouseDown,
+    handlePenMouseMove,
+    handlePenMouseUp,
+    cancelDrawing: cancelPen,
+  } = useStoryboardPen({
+    activeTool,
+    viewport,
+    readOnly,
+    onAddStroke,
+    onClearSelection: handleClearSelection,
+  });
+
+  // --------------------------------------------------------------------------
+  // ERASER HOOK
+  // --------------------------------------------------------------------------
+
+  const {
+    handleEraserMouseDown,
+    handleEraserMouseMove,
+    handleEraserMouseUp,
+    cancelErasing,
+  } = useStoryboardEraser({
+    activeTool,
+    viewport,
+    strokes,
+    readOnly,
+    onEraseStroke,
+    onClearSelection: handleClearSelection,
+  });
+
+  // --------------------------------------------------------------------------
   // SCENE DRAG & RESIZE HANDLERS (GROUP MOVEMENT)
   // --------------------------------------------------------------------------
 
@@ -524,6 +576,18 @@ export function StoryboardCanvas({
 
   const handleStageMouseDown = useCallback(
     async (e: Konva.KonvaEventObject<MouseEvent>) => {
+      // Pen drawing takes full priority
+      if (activeTool === 'pen') {
+        handlePenMouseDown(e);
+        return;
+      }
+
+      // Eraser takes full priority
+      if (activeTool === 'eraser') {
+        handleEraserMouseDown(e);
+        return;
+      }
+
       // If user clicks on stage background directly with select tool -> initiate marquee
       const isLeftClick = e.evt.button === 0;
       if (!isLeftClick) return;
@@ -620,11 +684,25 @@ export function StoryboardCanvas({
       scenes,
       selectedScene,
       handleClearSelection,
+      handlePenMouseDown,
+      handleEraserMouseDown,
     ]
   );
 
   const handleStageMouseMove = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
+      // Pen drawing takes full priority
+      if (activeTool === 'pen') {
+        handlePenMouseMove(e);
+        return;
+      }
+
+      // Eraser takes full priority
+      if (activeTool === 'eraser') {
+        handleEraserMouseMove(e);
+        return;
+      }
+
       // Forward to connection drag handler first (it's a no-op if no drag active)
       handleConnectionMouseMove(e);
 
@@ -646,11 +724,29 @@ export function StoryboardCanvas({
         height: worldPos.y - start.y,
       });
     },
-    [viewport, handleConnectionMouseMove]
+    [
+      viewport,
+      handleConnectionMouseMove,
+      activeTool,
+      handlePenMouseMove,
+      handleEraserMouseMove,
+    ]
   );
 
   const handleStageMouseUp = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
+      // Pen drawing takes full priority
+      if (activeTool === 'pen') {
+        handlePenMouseUp(e);
+        return;
+      }
+
+      // Eraser takes full priority
+      if (activeTool === 'eraser') {
+        handleEraserMouseUp(e);
+        return;
+      }
+
       // Forward to connection drag handler first (commits or cancels drag)
       void handleConnectionMouseUp(e);
 
@@ -673,11 +769,20 @@ export function StoryboardCanvas({
         setMarqueeBounds(null);
       }
     },
-    [marqueeBounds, allShots, handleConnectionMouseUp]
+    [
+      marqueeBounds,
+      allShots,
+      handleConnectionMouseUp,
+      activeTool,
+      handlePenMouseUp,
+      handleEraserMouseUp,
+    ]
   );
 
   const handleStageClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
+      if (activeTool === 'pen' || activeTool === 'eraser') return;
+
       const stage = e.target.getStage();
       const isBackground =
         e.target === stage ||
@@ -688,7 +793,7 @@ export function StoryboardCanvas({
         handleClearSelection();
       }
     },
-    [handleClearSelection]
+    [handleClearSelection, activeTool]
   );
 
   // --------------------------------------------------------------------------
@@ -706,8 +811,10 @@ export function StoryboardCanvas({
         return;
       }
 
-      // Escape -> Deselect + cancel any active connection drag
+      // Escape -> Deselect + cancel any active connection drag, pen stroke, or eraser gesture
       if (e.key === 'Escape') {
+        cancelPen();
+        cancelErasing();
         cancelDrag();
         handleClearSelection();
         return;
@@ -746,7 +853,6 @@ export function StoryboardCanvas({
         const step = e.shiftKey ? 10 : 1;
         let dx = 0;
         let dy = 0;
-
         if (e.key === 'ArrowLeft') dx = -step;
         else if (e.key === 'ArrowRight') dx = step;
         else if (e.key === 'ArrowUp') dy = -step;
@@ -781,13 +887,27 @@ export function StoryboardCanvas({
         return;
       }
 
-      // Tool shortcuts (V, S, C, N/X, Z)
+      // Tool shortcuts (V, S, C, N/X, Z, P, E)
       if (!e.metaKey && !e.ctrlKey && !e.altKey) {
         const key = e.key.toLowerCase();
-        if (key === 'v') { cancelDrag(); setActiveTool('select'); }
-        else if (key === 's') { cancelDrag(); setActiveTool('shot'); }
-        else if (key === 'c') { cancelDrag(); setActiveTool('scene'); }
-        else if (key === 'n' || key === 'x') { setActiveTool('connect'); }
+        if (key === 'v') { cancelDrag(); cancelPen(); cancelErasing(); setActiveTool('select'); }
+        else if (key === 's') { cancelDrag(); cancelPen(); cancelErasing(); setActiveTool('shot'); }
+        else if (key === 'c') { cancelDrag(); cancelPen(); cancelErasing(); setActiveTool('scene'); }
+        else if (key === 'n' || key === 'x') { cancelPen(); cancelErasing(); setActiveTool('connect'); }
+        else if (key === 'p') {
+          if (activeTool !== 'pen') {
+            cancelDrag();
+            cancelErasing();
+            setActiveTool('pen');
+          }
+        }
+        else if (key === 'e') {
+          if (activeTool !== 'eraser') {
+            cancelDrag();
+            cancelPen();
+            setActiveTool('eraser');
+          }
+        }
         else if (key === 'z' || (e.shiftKey && key === '!')) {
           handleZoomToFit();
         }
@@ -802,8 +922,11 @@ export function StoryboardCanvas({
     allShots,
     scenes,
     readOnly,
+    activeTool,
     handleClearSelection,
     cancelDrag,
+    cancelPen,
+    cancelErasing,
     onDuplicateShot,
     onDeleteShot,
     onDeleteScene,
@@ -904,6 +1027,32 @@ export function StoryboardCanvas({
               }}
             />
           )
+        }
+        strokesLayer={
+          <Layer
+            name="storyboard-strokes-layer"
+            listening={false}
+            ref={(node) => {
+              strokesLayerRef.current = node;
+            }}
+          >
+            {strokes
+              .filter((stroke) => !stroke.deleted_at)
+              .map((stroke) => (
+                <StoryboardStrokeNode key={stroke.id} stroke={stroke} />
+              ))}
+            <Line
+              ref={(node) => {
+                liveLineRef.current = node;
+              }}
+              visible={false}
+              lineCap="round"
+              lineJoin="round"
+              tension={0}
+              perfectDrawEnabled={false}
+              listening={false}
+            />
+          </Layer>
         }
       >
         {/* Layer 1: Scene Territories */}

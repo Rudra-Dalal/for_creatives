@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { storyboardService } from '../services/storyboardService';
 import type {
   StoryboardSceneWithShots,
@@ -9,6 +9,7 @@ import type {
   StoryboardShotWithLinks,
   StoryboardShot,
   StoryboardShotConnection,
+  StoryboardStroke,
   AnchorPosition,
   AspectRatio,
   ShotType,
@@ -19,6 +20,7 @@ import type {
 export interface UseStoryboardReturn {
   scenes: StoryboardSceneWithShots[];
   connections: StoryboardShotConnection[];
+  strokes: StoryboardStroke[];
   isLoading: boolean;
   error: string | null;
   selectedSceneId: string | null;
@@ -61,6 +63,8 @@ export interface UseStoryboardReturn {
   updateConnection: (id: string, updates: { fromAnchor?: AnchorPosition; toAnchor?: AnchorPosition; transitionLabel?: string }) => Promise<void>;
   deleteConnection: (id: string) => Promise<void>;
   restoreConnection: (id: string) => Promise<StoryboardShotConnection | null>;
+  addStroke: (points: number[], strokeColor: string, strokeWidth: number) => Promise<StoryboardStroke | null>;
+  eraseStroke: (id: string) => Promise<boolean>;
   selectScene: (id: string | null) => void;
   selectShot: (id: string | null) => void;
 }
@@ -68,8 +72,18 @@ export interface UseStoryboardReturn {
 export function useStoryboard(projectId: string): UseStoryboardReturn {
   const [scenes, setScenes] = useState<StoryboardSceneWithShots[]>([]);
   const [connections, setConnections] = useState<StoryboardShotConnection[]>([]);
+  const [strokes, setStrokes] = useState<StoryboardStroke[]>([]);
+  const strokesRef = useRef<StoryboardStroke[]>([]);
+  useEffect(() => {
+    strokesRef.current = strokes;
+  }, [strokes]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setErrorState] = useState<string | null>(null);
+  const errorRef = useRef<string | null>(null);
+  const setError = useCallback((msg: string | null) => {
+    errorRef.current = msg;
+    setErrorState(msg);
+  }, []);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
 
@@ -77,6 +91,8 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     if (!projectId) {
       setScenes([]);
       setConnections([]);
+      setStrokes([]);
+      strokesRef.current = [];
       setIsLoading(false);
       return;
     }
@@ -84,19 +100,22 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     try {
       setIsLoading(true);
       setError(null);
-      const [data, conns] = await Promise.all([
+      const [data, conns, strokeRows] = await Promise.all([
         storyboardService.getScenesWithShots(projectId),
         storyboardService.getConnections(projectId),
+        storyboardService.getStrokes(projectId),
       ]);
       setScenes(data);
       setConnections(conns);
+      setStrokes(strokeRows);
+      strokesRef.current = strokeRows;
     } catch (err) {
       console.error('Failed to load storyboard:', err);
       setError(err instanceof Error ? err.message : 'Failed to load storyboard');
     } finally {
       setIsLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, setError]);
 
   useEffect(() => {
     fetchStoryboard();
@@ -370,11 +389,104 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     }
   };
 
+  const handleAddStroke = async (
+    points: number[],
+    strokeColor: string,
+    strokeWidth: number
+  ): Promise<StoryboardStroke | null> => {
+    const tempId = `temp-stroke-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const now = new Date().toISOString();
+    const tempStroke: StoryboardStroke = {
+      id: tempId,
+      project_id: projectId,
+      points,
+      stroke_color: strokeColor,
+      stroke_width: strokeWidth,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+
+    // 1. Optimistic append
+    strokesRef.current = [...strokesRef.current, tempStroke];
+    setStrokes((prev) => [...prev, tempStroke]);
+
+    try {
+      // 2. Persist to DB
+      const created = await storyboardService.createStroke({
+        projectId,
+        points,
+        strokeColor,
+        strokeWidth,
+      });
+
+      // 3. Replace temp stroke with real DB row
+      strokesRef.current = strokesRef.current.map((s) => (s.id === tempId ? created : s));
+      setStrokes((prev) =>
+        prev.map((s) => (s.id === tempId ? created : s))
+      );
+
+      return created;
+    } catch (err) {
+      console.error('Failed to create stroke:', err);
+      // Rollback: remove only the temporary stroke
+      strokesRef.current = strokesRef.current.filter((s) => s.id !== tempId);
+      setStrokes((prev) => prev.filter((s) => s.id !== tempId));
+      setError(err instanceof Error ? err.message : 'Failed to create stroke');
+      return null;
+    }
+  };
+
+  const handleEraseStroke = async (id: string): Promise<boolean> => {
+    const existingIndex = strokesRef.current.findIndex((s) => s.id === id);
+    const existingStroke = existingIndex !== -1 ? strokesRef.current[existingIndex] : null;
+
+    if (!existingStroke || existingIndex === -1) {
+      // Stroke not found in active state — safe no-op
+      return false;
+    }
+
+    // 1. Optimistic removal
+    strokesRef.current = strokesRef.current.filter((s) => s.id !== id);
+    setStrokes((prev) => prev.filter((s) => s.id !== id));
+
+    try {
+      // 2. Persist to DB
+      await storyboardService.softDeleteStroke(id);
+      return true;
+    } catch (err) {
+      console.error('Failed to erase stroke:', err);
+      // 3. Rollback: restore the exact original stroke to its original position
+      const next = [...strokesRef.current];
+      const targetIdx = Math.min(existingIndex, next.length);
+      next.splice(targetIdx, 0, existingStroke);
+      strokesRef.current = next;
+
+      setStrokes((prev) => {
+        if (prev.some((s) => s.id === id)) {
+          return prev;
+        }
+        const pNext = [...prev];
+        const pIdx = Math.min(existingIndex, pNext.length);
+        pNext.splice(pIdx, 0, existingStroke);
+        return pNext;
+      });
+
+      setError(err instanceof Error ? err.message : 'Failed to erase stroke');
+      return false;
+    }
+  };
+
   return {
     scenes,
     connections,
+    get strokes() {
+      return strokesRef.current;
+    },
     isLoading,
-    error,
+    get error() {
+      return errorRef.current ?? error;
+    },
     selectedSceneId,
     selectedShotId,
     totalShotsCount,
@@ -394,6 +506,8 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     updateConnection: handleUpdateConnection,
     deleteConnection: handleDeleteConnection,
     restoreConnection: handleRestoreConnection,
+    addStroke: handleAddStroke,
+    eraseStroke: handleEraseStroke,
     selectScene: setSelectedSceneId,
     selectShot: setSelectedShotId,
   };

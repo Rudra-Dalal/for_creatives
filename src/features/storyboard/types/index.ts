@@ -122,6 +122,19 @@ export type StoryboardShotConnectionInsert = Database['public']['Tables']['story
 export type StoryboardShotConnectionUpdate = Database['public']['Tables']['storyboard_shot_connections']['Update'];
 
 /**
+ * Canvas-level freehand annotation stroke.
+ * Scoped to a project, not to any scene or shot.
+ *
+ * `points` is a flat number array [x0, y0, x1, y1, ...] stored in Storyboard
+ * world coordinates (post-inverse-viewport transform). stroke_width is also
+ * in world units (screen px / viewport.scale at draw time).
+ */
+export type StoryboardStroke = Database['public']['Tables']['storyboard_strokes']['Row'];
+export type StoryboardStrokeInsert = Database['public']['Tables']['storyboard_strokes']['Insert'];
+export type StoryboardStrokeUpdate = Database['public']['Tables']['storyboard_strokes']['Update'];
+
+
+/**
  * Composite Shot model including resolved linked references and direction notes.
  */
 export interface StoryboardShotWithLinks extends Omit<StoryboardShot, 'sketch_data'> {

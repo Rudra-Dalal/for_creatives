@@ -33,6 +33,7 @@ export function StoryboardView({
   const {
     scenes,
     connections,
+    strokes,
     isLoading,
     error,
     refresh,
@@ -46,6 +47,8 @@ export function StoryboardView({
     reassignShotScene,
     batchUpdateShotPositions,
     createConnection,
+    addStroke,
+    eraseStroke,
   } = useStoryboard(projectId);
 
   // Loading State
@@ -84,6 +87,7 @@ export function StoryboardView({
         projectName={projectName}
         scenes={scenes}
         connections={connections}
+        strokes={strokes}
         readOnly={readOnly}
         onCreateScene={createScene}
         onUpdateScene={updateScene}
@@ -95,6 +99,8 @@ export function StoryboardView({
         onReassignShotScene={reassignShotScene}
         onBatchUpdateShotPositions={batchUpdateShotPositions}
         onCreateConnection={createConnection}
+        onAddStroke={addStroke}
+        onEraseStroke={eraseStroke}
       />
 
       {/* Floating Onboarding Helper when canvas has 0 scenes */}

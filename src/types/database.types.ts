@@ -374,6 +374,40 @@ export interface Database {
           deleted_at?: string | null;
         };
       };
+      storyboard_strokes: {
+        Row: {
+          id: string;
+          project_id: string;
+          /** Flat world-coordinate point array [x0, y0, x1, y1, ...] */
+          points: Json;
+          stroke_color: string;
+          stroke_width: number;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          points: Json;
+          stroke_color: string;
+          stroke_width: number;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          points?: Json;
+          stroke_color?: string;
+          stroke_width?: number;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;

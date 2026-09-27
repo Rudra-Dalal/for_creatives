@@ -10,6 +10,8 @@ import type {
   StoryboardShotWithLinks,
   StoryboardShotConnection,
   StoryboardShotConnectionInsert,
+  StoryboardStroke,
+  StoryboardStrokeInsert,
   AnchorPosition,
   AspectRatio,
   ShotType,
@@ -843,5 +845,114 @@ export const storyboardService = {
       .eq('id', id);
 
     if (error) throw error;
+  },
+
+  // --------------------------------------------------------------------------
+  // CANVAS STROKE OPERATIONS
+  // --------------------------------------------------------------------------
+
+  /**
+   * Fetch all active (non-deleted) canvas annotation strokes for a project.
+   * Deterministically ordered by creation timestamp ascending.
+   */
+  async getStrokes(projectId: string): Promise<StoryboardStroke[]> {
+    if (!projectId || typeof projectId !== 'string' || !projectId.trim()) {
+      throw new Error('getStrokes: projectId is required');
+    }
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('storyboard_strokes')
+      .select('*')
+      .eq('project_id', projectId.trim())
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      throw new Error(`getStrokes: ${error.message}`);
+    }
+
+    return (data || []) as StoryboardStroke[];
+  },
+
+  /**
+   * Insert a new canvas stroke for a project.
+   * Points and stroke width must be pre-transformed into world coordinates.
+   */
+  async createStroke(input: {
+    projectId: string;
+    points: number[];
+    strokeColor: string;
+    strokeWidth: number;
+  }): Promise<StoryboardStroke> {
+    if (!input.projectId || typeof input.projectId !== 'string' || !input.projectId.trim()) {
+      throw new Error('createStroke: projectId is required');
+    }
+
+    if (
+      !Array.isArray(input.points) ||
+      input.points.length < 4 ||
+      input.points.length % 2 !== 0 ||
+      !input.points.every((n) => typeof n === 'number' && Number.isFinite(n))
+    ) {
+      throw new Error(
+        'createStroke: points must be a valid flat coordinate array with at least 2 points'
+      );
+    }
+
+    if (
+      typeof input.strokeWidth !== 'number' ||
+      !Number.isFinite(input.strokeWidth) ||
+      input.strokeWidth <= 0
+    ) {
+      throw new Error('createStroke: strokeWidth must be a positive finite number');
+    }
+
+    if (!input.strokeColor || typeof input.strokeColor !== 'string' || !input.strokeColor.trim()) {
+      throw new Error('createStroke: strokeColor must be a non-empty string');
+    }
+
+    const supabase = createClient();
+    const payload: StoryboardStrokeInsert = {
+      project_id: input.projectId.trim(),
+      points: input.points,
+      stroke_color: input.strokeColor.trim(),
+      stroke_width: input.strokeWidth,
+    };
+
+    const { data, error } = await supabase
+      .from('storyboard_strokes')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`createStroke: ${error.message}`);
+    }
+
+    return data as StoryboardStroke;
+  },
+
+  /**
+   * Soft-delete a canvas stroke by setting deleted_at.
+   */
+  async softDeleteStroke(id: string): Promise<StoryboardStroke> {
+    if (!id || typeof id !== 'string' || !id.trim()) {
+      throw new Error('softDeleteStroke: stroke id is required');
+    }
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('storyboard_strokes')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id.trim())
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`softDeleteStroke: ${error.message}`);
+    }
+
+    return data as StoryboardStroke;
   },
 };
