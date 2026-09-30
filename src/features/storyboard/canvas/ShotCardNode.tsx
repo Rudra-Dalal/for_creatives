@@ -1,10 +1,16 @@
 'use client';
 
-import React, { useRef } from 'react';
-import { Group, Rect, Text } from 'react-konva';
+import React, { useRef, useMemo } from 'react';
+import { Group, Rect, Text, Image as KonvaImage } from 'react-konva';
+import useImage from 'use-image';
 import type Konva from 'konva';
 import type { StoryboardShotWithLinks } from '../types';
 import { calculateShotDimensions } from '../utils/storyboardGeometry';
+import {
+  getShotFrameImageUrl,
+  shotHasVisualFrame,
+  computeCoverFit,
+} from '../utils/shotFrameUtils';
 
 export interface ShotCardNodeProps {
   shot: StoryboardShotWithLinks;
@@ -38,7 +44,7 @@ export function ShotCardNode({
   const shotLabel = `SHOT ${shotNumber.padStart(2, '0')}`;
   const aspectRatioLabel = shot.aspect_ratio || '16:9';
 
-  const handleDragStart = (e: Konva.KonvaEventObject<DragEvent>) => {
+  const handleDragStart = (_e: Konva.KonvaEventObject<DragEvent>) => {
     onDragStart(shot.id, shot.x, shot.y);
   };
 
@@ -46,7 +52,7 @@ export function ShotCardNode({
     onDragMove(shot.id, e);
   };
 
-  const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+  const handleDragEnd = (_e: Konva.KonvaEventObject<DragEvent>) => {
     const node = groupRef.current;
     if (!node) return;
     const newX = Math.round(node.x());
@@ -56,6 +62,36 @@ export function ShotCardNode({
 
   const cornerRadius = 8;
   const isHighlighted = isSelected || isMultiSelected;
+
+  // ── Visual Frame Image ──────────────────────────────────────────────────────
+  // Inner frame dimensions (card has 6px padding on each side)
+  const frameW = cardWidth - 12;
+  const frameH = frameHeight;
+
+  // Only compute / load an image when this shot actually has a visual frame set.
+  const hasFrame = shotHasVisualFrame(shot.visual_source, shot.visual_url);
+
+  // Resolve the URL once; external URLs are routed through /api/proxy-image.
+  const safeImageUrl = useMemo(
+    () => (hasFrame ? getShotFrameImageUrl(shot.visual_url) : ''),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hasFrame, shot.visual_url]
+  );
+
+  // `useImage` from `use-image` v1.x — returns [HTMLImageElement | undefined, status].
+  // When safeImageUrl is '' it issues no network request; status stays 'loading' safely.
+  const [frameImage, frameImageStatus] = useImage(safeImageUrl, 'anonymous');
+
+  const isFrameLoaded = hasFrame && frameImageStatus === 'loaded' && !!frameImage;
+  const isFrameFailed = hasFrame && frameImageStatus === 'failed';
+
+  // Cover-fit: scale image so its shorter axis fills the frame; centre, then clip.
+  // IMAGE FIT DECISION: cover — matches moodboard reference card convention, never
+  // distorts the image, always fills the frame area without empty letterbox areas.
+  const coverFit = useMemo(() => {
+    if (!isFrameLoaded || !frameImage) return null;
+    return computeCoverFit(frameImage.width, frameImage.height, frameW, frameH);
+  }, [isFrameLoaded, frameImage, frameW, frameH]);
 
   return (
     <Group
@@ -107,43 +143,91 @@ export function ShotCardNode({
         shadowOpacity={0.6}
       />
 
-      {/* 2. Dominant Visual Frame Placeholder */}
+      {/* 2. Dominant Visual Frame Area (6px inset each side) */}
       <Group x={6} y={6}>
+        {/* 2a. Frame background — always rendered as lowest layer in the frame area */}
         <Rect
           x={0}
           y={0}
-          width={cardWidth - 12}
-          height={frameHeight}
+          width={frameW}
+          height={frameH}
           fill="#11100E"
           stroke="#26241F"
           strokeWidth={1}
           cornerRadius={5}
-        />
-
-        {/* Framing Crosshair or Center Quiet Mark */}
-        <Rect
-          x={(cardWidth - 12) / 2 - 12}
-          y={frameHeight / 2 - 12}
-          width={24}
-          height={24}
-          stroke="#2F2D27"
-          strokeWidth={1}
-          cornerRadius={3}
-          listening={false}
-        />
-        <Text
-          x={0}
-          y={frameHeight / 2 + 18}
-          width={cardWidth - 12}
-          align="center"
-          text="Empty Frame"
-          fontFamily="system-ui, -apple-system, sans-serif"
-          fontSize={10}
-          fill="#524F47"
           listening={false}
         />
 
-        {/* Frame Overlay: Top-Left Shot Number Pill */}
+        {/*
+         * 2b. Visual frame image — rendered only when loaded successfully.
+         *
+         * IMAGE FIT: cover
+         *   The KonvaImage is drawn larger than the frame on the crop axis and
+         *   centred so the crop is symmetric. The surrounding Group clips it to
+         *   the exact frame bounds (with matching 5px corner radius) so overflowing
+         *   pixels are never visible. The frame aspect ratio is fixed by
+         *   calculateShotDimensions; the source image may differ, hence cover-fit.
+         *
+         * EVENT ISOLATION: listening={false} on both Group and KonvaImage ensures
+         *   no pointer events hit the image — all interaction falls through to the
+         *   parent ShotCardNode Group (click, drag, dblclick remain on the shot).
+         */}
+        {isFrameLoaded && coverFit && (
+          <Group
+            clipFunc={(ctx) => {
+              ctx.beginPath();
+              // Match the 5px cornerRadius of the backing Rect
+              ctx.roundRect(0, 0, frameW, frameH, 5);
+              ctx.closePath();
+            }}
+            listening={false}
+          >
+            <KonvaImage
+              image={frameImage}
+              x={coverFit.offsetX}
+              y={coverFit.offsetY}
+              width={coverFit.drawW}
+              height={coverFit.drawH}
+              listening={false}
+              perfectDrawEnabled={false}
+            />
+          </Group>
+        )}
+
+        {/*
+         * 2c. Empty-state / loading / failure placeholder.
+         *   Visible when:
+         *   - No frame is assigned (visual_source === 'none' or visual_url empty)
+         *   - Frame URL is currently loading (hasFrame && !isFrameLoaded && !isFrameFailed)
+         *   - Frame URL failed to load — degrades gracefully to a muted "unavailable" hint.
+         *     No layout shift occurs: the backing Rect (2a) always occupies full frame dims.
+         */}
+        {(!hasFrame || (!isFrameLoaded && !isFrameFailed) || isFrameFailed) && (
+          <Group listening={false}>
+            {/* Centre quiet mark / framing guide */}
+            <Rect
+              x={frameW / 2 - 12}
+              y={frameH / 2 - 12}
+              width={24}
+              height={24}
+              stroke={isFrameFailed ? '#3D2020' : '#2F2D27'}
+              strokeWidth={1}
+              cornerRadius={3}
+            />
+            <Text
+              x={0}
+              y={frameH / 2 + 18}
+              width={frameW}
+              align="center"
+              text={isFrameFailed ? 'Frame unavailable' : 'Empty Frame'}
+              fontFamily="system-ui, -apple-system, sans-serif"
+              fontSize={10}
+              fill={isFrameFailed ? '#5C3333' : '#524F47'}
+            />
+          </Group>
+        )}
+
+        {/* 2d. Frame Overlay: Top-Left Shot Number Pill — always rendered on top of image */}
         <Group x={8} y={8}>
           <Rect
             x={0}
@@ -154,6 +238,7 @@ export function ShotCardNode({
             stroke="#38352C"
             strokeWidth={1}
             cornerRadius={3}
+            listening={false}
           />
           <Text
             x={0}
@@ -170,8 +255,8 @@ export function ShotCardNode({
           />
         </Group>
 
-        {/* Frame Overlay: Top-Right Aspect Ratio Badge */}
-        <Group x={cardWidth - 12 - 46} y={8}>
+        {/* 2e. Frame Overlay: Top-Right Aspect Ratio Badge */}
+        <Group x={frameW - 46} y={8}>
           <Rect
             x={0}
             y={0}
@@ -181,6 +266,7 @@ export function ShotCardNode({
             stroke="#38352C"
             strokeWidth={1}
             cornerRadius={3}
+            listening={false}
           />
           <Text
             x={0}
@@ -254,7 +340,10 @@ export function ShotCardNode({
           )}
 
           {shot.camera_movement && (
-            <Group x={shot.shot_type ? Math.max(48, shot.shot_type.length * 7 + 14) + 6 : 0} y={0}>
+            <Group
+              x={shot.shot_type ? Math.max(48, shot.shot_type.length * 7 + 14) + 6 : 0}
+              y={0}
+            >
               <Rect
                 x={0}
                 y={0}
