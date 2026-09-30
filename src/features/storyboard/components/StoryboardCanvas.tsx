@@ -44,6 +44,7 @@ import type {
   StoryboardShotConnection,
   StoryboardStroke,
   AnchorPosition,
+  ShotVisualSource,
 } from '../types';
 
 export interface StoryboardCanvasProps {
@@ -76,6 +77,11 @@ export interface StoryboardCanvasProps {
     }
   ) => Promise<StoryboardShotWithLinks | null>;
   onUpdateShot?: (id: string, updates: Partial<StoryboardShot>) => Promise<void>;
+  onUpdateShotVisualFrame?: (
+    shotId: string,
+    visualUrl: string,
+    visualSource: ShotVisualSource
+  ) => Promise<void>;
   onDeleteShot?: (id: string) => Promise<void>;
   onDuplicateShot?: (id: string) => Promise<StoryboardShotWithLinks | null>;
   onReassignShotScene?: (shotId: string, targetSceneId: string) => Promise<void>;
@@ -109,6 +115,7 @@ export function StoryboardCanvas({
   onDeleteScene,
   onCreateShot,
   onUpdateShot,
+  onUpdateShotVisualFrame,
   onDeleteShot,
   onDuplicateShot,
   onReassignShotScene,
@@ -1115,10 +1122,18 @@ export function StoryboardCanvas({
         <StoryboardShotInspector
           shot={selectedShot}
           scenes={scenes}
+          projectId={projectId}
           readOnly={readOnly}
           onClose={() => setSelectedShotIds(new Set())}
           onUpdateShot={async (id, updates) => {
             if (onUpdateShot) await onUpdateShot(id, updates);
+          }}
+          onUpdateVisualFrame={async (shotId, visualUrl, visualSource) => {
+            if (onUpdateShotVisualFrame) {
+              await onUpdateShotVisualFrame(shotId, visualUrl, visualSource);
+            } else if (onUpdateShot) {
+              await onUpdateShot(shotId, { visual_url: visualUrl, visual_source: visualSource });
+            }
           }}
           onReassignScene={async (shotId, targetSceneId) => {
             if (onReassignShotScene) await onReassignShotScene(shotId, targetSceneId);

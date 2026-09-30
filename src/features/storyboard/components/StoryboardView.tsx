@@ -42,6 +42,7 @@ export function StoryboardView({
     deleteScene,
     createShot,
     updateShot,
+    updateShotVisualFrame,
     deleteShot,
     duplicateShot,
     reassignShotScene,
@@ -94,6 +95,7 @@ export function StoryboardView({
         onDeleteScene={deleteScene}
         onCreateShot={createShot}
         onUpdateShot={updateShot}
+        onUpdateShotVisualFrame={updateShotVisualFrame}
         onDeleteShot={deleteShot}
         onDuplicateShot={duplicateShot}
         onReassignShotScene={reassignShotScene}

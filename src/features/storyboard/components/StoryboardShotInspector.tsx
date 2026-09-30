@@ -1,6 +1,4 @@
-'use client';
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type {
   StoryboardShotWithLinks,
   StoryboardShot,
@@ -8,7 +6,9 @@ import type {
   AspectRatio,
   ShotType,
   CameraMovement,
+  ShotVisualSource,
 } from '../types';
+import type { Reference } from '@/features/references/types';
 import {
   ASPECT_RATIOS,
   SHOT_TYPES,
@@ -27,14 +27,27 @@ import {
   Ratio,
   Camera,
   Film,
+  Image as ImageIcon,
+  Upload,
+  Link2,
+  Check,
+  Loader2,
 } from 'lucide-react';
+import { shotHasVisualFrame, getShotFrameImageUrl } from '../utils/shotFrameUtils';
+import { thumbnailService } from '@/features/references/services/thumbnailService';
 
 export interface StoryboardShotInspectorProps {
   shot: StoryboardShotWithLinks | null;
   scenes: StoryboardSceneWithShots[];
+  projectId?: string;
   readOnly?: boolean;
   onClose: () => void;
   onUpdateShot: (shotId: string, updates: Partial<StoryboardShot>) => Promise<void>;
+  onUpdateVisualFrame?: (
+    shotId: string,
+    visualUrl: string,
+    visualSource: ShotVisualSource
+  ) => Promise<void>;
   onReassignScene: (shotId: string, targetSceneId: string) => Promise<void>;
   onDuplicateShot: (shotId: string) => Promise<void>;
   onDeleteShot: (shotId: string) => Promise<void>;
@@ -43,19 +56,29 @@ export interface StoryboardShotInspectorProps {
 export function StoryboardShotInspector({
   shot,
   scenes,
+  projectId,
   readOnly = false,
   onClose,
   onUpdateShot,
+  onUpdateVisualFrame,
   onReassignScene,
   onDuplicateShot,
   onDeleteShot,
 }: StoryboardShotInspectorProps) {
-  const [title, setTitle] = useState<string>('');
-  const [description, setDescription] = useState<string>('');
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
-  const [shotType, setShotType] = useState<ShotType | ''>('');
-  const [cameraMovement, setCameraMovement] = useState<CameraMovement | ''>('');
+  const [title, setTitle] = useState<string>(shot?.title || '');
+  const [description, setDescription] = useState<string>(shot?.description || '');
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>(shot?.aspect_ratio || '16:9');
+  const [shotType, setShotType] = useState<ShotType | ''>((shot?.shot_type as ShotType) || '');
+  const [cameraMovement, setCameraMovement] = useState<CameraMovement | ''>(
+    (shot?.camera_movement as CameraMovement) || ''
+  );
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [isClearing, setIsClearing] = useState<boolean>(false);
+  const [isAssigningRef, setIsAssigningRef] = useState<boolean>(false);
+  const [frameError, setFrameError] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (shot) {
@@ -128,10 +151,93 @@ export function StoryboardShotInspector({
     }
   };
 
+  const handleUpdateFrame = async (url: string, source: ShotVisualSource) => {
+    if (readOnly || !shot) return;
+    setFrameError(null);
+    try {
+      if (onUpdateVisualFrame) {
+        await onUpdateVisualFrame(shot.id, url, source);
+      } else {
+        await onUpdateShot(shot.id, { visual_url: url, visual_source: source });
+      }
+    } catch (err) {
+      console.error('Failed to update shot visual frame:', err);
+      setFrameError(err instanceof Error ? err.message : 'Failed to update frame');
+      throw err;
+    }
+  };
+
+  const handleAssignReference = async (ref: Reference) => {
+    if (readOnly || !shot || isAssigningRef || isUploading || isClearing) return;
+    if (!ref.thumbnail_url) {
+      setFrameError('Selected reference does not have a thumbnail image.');
+      return;
+    }
+    setIsAssigningRef(true);
+    setFrameError(null);
+    try {
+      await handleUpdateFrame(ref.thumbnail_url, 'reference');
+    } catch (err) {
+      // error handled in handleUpdateFrame
+    } finally {
+      setIsAssigningRef(false);
+    }
+  };
+
+  const handleUploadClick = () => {
+    if (readOnly || isUploading || isClearing || isAssigningRef) return;
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly || !shot) return;
+    const file = e.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setFrameError('Please select a valid image file (PNG, JPG, WebP, etc.).');
+      return;
+    }
+
+    const effectiveProjectId = projectId || shot.project_id;
+    if (!effectiveProjectId) {
+      setFrameError('Project ID is missing. Cannot upload frame image.');
+      return;
+    }
+
+    setIsUploading(true);
+    setFrameError(null);
+    try {
+      const publicUrl = await thumbnailService.uploadThumbnail(effectiveProjectId, file);
+      await handleUpdateFrame(publicUrl, 'upload');
+    } catch (err) {
+      console.error('Failed to upload shot frame image:', err);
+      setFrameError(err instanceof Error ? err.message : 'Failed to upload frame image');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleClearFrame = async () => {
+    if (readOnly || !shot || isClearing || isUploading || isAssigningRef) return;
+    setIsClearing(true);
+    setFrameError(null);
+    try {
+      await handleUpdateFrame('', 'none');
+    } catch (err) {
+      // error handled in handleUpdateFrame
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  const hasFrame = shotHasVisualFrame(shot.visual_source, shot.visual_url);
+
   return (
     <aside
       aria-label="Shot Inspector"
-      className="absolute top-16 right-6 w-84 z-30 rounded-xl border border-border/80 bg-[#161513]/95 backdrop-blur-md shadow-2xl p-4 text-foreground flex flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-200"
+      className="absolute top-16 right-6 w-84 z-30 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-xl border border-border/80 bg-[#161513]/95 backdrop-blur-md shadow-2xl p-4 text-foreground flex flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-200 custom-scrollbar"
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border/40 pb-3">
@@ -216,6 +322,193 @@ export function StoryboardShotInspector({
               {ratio}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Visual Frame Acquisition Section */}
+      <div className="space-y-2 p-2.5 rounded-lg bg-surface/50 border border-border/60">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-medium text-foreground flex items-center gap-1.5">
+            <ImageIcon className="h-3.5 w-3.5 text-accent" />
+            Visual Frame
+          </span>
+          {hasFrame && (
+            <span className="text-[10px] font-mono text-muted-foreground uppercase px-1.5 py-0.5 rounded bg-surface border border-border/50">
+              {shot.visual_source === 'reference' ? 'Reference' : 'Upload'}
+            </span>
+          )}
+        </div>
+
+        {/* Current Frame Preview (or Empty Frame State) */}
+        <div
+          className="relative w-full rounded-md overflow-hidden bg-[#11100E] border border-border/60 flex items-center justify-center transition-all"
+          style={{
+            aspectRatio: (aspectRatio || shot.aspect_ratio || '16:9').replace(':', '/'),
+            maxHeight: (aspectRatio || shot.aspect_ratio) === '9:16' ? '200px' : '150px',
+          }}
+        >
+          {hasFrame ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={getShotFrameImageUrl(shot.visual_url)}
+                alt="Shot Frame Preview"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/80 backdrop-blur-sm border border-white/10 text-[9px] font-mono font-medium text-foreground uppercase tracking-wider">
+                {shot.visual_source === 'reference' ? 'Reference' : 'Upload'}
+              </div>
+              <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/80 backdrop-blur-sm border border-white/10 text-[9px] font-mono text-muted-foreground">
+                {aspectRatio || shot.aspect_ratio || '16:9'}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-1 p-3 text-center">
+              <ImageIcon className="h-4 w-4 text-muted-foreground/40" />
+              <span className="text-[10px] font-medium text-muted-foreground/80">Empty Frame</span>
+              <span className="text-[9px] text-muted-foreground/50">
+                {readOnly ? 'No visual frame assigned' : 'Assign a linked reference or upload an image'}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Error message */}
+        {frameError && (
+          <div className="text-[10px] text-destructive bg-destructive/10 p-2 rounded border border-destructive/20 flex items-center justify-between gap-1.5">
+            <span className="flex-1">{frameError}</span>
+            <button
+              type="button"
+              onClick={() => setFrameError(null)}
+              className="text-destructive/80 hover:text-destructive flex-shrink-0"
+              aria-label="Dismiss error"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
+        {/* Action Buttons: Upload & Clear */}
+        {!readOnly && (
+          <div className="flex items-center gap-2 pt-0.5">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+              className="hidden"
+              disabled={isUploading || isClearing || isAssigningRef}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleUploadClick}
+              disabled={isUploading || isClearing || isAssigningRef}
+              className="flex-1 h-7 text-xs bg-surface/60 border-border hover:bg-surface text-foreground gap-1.5"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+                  <span>Uploading...</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="h-3.5 w-3.5 text-accent" />
+                  <span>Upload Image</span>
+                </>
+              )}
+            </Button>
+
+            {hasFrame && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleClearFrame}
+                disabled={isClearing || isUploading || isAssigningRef}
+                className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 px-2 gap-1"
+                title="Clear visual frame"
+              >
+                {isClearing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+                <span>Clear</span>
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Assign Reference as Frame */}
+        <div className="space-y-1.5 pt-1.5 border-t border-border/40">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+              <Link2 className="h-3 w-3" />
+              Linked References ({shot.references?.length || 0})
+            </span>
+          </div>
+
+          {!shot.references || shot.references.length === 0 ? (
+            <p className="text-[10px] text-muted-foreground/80 italic p-2 rounded bg-surface/30 border border-border/30">
+              No references linked to this shot. Link references to this shot to choose one as the visual frame.
+            </p>
+          ) : (
+            <div className="space-y-1 max-h-36 overflow-y-auto pr-0.5 custom-scrollbar">
+              {shot.references.map((ref) => {
+                const isSelected =
+                  shot.visual_source === 'reference' &&
+                  Boolean(ref.thumbnail_url) &&
+                  shot.visual_url === ref.thumbnail_url;
+
+                return (
+                  <button
+                    key={ref.id}
+                    type="button"
+                    disabled={readOnly || isAssigningRef || isUploading || isClearing || !ref.thumbnail_url}
+                    onClick={() => handleAssignReference(ref)}
+                    className={`w-full flex items-center gap-2 p-1.5 rounded border text-left transition-all ${
+                      isSelected
+                        ? 'bg-accent/15 border-accent text-foreground ring-1 ring-accent/30'
+                        : 'bg-surface/40 border-border/50 text-muted-foreground hover:text-foreground hover:bg-surface/70'
+                    } ${!ref.thumbnail_url ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    title={
+                      !ref.thumbnail_url
+                        ? 'Reference has no thumbnail image'
+                        : isSelected
+                        ? 'Active visual frame'
+                        : 'Set as visual frame'
+                    }
+                  >
+                    <div className="w-9 h-6 rounded overflow-hidden bg-[#11100E] border border-border/60 flex-shrink-0 flex items-center justify-center">
+                      {ref.thumbnail_url ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={getShotFrameImageUrl(ref.thumbnail_url)}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <ImageIcon className="h-3 w-3 text-muted-foreground/30" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-medium truncate text-foreground leading-tight">
+                        {ref.title || 'Untitled Reference'}
+                      </p>
+                      <p className="text-[9px] text-muted-foreground truncate leading-tight">
+                        {ref.source_domain || (ref.thumbnail_url ? 'Reference frame' : 'No image')}
+                      </p>
+                    </div>
+                    {isSelected && (
+                      <Check className="h-3.5 w-3.5 text-accent flex-shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

@@ -47,6 +47,11 @@ export interface UseStoryboardReturn {
     zIndex?: number;
   }) => Promise<StoryboardShotWithLinks | null>;
   updateShot: (id: string, updates: Partial<StoryboardShot>) => Promise<void>;
+  updateShotVisualFrame: (
+    shotId: string,
+    visualUrl: string,
+    visualSource: ShotVisualSource
+  ) => Promise<void>;
   deleteShot: (id: string) => Promise<void>;
   duplicateShot: (id: string) => Promise<StoryboardShotWithLinks | null>;
   reassignShotScene: (shotId: string, targetSceneId: string) => Promise<void>;
@@ -220,6 +225,17 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
       setError(err instanceof Error ? err.message : 'Failed to update shot');
       throw err;
     }
+  };
+
+  const handleUpdateShotVisualFrame = async (
+    shotId: string,
+    visualUrl: string,
+    visualSource: ShotVisualSource
+  ): Promise<void> => {
+    return handleUpdateShot(shotId, {
+      visual_url: visualUrl,
+      visual_source: visualSource,
+    });
   };
 
   const handleDeleteShot = async (id: string): Promise<void> => {
@@ -496,6 +512,7 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     deleteScene: handleDeleteScene,
     createShot: handleCreateShot,
     updateShot: handleUpdateShot,
+    updateShotVisualFrame: handleUpdateShotVisualFrame,
     deleteShot: handleDeleteShot,
     duplicateShot: handleDuplicateShot,
     reassignShotScene: handleReassignShotScene,
