@@ -10,43 +10,25 @@ The repository is clean on `main`. TypeScript passes. 292/293 tests pass. The mo
 
 ---
 
-## Critical Defects (P0 — do first)
+## Critical Defects (P0 — COMPLETE)
 
-### P0-1: Storyboard canvas has no undo/redo
+### P0-1: Storyboard canvas undo/redo [COMPLETE]
 
-**Severity:** High  
-**Why it matters:** Every canvas action on the storyboard (move shot, delete shot, create connection, draw stroke) is immediately committed with no recovery path. This is a data safety violation.  
-**Affected files:**
-- `src/features/storyboard/components/StoryboardCanvas.tsx`
-- `src/features/storyboard/canvas/` (new history module needed)
-- `src/features/storyboard/hooks/useStoryboard.ts` (expose undo/redo)
-
-**Approach:**
-- Model after `src/features/moodboard/hooks/historyStack.ts` (already exists, 1.6 KB)
-- Track reversible operations: move-shot, delete-shot, create-scene, delete-scene, create-connection, delete-connection, create-stroke, erase-stroke
-- Keyboard shortcuts: Ctrl/Cmd+Z (undo), Ctrl/Cmd+Shift+Z (redo)
-- History depth: 50 (sufficient for storyboard)
-- Do NOT capture shortcuts while inspector text fields are focused
-
-**Acceptance criteria:**
-- Ctrl+Z reverses the last canvas action
-- Ctrl+Shift+Z re-applies it
-- New action after undo clears redo stack
-- Move and resize record one operation per gesture (not per pointer event)
-- History survives tool-switches within a session
-- Unit tests cover: create/delete shot, move, create/delete connection, add/erase stroke
+**Status:** Completed and verified (Commits `1cc5c7c`, `a91eb798`).
+**Implemented:**
+- Dedicated `storyboardHistoryStack.ts` and `useStoryboardHistory.ts` supporting 19 reversible action types with 50-item depth.
+- Symmetrical soft-delete/restore operations preserving IDs with zero duplicated rows (`restoreStroke`, `restoreScene` with cascading shots, `restoreShot`, `restoreConnection`).
+- Keyboard shortcuts (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl+Y`) with input/textarea/contentEditable suppression.
+- Toolbar Undo/Redo controls with dynamic disabled states.
+- 38 history tests and 9 shortcut dispatch tests. All 528 tests passing.
 
 ---
 
-### P0-2: Performance test threshold causes baseline failure
+### P0-2: Performance test threshold baseline failure [COMPLETE]
 
-**Severity:** Low (test environment artifact, not a real defect)  
-**File:** `src/features/moodboard/utils/__tests__/layoutUtils.test.ts`, line 262  
-**Current:** `expect(elapsed).toBeLessThan(20)` fails at ~50ms cold-JIT  
-**Fix:** Raise to `100` — still a meaningful guard against O(n²) regressions while accommodating Node.js JIT variance  
-**Acceptance criteria:** Test passes reliably on first run in vitest
+**Status:** Completed and verified (Commit `a91eb798`). Raised threshold from 20ms to 100ms in `layoutUtils.test.ts`. Passes reliably across JIT states.
 
----
+
 
 ## P1 Tasks (after P0)
 
