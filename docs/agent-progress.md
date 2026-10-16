@@ -1,6 +1,6 @@
 # Agent Progress — for_creatives
-**Loop iteration:** 4  
-**Current milestone:** Ralph Loop — Task 3: Storyboard PNG export  
+**Loop iteration:** 5  
+**Current milestone:** Ralph Loop — Task 4: Storyboard save-status feedback  
 **Last updated:** 2026-10-16
 
 ---
@@ -44,37 +44,45 @@
   - Bidirectional drag normalization (top-left, bottom-right, negative axes).
   - Shift/Cmd/Ctrl additive multi-selection preserving existing selections.
   - Clean cancellation on Escape and mouseup.
-  - 10 unit tests in `useStoryboardMarquee.test.ts`. Full test suite: 557 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success.
+  - 10 unit tests in `useStoryboardMarquee.test.ts`. Full test suite: 557 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success. (Commit `931d6a6`)
+- [x] **Ralph Loop — Task 3 (Storyboard PNG Export):**
+  - Built `storyboardExportUtils.ts` containing:
+    - `calculateStoryboardExportBounds`: accounts for scenes, shot aspect ratio dimensions, and freehand stroke points/thickness, excluding soft-deleted elements. Supports `'all'` and `'selection'` modes without requiring marquee selection for full board export.
+    - `calculateStageExportConfig`: maps world bounds to Konva screen viewport, scales pixel ratio to ensure crisp 2x output regardless of viewport zoom level, and clamps safely against GPU max dimension limits (8192px).
+    - `sanitizeExportFilename`: formats project name into a clean, safe filename.
+    - `compositeExportWithBackground`: draws the exported stage snapshot over a solid `#121110` dark theme background to eliminate empty transparent canvas margins.
+    - `triggerDownload`: robust client-side download anchor dispatch.
+  - Integrated into `StoryboardCanvas.tsx` via `handleExportPNG` callback with frame wait and selection preservation (temporarily clears selection/handles before snapshot and restores them immediately after).
+  - Exposed `onRegisterExport` in `StoryboardCanvasProps` and wired `Export` button in `StoryboardToolbar.tsx` with loading spinner indicator (`isExporting`).
+  - Added 13 unit tests in `storyboardExportUtils.test.ts`. Full test suite: 570 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success.
 
 ---
 
 ## Current Task
 
-**Ralph Loop — Task 3:** Storyboard PNG export.
+**Ralph Loop — Task 4:** Storyboard save-status feedback.
 
 **Acceptance criteria:**
-- Forward `stageRef` from `StoryboardCanvas` to export full board bounds or content bounds.
-- Calculate bounding box covering all shots, scenes, connections, and strokes (with sensible padding).
-- Ensure image proxying / CORS-safe export via `stage.toDataURL()` without canvas tainting.
-- Wire export action button in `StoryboardToolbar` / header.
-- Unit/integration tests covering export bounding-box math and trigger flow.
+- Surface save status banner/indicator (`saving`, `saved`, `error`) in the storyboard workspace view, complying with the "no silent failures" core rule.
+- Track mutations across shots, scenes, connections, and strokes.
+- Provide retry or dismiss options on network/persistence errors.
+- Unit/integration tests covering save feedback state transitions.
 
 ---
 
 ## Known Baseline Failures
 
-*None* (all 557 tests pass).
+*None* (all 570 tests pass).
 
 ---
 
 ## Remaining Ralph Loop Tasks
 
-1. **Task 3:** Storyboard PNG export.
-2. **Task 4:** Storyboard save-status feedback.
-3. **Task 5:** Dashboard search verification and fixes.
+1. **Task 4:** Storyboard save-status feedback.
+2. **Task 5:** Dashboard search verification and fixes.
 
 ---
 
 ## Next Action
 
-Inspect moodboard PNG export (`exportMoodboardAsPng` / stage serialization) and adapt for Storyboard stage bounds and CORS image proxying.
+Inspect storyboard service mutation hooks and workspace container for save feedback banner integration matching the moodboard pattern.

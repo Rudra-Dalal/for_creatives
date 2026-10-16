@@ -33,6 +33,13 @@ import {
   SCENE_PADDING,
   SCENE_HEADER_HEIGHT,
 } from '../utils/storyboardGeometry';
+import {
+  calculateStoryboardExportBounds,
+  calculateStageExportConfig,
+  sanitizeExportFilename,
+  compositeExportWithBackground,
+  triggerDownload,
+} from '../utils/storyboardExportUtils';
 import type {
   StoryboardViewport,
   StoryboardTool,
@@ -113,6 +120,9 @@ export interface StoryboardCanvasProps {
     strokeWidth: number
   ) => Promise<StoryboardStroke | null>;
   onEraseStroke?: (id: string) => Promise<boolean>;
+  onRegisterExport?: (
+    exporter: (customName?: string, mode?: 'all' | 'selection') => Promise<boolean>
+  ) => void;
   children?: React.ReactNode;
 }
 
@@ -144,6 +154,7 @@ export function StoryboardCanvas({
   onAddStroke,
   onRestoreStroke,
   onEraseStroke,
+  onRegisterExport,
   children,
 }: StoryboardCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -277,6 +288,80 @@ export function StoryboardCanvas({
   const allShots: StoryboardShotWithLinks[] = React.useMemo(() => {
     return scenes.flatMap((s) => s.shots);
   }, [scenes]);
+
+  // --------------------------------------------------------------------------
+  // PNG EXPORT HANDLER
+  // --------------------------------------------------------------------------
+
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPNG = useCallback(
+    async (customName?: string, mode: 'all' | 'selection' = 'all'): Promise<boolean> => {
+      const stage = stageRef.current;
+      if (!stage) return false;
+
+      // 1. Calculate world bounds for export
+      const bounds = calculateStoryboardExportBounds({
+        scenes,
+        shots: allShots,
+        strokes,
+        selectedShotIds,
+        selectedSceneId,
+        mode,
+        padding: 40,
+      });
+
+      if (!bounds) {
+        return false;
+      }
+
+      setIsExporting(true);
+
+      // 2. Temporarily clear selection so selection border / anchor handles are not in snapshot
+      const prevShotIds = new Set(selectedShotIds);
+      const prevSceneId = selectedSceneId;
+      setSelectedShotIds(new Set());
+      setSelectedSceneId(null);
+
+      // Frame wait for React & Konva redraw
+      await new Promise((r) => setTimeout(r, 60));
+
+      try {
+        // 3. Compute stage export configuration
+        const exportConfig = calculateStageExportConfig(bounds, stage);
+
+        // 4. Capture PNG data URL from Konva stage
+        const rawDataUrl = stage.toDataURL(exportConfig);
+        if (!rawDataUrl || rawDataUrl === 'data:,') {
+          throw new Error('Konva stage produced empty data URL');
+        }
+
+        // 5. Composite with solid dark surface background (#121110)
+        const finalDataUrl = await compositeExportWithBackground(rawDataUrl, '#121110');
+
+        // 6. Trigger download
+        const filename = sanitizeExportFilename(customName || projectName, 'storyboard');
+        triggerDownload(finalDataUrl, filename);
+
+        return true;
+      } catch (err) {
+        console.error('Failed to export storyboard as PNG:', err);
+        return false;
+      } finally {
+        // 7. Restore user's previous selection
+        setSelectedShotIds(prevShotIds);
+        setSelectedSceneId(prevSceneId);
+        setIsExporting(false);
+      }
+    },
+    [scenes, allShots, strokes, selectedShotIds, selectedSceneId, projectName, stageRef]
+  );
+
+  useEffect(() => {
+    if (onRegisterExport) {
+      onRegisterExport(handleExportPNG);
+    }
+  }, [onRegisterExport, handleExportPNG]);
 
   // --------------------------------------------------------------------------
   // UNDO / REDO HISTORY
@@ -1209,6 +1294,8 @@ export function StoryboardCanvas({
         canRedo={canRedo}
         onUndo={undo}
         onRedo={redo}
+        onExportPNG={() => handleExportPNG()}
+        isExporting={isExporting}
       />
 
       {/* Main Konva Viewport Stage */}

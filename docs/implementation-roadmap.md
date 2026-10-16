@@ -48,8 +48,12 @@ The repository is clean on `main`. TypeScript passes. 292/293 tests pass. The mo
 - Clean cancellation on Escape and mouseup.
 - 10 unit tests in `useStoryboardMarquee.test.ts`. Full test suite: 557 passing.
 
-### P1-3: Storyboard export (PNG)
-Use `Konva.stage.toDataURL()` on the storyboard stage to export a PNG of the full canvas. Handle the same CORS-taint proxy requirement already solved in the moodboard.
+### P1-3: Storyboard export (PNG) [COMPLETE]
+**Status:** Completed and verified.
+- Built `storyboardExportUtils.ts` with world bounds calculation (scenes, shot dimensions, stroke paths), stage screen viewport mapping, 2x crisp resolution compensation across zoom levels, and dark surface background compositing (`#121110`).
+- Selection isolation: snapshot cleans selection markers/handles during capture and restores them seamlessly.
+- UI: Added Export button with loading state to `StoryboardToolbar.tsx` and registered exporter in `StoryboardCanvas.tsx`.
+- 13 unit tests in `storyboardExportUtils.test.ts`. Full suite: 570 passing.
 
 ### P1-4: Storyboard save feedback
 Surface save status (saving/saved/error) in the storyboard workspace header, matching the moodboard pattern.

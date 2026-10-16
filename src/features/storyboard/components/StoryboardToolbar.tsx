@@ -13,6 +13,8 @@ import {
   Maximize2,
   Undo2,
   Redo2,
+  Download,
+  Loader2,
 } from 'lucide-react';
 import { clampScale } from '../utils/storyboardCoordinates';
 import type { StoryboardTool, StoryboardViewport } from '../types';
@@ -28,6 +30,8 @@ interface StoryboardToolbarProps {
   canRedo?: boolean;
   onUndo?: () => void;
   onRedo?: () => void;
+  onExportPNG?: () => void;
+  isExporting?: boolean;
 }
 
 export function StoryboardToolbar({
@@ -41,6 +45,8 @@ export function StoryboardToolbar({
   canRedo = false,
   onUndo,
   onRedo,
+  onExportPNG,
+  isExporting = false,
 }: StoryboardToolbarProps) {
   const handleZoom = (delta: number) => {
     const newScale = clampScale(viewport.scale + delta);
@@ -207,6 +213,27 @@ export function StoryboardToolbar({
           </button>
         )}
       </div>
+
+      {/* Export Storyboard PNG */}
+      {onExportPNG && (
+        <>
+          <div className="h-4 w-px bg-border mx-1" />
+          <button
+            type="button"
+            onClick={onExportPNG}
+            disabled={isExporting}
+            className="flex items-center gap-1.5 h-8 px-2 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-surface-subtle transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            title="Export Storyboard as PNG"
+          >
+            {isExporting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
+            <span className="hidden sm:inline">Export</span>
+          </button>
+        </>
+      )}
     </div>
   );
 }
