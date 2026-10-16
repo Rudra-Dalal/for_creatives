@@ -36,6 +36,9 @@ export function StoryboardView({
     strokes,
     isLoading,
     error,
+    saveStatus,
+    saveError,
+    clearSaveError,
     refresh,
     createScene,
     updateScene,
@@ -69,8 +72,8 @@ export function StoryboardView({
     );
   }
 
-  // Error State
-  if (error) {
+  // Error State on Initial Load (only full-screen if board failed to load initially)
+  if (error && scenes.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-background">
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 max-w-md space-y-3">
@@ -98,6 +101,9 @@ export function StoryboardView({
         connections={connections}
         strokes={strokes}
         readOnly={readOnly}
+        saveStatus={saveStatus}
+        saveError={saveError}
+        onClearSaveError={clearSaveError}
         onCreateScene={createScene}
         onUpdateScene={updateScene}
         onDeleteScene={deleteScene}

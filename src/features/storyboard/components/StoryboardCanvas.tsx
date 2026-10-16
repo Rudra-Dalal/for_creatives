@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type Konva from 'konva';
 import { Layer, Line } from 'react-konva';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import { StoryboardStage } from '../canvas/StoryboardStage';
 import { StoryboardToolbar } from './StoryboardToolbar';
 import { SceneRegionNode } from '../canvas/SceneRegionNode';
@@ -123,6 +124,9 @@ export interface StoryboardCanvasProps {
   onRegisterExport?: (
     exporter: (customName?: string, mode?: 'all' | 'selection') => Promise<boolean>
   ) => void;
+  saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
+  saveError?: string | null;
+  onClearSaveError?: () => void;
   children?: React.ReactNode;
 }
 
@@ -155,6 +159,9 @@ export function StoryboardCanvas({
   onRestoreStroke,
   onEraseStroke,
   onRegisterExport,
+  saveStatus = 'idle',
+  saveError = null,
+  onClearSaveError,
   children,
 }: StoryboardCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1282,6 +1289,40 @@ export function StoryboardCanvas({
       ref={containerRef}
       className="w-full h-full flex-1 relative overflow-hidden bg-background select-none"
     >
+      {/* Save Error Banner (non-blocking notification with dismiss) */}
+      {saveStatus === 'error' && saveError && (
+        <div className="absolute top-4 right-4 z-40 flex items-center gap-2.5 rounded-lg border border-red-500/40 bg-[#1A1A19]/95 backdrop-blur px-3.5 py-2 shadow-floating text-red-400 animate-in fade-in-50">
+          <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+          <span className="text-xs font-medium">{saveError}</span>
+          {onClearSaveError && (
+            <button
+              type="button"
+              onClick={onClearSaveError}
+              className="ml-2 text-xs text-muted-foreground hover:text-foreground underline cursor-pointer"
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Save Status Pill (Quiet, restrained indicator) */}
+      {saveStatus && saveStatus !== 'idle' && saveStatus !== 'error' && (
+        <div className="absolute top-4 right-4 z-30 flex items-center gap-1.5 rounded-full border border-border/70 bg-[#1A1A19]/85 backdrop-blur px-3 py-1 text-[11px] text-muted-foreground select-none pointer-events-none transition-opacity duration-300">
+          {saveStatus === 'saving' ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin text-accent" />
+              <span>Saving...</span>
+            </>
+          ) : (
+            <>
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span className="text-foreground/80">Saved</span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Floating Canvas HUD Toolbar */}
       <StoryboardToolbar
         activeTool={activeTool}

@@ -44,7 +44,6 @@
   - Bidirectional drag normalization (top-left, bottom-right, negative axes).
   - Shift/Cmd/Ctrl additive multi-selection preserving existing selections.
   - Clean cancellation on Escape and mouseup.
-  - 10 unit tests in `useStoryboardMarquee.test.ts`. Full test suite: 557 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success. (Commit `931d6a6`)
 - [x] **Ralph Loop — Task 3 (Storyboard PNG Export):**
   - Built `storyboardExportUtils.ts` containing:
     - `calculateStoryboardExportBounds`: accounts for scenes, shot aspect ratio dimensions, and freehand stroke points/thickness, excluding soft-deleted elements. Supports `'all'` and `'selection'` modes without requiring marquee selection for full board export.
@@ -54,35 +53,42 @@
     - `triggerDownload`: robust client-side download anchor dispatch.
   - Integrated into `StoryboardCanvas.tsx` via `handleExportPNG` callback with frame wait and selection preservation (temporarily clears selection/handles before snapshot and restores them immediately after).
   - Exposed `onRegisterExport` in `StoryboardCanvasProps` and wired `Export` button in `StoryboardToolbar.tsx` with loading spinner indicator (`isExporting`).
-  - Added 13 unit tests in `storyboardExportUtils.test.ts`. Full test suite: 570 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success.
+  - Added 13 unit tests in `storyboardExportUtils.test.ts`. Full test suite: 570 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success. (Commit `8c2c1d9`)
+- [x] **Ralph Loop — Task 4 (Storyboard Save-Status Feedback):**
+  - Added save feedback tracking to `useStoryboard.ts` with `saveStatus` (`'idle' | 'saving' | 'saved' | 'error'`), `saveError` (`string | null`), and `clearSaveError()`.
+  - Wrapped all 20 storyboard mutations (`createScene`, `updateScene`, `deleteScene`, `createShot`, `updateShot`, `deleteShot`, `duplicateShot`, `reassignShotScene`, `batchUpdateShotPositions`, `reorderShots`, `reorderScenes`, `createConnection`, `updateConnection`, `deleteConnection`, `restoreConnection`, `addStroke`, `eraseStroke`, `restoreShot`, `restoreScene`, `restoreStroke`) with asynchronous tracking and error catching.
+  - Implemented automatic 2.5-second reset timer after successful saves and concurrent save operation tracking via `activeSavesRef`.
+  - Added visual HUD indicator in `StoryboardCanvas.tsx`: top-right saving spinner / saved emerald indicator matching `MoodboardCanvas` design, plus an error banner with a `Dismiss` action.
+  - Decoupled full-screen blocking error in `StoryboardView.tsx` (`error && scenes.length === 0`) so background mutation errors do not unmount the canvas or interrupt user editing.
+  - Added 6 unit tests in `src/features/storyboard/hooks/__tests__/useStoryboardSaveStatus.test.ts`. Full test suite: 576 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success.
 
 ---
 
 ## Current Task
 
-**Ralph Loop — Task 4:** Storyboard save-status feedback.
+**Ralph Loop — Task 5:** Dashboard search verification and fixes.
 
 **Acceptance criteria:**
-- Surface save status banner/indicator (`saving`, `saved`, `error`) in the storyboard workspace view, complying with the "no silent failures" core rule.
-- Track mutations across shots, scenes, connections, and strokes.
-- Provide retry or dismiss options on network/persistence errors.
-- Unit/integration tests covering save feedback state transitions.
+- Inspect dashboard search logic and UI.
+- Verify whether search covers project name, and extend to reference titles / direction note titles where appropriate.
+- Ensure case-insensitivity, whitespace trimming, and empty search robustness.
+- Add unit/integration tests for search filtering.
+- Full test suite, TypeScript, lint, and build pass.
 
 ---
 
 ## Known Baseline Failures
 
-*None* (all 570 tests pass).
+*None* (all 576 tests pass).
 
 ---
 
 ## Remaining Ralph Loop Tasks
 
-1. **Task 4:** Storyboard save-status feedback.
-2. **Task 5:** Dashboard search verification and fixes.
+1. **Task 5:** Dashboard search verification and fixes.
 
 ---
 
 ## Next Action
 
-Inspect storyboard service mutation hooks and workspace container for save feedback banner integration matching the moodboard pattern.
+Inspect `src/features/projects/` and `src/app/dashboard/` search components and filtering logic.

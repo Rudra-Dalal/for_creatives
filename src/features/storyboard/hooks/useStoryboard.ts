@@ -23,6 +23,9 @@ export interface UseStoryboardReturn {
   strokes: StoryboardStroke[];
   isLoading: boolean;
   error: string | null;
+  saveStatus: 'idle' | 'saving' | 'saved' | 'error';
+  saveError: string | null;
+  clearSaveError: () => void;
   selectedSceneId: string | null;
   selectedShotId: string | null;
   totalShotsCount: number;
@@ -95,6 +98,62 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
 
+  // Save status tracking for visible persistence feedback (no silent failures)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveStatusRef = useRef<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const saveErrorRef = useRef<string | null>(null);
+  const activeSavesRef = useRef(0);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const beginSave = useCallback(() => {
+    activeSavesRef.current += 1;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    saveStatusRef.current = 'saving';
+    saveErrorRef.current = null;
+    setSaveStatus('saving');
+    setSaveError(null);
+  }, []);
+
+  const endSave = useCallback((err?: unknown) => {
+    activeSavesRef.current = Math.max(0, activeSavesRef.current - 1);
+    if (err) {
+      console.error('Storyboard persistence error:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to save storyboard changes';
+      saveStatusRef.current = 'error';
+      saveErrorRef.current = msg;
+      setSaveStatus('error');
+      setSaveError(msg);
+    } else if (activeSavesRef.current === 0) {
+      saveStatusRef.current = 'saved';
+      setSaveStatus('saved');
+      saveTimerRef.current = setTimeout(() => {
+        saveStatusRef.current = 'idle';
+        setSaveStatus('idle');
+      }, 2500);
+    }
+  }, []);
+
+  const clearSaveError = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    saveStatusRef.current = 'idle';
+    saveErrorRef.current = null;
+    setSaveStatus('idle');
+    setSaveError(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
   const fetchStoryboard = useCallback(async () => {
     if (!projectId) {
       setScenes([]);
@@ -139,6 +198,7 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     width?: number,
     height?: number
   ): Promise<StoryboardScene | null> => {
+    beginSave();
     try {
       const created = await storyboardService.createScene({
         projectId,
@@ -150,35 +210,43 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
         height,
       });
       await fetchStoryboard();
+      endSave();
       return created;
     } catch (err) {
       console.error('Failed to create scene:', err);
       setError(err instanceof Error ? err.message : 'Failed to create scene');
+      endSave(err);
       return null;
     }
   };
 
   const handleUpdateScene = async (id: string, updates: Partial<StoryboardSceneUpdate>): Promise<void> => {
+    beginSave();
     try {
       await storyboardService.updateScene(id, updates);
       setScenes((prev) =>
         prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
       );
+      endSave();
     } catch (err) {
       console.error('Failed to update scene:', err);
       setError(err instanceof Error ? err.message : 'Failed to update scene');
+      endSave(err);
       throw err;
     }
   };
 
   const handleDeleteScene = async (id: string): Promise<void> => {
+    beginSave();
     try {
       await storyboardService.deleteScene(id);
       setScenes((prev) => prev.filter((s) => s.id !== id));
       if (selectedSceneId === id) setSelectedSceneId(null);
+      endSave();
     } catch (err) {
       console.error('Failed to delete scene:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete scene');
+      endSave(err);
       throw err;
     }
   };
@@ -195,8 +263,14 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
       cameraMovement?: CameraMovement | null;
       visualUrl?: string;
       visualSource?: ShotVisualSource;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      zIndex?: number;
     }
   ): Promise<StoryboardShotWithLinks | null> => {
+    beginSave();
     try {
       const shot = await storyboardService.createShot({
         projectId,
@@ -204,15 +278,18 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
         ...data,
       });
       await fetchStoryboard();
+      endSave();
       return shot;
     } catch (err) {
       console.error('Failed to create shot:', err);
       setError(err instanceof Error ? err.message : 'Failed to create shot');
+      endSave(err);
       return null;
     }
   };
 
   const handleUpdateShot = async (id: string, updates: Partial<StoryboardShot>): Promise<void> => {
+    beginSave();
     try {
       await storyboardService.updateShot(id, updates);
       setScenes((prev) =>
@@ -223,9 +300,11 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
           ),
         }))
       );
+      endSave();
     } catch (err) {
       console.error('Failed to update shot:', err);
       setError(err instanceof Error ? err.message : 'Failed to update shot');
+      endSave(err);
       throw err;
     }
   };
@@ -242,6 +321,7 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
   };
 
   const handleDeleteShot = async (id: string): Promise<void> => {
+    beginSave();
     try {
       await storyboardService.deleteShot(id);
       setScenes((prev) =>
@@ -251,32 +331,40 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
         }))
       );
       if (selectedShotId === id) setSelectedShotId(null);
+      endSave();
     } catch (err) {
       console.error('Failed to delete shot:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete shot');
+      endSave(err);
       throw err;
     }
   };
 
   const handleDuplicateShot = async (id: string): Promise<StoryboardShotWithLinks | null> => {
+    beginSave();
     try {
       const duplicated = await storyboardService.duplicateShot(id);
       await fetchStoryboard();
+      endSave();
       return duplicated;
     } catch (err) {
       console.error('Failed to duplicate shot:', err);
       setError(err instanceof Error ? err.message : 'Failed to duplicate shot');
+      endSave(err);
       return null;
     }
   };
 
   const handleReassignShotScene = async (shotId: string, targetSceneId: string): Promise<void> => {
+    beginSave();
     try {
       await storyboardService.updateShot(shotId, { scene_id: targetSceneId });
       await fetchStoryboard();
+      endSave();
     } catch (err) {
       console.error('Failed to reassign shot scene:', err);
       setError(err instanceof Error ? err.message : 'Failed to reassign shot');
+      endSave(err);
       throw err;
     }
   };
@@ -285,6 +373,7 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     updates: Array<{ id: string; x: number; y: number; zIndex?: number }>
   ): Promise<void> => {
     if (updates.length === 0) return;
+    beginSave();
     try {
       await storyboardService.batchUpdateShotPositions(updates);
       setScenes((prev) => {
@@ -297,9 +386,11 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
           }),
         }));
       });
+      endSave();
     } catch (err) {
       console.error('Failed to batch update shot positions:', err);
       await fetchStoryboard();
+      endSave(err);
       throw err;
     }
   };
@@ -317,11 +408,14 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
       })
     );
 
+    beginSave();
     try {
       await storyboardService.reorderShots(sceneId, orderedShotIds);
+      endSave();
     } catch (err) {
       console.error('Failed to persist shot order:', err);
       await fetchStoryboard(); // rollback on error
+      endSave(err);
     }
   };
 
@@ -334,11 +428,14 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
         .filter((s): s is StoryboardSceneWithShots => !!s);
     });
 
+    beginSave();
     try {
       await storyboardService.reorderScenes(projectId, orderedSceneIds);
+      endSave();
     } catch (err) {
       console.error('Failed to persist scene order:', err);
       await fetchStoryboard(); // rollback on error
+      endSave(err);
     }
   };
 
@@ -349,6 +446,7 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     toAnchor?: AnchorPosition;
     transitionLabel?: string;
   }): Promise<StoryboardShotConnection | null> => {
+    beginSave();
     try {
       const created = await storyboardService.createConnection({ projectId, ...input });
       // Optimistic update: append or replace any soft-deleted entry for this pair
@@ -358,10 +456,12 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
         );
         return [...filtered, created];
       });
+      endSave();
       return created;
     } catch (err) {
       console.error('Failed to create connection:', err);
       setError(err instanceof Error ? err.message : 'Failed to create connection');
+      endSave(err);
       return null;
     }
   };
@@ -370,29 +470,36 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     id: string,
     updates: { fromAnchor?: AnchorPosition; toAnchor?: AnchorPosition; transitionLabel?: string }
   ): Promise<void> => {
+    beginSave();
     try {
       const updated = await storyboardService.updateConnection(id, updates);
       setConnections((prev) => prev.map((c) => (c.id === id ? updated : c)));
+      endSave();
     } catch (err) {
       console.error('Failed to update connection:', err);
       setError(err instanceof Error ? err.message : 'Failed to update connection');
+      endSave(err);
       throw err;
     }
   };
 
   const handleDeleteConnection = async (id: string): Promise<void> => {
+    beginSave();
     try {
       await storyboardService.deleteConnection(id);
       // Remove from local state immediately — undo must call restoreConnection
       setConnections((prev) => prev.filter((c) => c.id !== id));
+      endSave();
     } catch (err) {
       console.error('Failed to delete connection:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete connection');
+      endSave(err);
       throw err;
     }
   };
 
   const handleRestoreConnection = async (id: string): Promise<StoryboardShotConnection | null> => {
+    beginSave();
     try {
       const restored = await storyboardService.restoreConnection(id);
       setConnections((prev) => {
@@ -400,10 +507,12 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
         const filtered = prev.filter((c) => c.id !== restored.id);
         return [...filtered, restored];
       });
+      endSave();
       return restored;
     } catch (err) {
       console.error('Failed to restore connection:', err);
       setError(err instanceof Error ? err.message : 'Failed to restore connection');
+      endSave(err);
       return null;
     }
   };
@@ -430,6 +539,7 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     strokesRef.current = [...strokesRef.current, tempStroke];
     setStrokes((prev) => [...prev, tempStroke]);
 
+    beginSave();
     try {
       // 2. Persist to DB
       const created = await storyboardService.createStroke({
@@ -445,6 +555,7 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
         prev.map((s) => (s.id === tempId ? created : s))
       );
 
+      endSave();
       return created;
     } catch (err) {
       console.error('Failed to create stroke:', err);
@@ -452,6 +563,7 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
       strokesRef.current = strokesRef.current.filter((s) => s.id !== tempId);
       setStrokes((prev) => prev.filter((s) => s.id !== tempId));
       setError(err instanceof Error ? err.message : 'Failed to create stroke');
+      endSave(err);
       return null;
     }
   };
@@ -469,9 +581,11 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     strokesRef.current = strokesRef.current.filter((s) => s.id !== id);
     setStrokes((prev) => prev.filter((s) => s.id !== id));
 
+    beginSave();
     try {
       // 2. Persist to DB
       await storyboardService.softDeleteStroke(id);
+      endSave();
       return true;
     } catch (err) {
       console.error('Failed to erase stroke:', err);
@@ -492,41 +606,51 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
       });
 
       setError(err instanceof Error ? err.message : 'Failed to erase stroke');
+      endSave(err);
       return false;
     }
   };
 
   const handleRestoreShot = async (id: string): Promise<void> => {
+    beginSave();
     try {
       await storyboardService.restoreShot(id);
       await fetchStoryboard();
+      endSave();
     } catch (err) {
       console.error('Failed to restore shot:', err);
       setError(err instanceof Error ? err.message : 'Failed to restore shot');
+      endSave(err);
       throw err;
     }
   };
 
   const handleRestoreScene = async (id: string): Promise<void> => {
+    beginSave();
     try {
       await storyboardService.restoreScene(id);
       await fetchStoryboard();
+      endSave();
     } catch (err) {
       console.error('Failed to restore scene:', err);
       setError(err instanceof Error ? err.message : 'Failed to restore scene');
+      endSave(err);
       throw err;
     }
   };
 
   const handleRestoreStroke = async (id: string): Promise<StoryboardStroke | null> => {
+    beginSave();
     try {
       const restored = await storyboardService.restoreStroke(id);
       strokesRef.current = [...strokesRef.current.filter((s) => s.id !== restored.id), restored];
       setStrokes((prev) => [...prev.filter((s) => s.id !== restored.id), restored]);
+      endSave();
       return restored;
     } catch (err) {
       console.error('Failed to restore stroke:', err);
       setError(err instanceof Error ? err.message : 'Failed to restore stroke');
+      endSave(err);
       return null;
     }
   };
@@ -541,6 +665,13 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     get error() {
       return errorRef.current ?? error;
     },
+    get saveStatus() {
+      return saveStatusRef.current;
+    },
+    get saveError() {
+      return saveErrorRef.current;
+    },
+    clearSaveError,
     selectedSceneId,
     selectedShotId,
     totalShotsCount,

@@ -55,8 +55,13 @@ The repository is clean on `main`. TypeScript passes. 292/293 tests pass. The mo
 - UI: Added Export button with loading state to `StoryboardToolbar.tsx` and registered exporter in `StoryboardCanvas.tsx`.
 - 13 unit tests in `storyboardExportUtils.test.ts`. Full suite: 570 passing.
 
-### P1-4: Storyboard save feedback
-Surface save status (saving/saved/error) in the storyboard workspace header, matching the moodboard pattern.
+### P1-4: Storyboard save feedback [COMPLETE]
+**Status:** Completed and verified.
+- Added asynchronous save status tracking in `useStoryboard.ts` (`saveStatus`: `'idle' | 'saving' | 'saved' | 'error'`, `saveError`, `clearSaveError`).
+- Wrapped all 20 storyboard mutations with active save counter, catch handlers, and a 2.5s auto-clearing saved timer.
+- Integrated restrained HUD indicator in `StoryboardCanvas.tsx` (top-right saving spinner / saved indicator matching `MoodboardCanvas`) and error banner with a dismiss action.
+- Decoupled unmounting errors in `StoryboardView.tsx` (`error && scenes.length === 0`), preventing canvas teardown on non-fatal background mutation failures.
+- 6 unit tests in `src/features/storyboard/hooks/__tests__/useStoryboardSaveStatus.test.ts`. Full test suite: 576 passing.
 
 ### P1-5: Dashboard search verification + fix
 Confirm search covers project name. Add reference-title and direction-note-title search if not present.
