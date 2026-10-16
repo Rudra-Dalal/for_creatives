@@ -13,6 +13,7 @@ import { useStoryboardEraser } from '../canvas/useStoryboardEraser';
 import { StoryboardShotAnchorHandles } from '../canvas/StoryboardShotAnchorHandles';
 import { StoryboardConnectionsLayer } from '../canvas/StoryboardConnectionsLayer';
 import { useConnectionDrag, type ConnectionDragState } from '../canvas/useConnectionDrag';
+import { useStoryboardHistory } from '../canvas/useStoryboardHistory';
 import { StoryboardShotInspector } from './StoryboardShotInspector';
 import { StoryboardSceneInspector } from './StoryboardSceneInspector';
 import {
@@ -94,6 +95,17 @@ export interface StoryboardCanvasProps {
     fromAnchor: AnchorPosition;
     toAnchor: AnchorPosition;
   }) => Promise<StoryboardShotConnection | null>;
+  onRestoreConnection?: (id: string) => Promise<StoryboardShotConnection | null>;
+  onDeleteConnection?: (id: string) => Promise<void>;
+  onUpdateConnection?: (
+    id: string,
+    updates: { fromAnchor?: AnchorPosition; toAnchor?: AnchorPosition; transitionLabel?: string }
+  ) => Promise<void>;
+  onRestoreShot?: (id: string) => Promise<void>;
+  onRestoreScene?: (id: string) => Promise<void>;
+  onRestoreStroke?: (id: string) => Promise<StoryboardStroke | null>;
+  onReorderShots?: (sceneId: string, orderedShotIds: string[]) => Promise<void>;
+  onReorderScenes?: (orderedSceneIds: string[]) => Promise<void>;
   onAddStroke?: (
     points: number[],
     strokeColor: string,
@@ -113,15 +125,23 @@ export function StoryboardCanvas({
   onCreateScene,
   onUpdateScene,
   onDeleteScene,
+  onRestoreScene,
   onCreateShot,
   onUpdateShot,
   onUpdateShotVisualFrame,
   onDeleteShot,
+  onRestoreShot,
   onDuplicateShot,
   onReassignShotScene,
   onBatchUpdateShotPositions,
+  onReorderShots,
+  onReorderScenes,
   onCreateConnection,
+  onUpdateConnection,
+  onDeleteConnection,
+  onRestoreConnection,
   onAddStroke,
+  onRestoreStroke,
   onEraseStroke,
   children,
 }: StoryboardCanvasProps) {
@@ -263,6 +283,28 @@ export function StoryboardCanvas({
   }, [scenes]);
 
   // --------------------------------------------------------------------------
+  // UNDO / REDO HISTORY
+  // --------------------------------------------------------------------------
+
+  const { canUndo, canRedo, pushAction, undo, redo } = useStoryboardHistory({
+    onDeleteShot,
+    onRestoreShot,
+    onUpdateShot,
+    onBatchUpdateShotPositions,
+    onReassignShotScene,
+    onReorderShots,
+    onDeleteScene,
+    onRestoreScene,
+    onUpdateScene,
+    onReorderScenes,
+    onDeleteConnection,
+    onRestoreConnection,
+    onUpdateConnection,
+    onEraseStroke,
+    onRestoreStroke,
+  });
+
+  // --------------------------------------------------------------------------
   // CONNECTION DRAG INTERACTION
   // --------------------------------------------------------------------------
 
@@ -280,6 +322,23 @@ export function StoryboardCanvas({
     });
   }, []);
 
+  const handleCreateConnectionWithHistory = useCallback(
+    async (input: {
+      fromShotId: string;
+      toShotId: string;
+      fromAnchor: AnchorPosition;
+      toAnchor: AnchorPosition;
+    }) => {
+      if (!onCreateConnection) return null;
+      const conn = await onCreateConnection(input);
+      if (conn && !readOnly) {
+        pushAction({ type: 'CREATE_CONNECTION', connectionId: conn.id });
+      }
+      return conn;
+    },
+    [onCreateConnection, pushAction, readOnly]
+  );
+
   const {
     dragStateRef,
     handleAnchorMouseDown,
@@ -291,7 +350,7 @@ export function StoryboardCanvas({
     viewport,
     allShots,
     existingConnections: connections,
-    onCreateConnection: onCreateConnection ?? (() => Promise.resolve(null)),
+    onCreateConnection: handleCreateConnectionWithHistory,
     onDragStateChange: handleConnectionDragStateChange,
   });
 
@@ -350,6 +409,18 @@ export function StoryboardCanvas({
   // PEN DRAWING HOOK
   // --------------------------------------------------------------------------
 
+  const handleAddStrokeWithHistory = useCallback(
+    async (points: number[], strokeColor: string, strokeWidth: number) => {
+      if (!onAddStroke) return null;
+      const stroke = await onAddStroke(points, strokeColor, strokeWidth);
+      if (stroke && !readOnly) {
+        pushAction({ type: 'ADD_STROKE', strokeId: stroke.id });
+      }
+      return stroke;
+    },
+    [onAddStroke, pushAction, readOnly]
+  );
+
   const {
     liveLineRef,
     strokesLayerRef,
@@ -361,13 +432,26 @@ export function StoryboardCanvas({
     activeTool,
     viewport,
     readOnly,
-    onAddStroke,
+    onAddStroke: handleAddStrokeWithHistory,
     onClearSelection: handleClearSelection,
   });
 
   // --------------------------------------------------------------------------
   // ERASER HOOK
   // --------------------------------------------------------------------------
+
+  const handleEraseGestureComplete = useCallback(
+    (strokeIds: string[]) => {
+      if (strokeIds.length > 0 && !readOnly) {
+        if (strokeIds.length === 1) {
+          pushAction({ type: 'ERASE_STROKE', strokeId: strokeIds[0] });
+        } else {
+          pushAction({ type: 'BATCH_ERASE_STROKES', strokeIds });
+        }
+      }
+    },
+    [pushAction, readOnly]
+  );
 
   const {
     handleEraserMouseDown,
@@ -380,6 +464,7 @@ export function StoryboardCanvas({
     strokes,
     readOnly,
     onEraseStroke,
+    onEraseGestureComplete: handleEraseGestureComplete,
     onClearSelection: handleClearSelection,
   });
 
@@ -429,6 +514,28 @@ export function StoryboardCanvas({
       const dx = newX - scene.x;
       const dy = newY - scene.y;
 
+      const memberDeltas = calculateMemberShotsDelta(allShots, sceneId, dx, dy);
+
+      if (!readOnly && (dx !== 0 || dy !== 0)) {
+        const memberShots = memberDeltas.map((u) => {
+          const s = allShots.find((shot) => shot.id === u.id);
+          return {
+            id: u.id,
+            prevX: s ? s.x : u.x - dx,
+            prevY: s ? s.y : u.y - dy,
+            nextX: u.x,
+            nextY: u.y,
+          };
+        });
+        pushAction({
+          type: 'MOVE_SCENE',
+          sceneId,
+          prevPos: { x: scene.x, y: scene.y },
+          nextPos: { x: newX, y: newY },
+          memberShots,
+        });
+      }
+
       // Persist scene position
       if (onUpdateScene) {
         await onUpdateScene(sceneId, { x: newX, y: newY });
@@ -436,7 +543,6 @@ export function StoryboardCanvas({
 
       // Compute and persist all member shot deltas
       if (onBatchUpdateShotPositions && dx !== 0 && dy !== 0) {
-        const memberDeltas = calculateMemberShotsDelta(allShots, sceneId, dx, dy);
         if (memberDeltas.length > 0) {
           await onBatchUpdateShotPositions(memberDeltas);
         }
@@ -444,19 +550,33 @@ export function StoryboardCanvas({
 
       sceneMemberStartPositionsRef.current.clear();
     },
-    [scenes, allShots, onUpdateScene, onBatchUpdateShotPositions]
+    [scenes, allShots, onUpdateScene, onBatchUpdateShotPositions, readOnly, pushAction]
   );
 
   const handleSceneResizeEnd = useCallback(
     async (sceneId: string, newWidth: number, newHeight: number) => {
+      const scene = scenes.find((s) => s.id === sceneId);
+      if (!scene) return;
+      const finalW = Math.max(SCENE_MIN_WIDTH, newWidth);
+      const finalH = Math.max(SCENE_MIN_HEIGHT, newHeight);
+
+      if (!readOnly && (finalW !== scene.width || finalH !== scene.height)) {
+        pushAction({
+          type: 'RESIZE_SCENE',
+          sceneId,
+          prevSize: { width: scene.width, height: scene.height },
+          nextSize: { width: finalW, height: finalH },
+        });
+      }
+
       if (onUpdateScene) {
         await onUpdateScene(sceneId, {
-          width: Math.max(SCENE_MIN_WIDTH, newWidth),
-          height: Math.max(SCENE_MIN_HEIGHT, newHeight),
+          width: finalW,
+          height: finalH,
         });
       }
     },
-    [onUpdateScene]
+    [onUpdateScene, scenes, readOnly, pushAction]
   );
 
   // --------------------------------------------------------------------------
@@ -546,7 +666,7 @@ export function StoryboardCanvas({
         await onReassignShotScene(shot.id, targetHeaderSceneId);
       }
 
-      // 2. Persist Positions
+      // 2. Persist Positions + push history
       const startMap = multiShotStartPositionsRef.current;
       if (startMap.size > 1 && onBatchUpdateShotPositions) {
         const primaryInitial = startMap.get(shotId);
@@ -560,9 +680,26 @@ export function StoryboardCanvas({
             y: Math.round(s.y + dy),
           }));
 
+          // Build history entry before persisting
+          const historyShots = Array.from(startMap.values()).map((s) => ({
+            id: s.id,
+            prevX: s.x,
+            prevY: s.y,
+            nextX: Math.round(s.x + dx),
+            nextY: Math.round(s.y + dy),
+          }));
+          if (!readOnly) pushAction({ type: 'MOVE_SHOTS', shots: historyShots });
+
           await onBatchUpdateShotPositions(batchUpdates);
         }
       } else if (onUpdateShot) {
+        // Single shot move
+        if (!readOnly) {
+          pushAction({
+            type: 'MOVE_SHOTS',
+            shots: [{ id: shotId, prevX: shot.x, prevY: shot.y, nextX: newX, nextY: newY }],
+          });
+        }
         await onUpdateShot(shotId, { x: newX, y: newY });
       }
 
@@ -574,6 +711,8 @@ export function StoryboardCanvas({
       onReassignShotScene,
       onBatchUpdateShotPositions,
       onUpdateShot,
+      pushAction,
+      readOnly,
     ]
   );
 
@@ -613,6 +752,7 @@ export function StoryboardCanvas({
         if (newScene) {
           setSelectedSceneId(newScene.id);
           setSelectedShotIds(new Set());
+          pushAction({ type: 'CREATE_SCENE', sceneId: newScene.id });
         }
         setActiveTool('select');
         return;
@@ -637,6 +777,7 @@ export function StoryboardCanvas({
           const sceneY = Math.round(worldPos.y - SCENE_HEADER_HEIGHT - SCENE_PADDING);
           const newScene = await onCreateScene('Scene 1', '', sceneX, sceneY);
           if (newScene) {
+            pushAction({ type: 'CREATE_SCENE', sceneId: newScene.id });
             targetScene = {
               ...newScene,
               shots: [],
@@ -652,6 +793,7 @@ export function StoryboardCanvas({
           if (newShot) {
             setSelectedSceneId(null);
             setSelectedShotIds(new Set([newShot.id]));
+            pushAction({ type: 'CREATE_SHOT', shotId: newShot.id });
           }
         }
         setActiveTool('select');
@@ -693,6 +835,7 @@ export function StoryboardCanvas({
       handleClearSelection,
       handlePenMouseDown,
       handleEraserMouseDown,
+      pushAction,
     ]
   );
 
@@ -809,11 +952,12 @@ export function StoryboardCanvas({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+      const activeTag = (activeEl?.tagName || '').toLowerCase();
       if (
         activeTag === 'input' ||
         activeTag === 'textarea' ||
-        (document.activeElement as HTMLElement)?.isContentEditable
+        (activeEl as HTMLElement)?.isContentEditable
       ) {
         return;
       }
@@ -842,12 +986,19 @@ export function StoryboardCanvas({
       if ((e.key === 'Delete' || e.key === 'Backspace') && !readOnly) {
         if (selectedShotIds.size > 0 && onDeleteShot) {
           e.preventDefault();
-          for (const id of selectedShotIds) {
+          const shotIdsToDelete = Array.from(selectedShotIds);
+          if (shotIdsToDelete.length === 1) {
+            pushAction({ type: 'DELETE_SHOT', shotId: shotIdsToDelete[0] });
+          } else {
+            pushAction({ type: 'BATCH_DELETE_SHOTS', shotIds: shotIdsToDelete });
+          }
+          for (const id of shotIdsToDelete) {
             onDeleteShot(id);
           }
           setSelectedShotIds(new Set());
         } else if (selectedSceneId && onDeleteScene) {
           e.preventDefault();
+          pushAction({ type: 'DELETE_SCENE', sceneId: selectedSceneId });
           onDeleteScene(selectedSceneId);
           setSelectedSceneId(null);
         }
@@ -919,6 +1070,20 @@ export function StoryboardCanvas({
           handleZoomToFit();
         }
       }
+
+      // Undo / Redo (must be after the tool-key block so they don't conflict)
+      if ((e.metaKey || e.ctrlKey) && !e.altKey) {
+        if (e.key.toLowerCase() === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+          return;
+        }
+        if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') {
+          e.preventDefault();
+          redo();
+          return;
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -940,6 +1105,9 @@ export function StoryboardCanvas({
     onBatchUpdateShotPositions,
     onUpdateScene,
     handleZoomToFit,
+    pushAction,
+    undo,
+    redo,
   ]);
 
   // --------------------------------------------------------------------------
@@ -956,10 +1124,11 @@ export function StoryboardCanvas({
       pos.y
     );
     if (newScene) {
+      if (!readOnly) pushAction({ type: 'CREATE_SCENE', sceneId: newScene.id });
       setSelectedSceneId(newScene.id);
       setSelectedShotIds(new Set());
     }
-  }, [onCreateScene, readOnly, scenes, viewport]);
+  }, [onCreateScene, readOnly, scenes, viewport, pushAction]);
 
   const handleCreateShotInTargetScene = useCallback(
     async (sceneId?: string) => {
@@ -981,6 +1150,7 @@ export function StoryboardCanvas({
       });
 
       if (newShot) {
+        if (!readOnly) pushAction({ type: 'CREATE_SHOT', shotId: newShot.id });
         setSelectedSceneId(null);
         setSelectedShotIds(new Set([newShot.id]));
       }
@@ -991,6 +1161,7 @@ export function StoryboardCanvas({
       scenes,
       selectedScene,
       handleCreateSceneAtSensibleLocation,
+      pushAction,
     ]
   );
 
@@ -1007,6 +1178,10 @@ export function StoryboardCanvas({
         onViewportChange={handleViewportChange}
         onZoomToFit={handleZoomToFit}
         readOnly={readOnly}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={undo}
+        onRedo={redo}
       />
 
       {/* Main Konva Viewport Stage */}
@@ -1126,9 +1301,24 @@ export function StoryboardCanvas({
           readOnly={readOnly}
           onClose={() => setSelectedShotIds(new Set())}
           onUpdateShot={async (id, updates) => {
+            if (!readOnly && selectedShot) {
+              const prev: Partial<StoryboardShot> = {};
+              for (const k of Object.keys(updates) as (keyof StoryboardShot)[]) {
+                (prev as Record<string, unknown>)[k] = ((selectedShot as unknown) as Record<string, unknown>)[k];
+              }
+              pushAction({ type: 'UPDATE_SHOT', shotId: id, prev, next: updates });
+            }
             if (onUpdateShot) await onUpdateShot(id, updates);
           }}
           onUpdateVisualFrame={async (shotId, visualUrl, visualSource) => {
+            if (!readOnly && selectedShot) {
+              pushAction({
+                type: 'UPDATE_SHOT',
+                shotId,
+                prev: { visual_url: selectedShot.visual_url, visual_source: selectedShot.visual_source },
+                next: { visual_url: visualUrl, visual_source: visualSource },
+              });
+            }
             if (onUpdateShotVisualFrame) {
               await onUpdateShotVisualFrame(shotId, visualUrl, visualSource);
             } else if (onUpdateShot) {
@@ -1136,12 +1326,23 @@ export function StoryboardCanvas({
             }
           }}
           onReassignScene={async (shotId, targetSceneId) => {
+            if (!readOnly && selectedShot) {
+              pushAction({
+                type: 'REASSIGN_SHOT_SCENE',
+                shotId,
+                prevSceneId: selectedShot.scene_id,
+                nextSceneId: targetSceneId,
+              });
+            }
             if (onReassignShotScene) await onReassignShotScene(shotId, targetSceneId);
           }}
           onDuplicateShot={async (id) => {
             if (onDuplicateShot) await onDuplicateShot(id);
           }}
           onDeleteShot={async (id) => {
+            if (!readOnly) {
+              pushAction({ type: 'DELETE_SHOT', shotId: id });
+            }
             if (onDeleteShot) {
               await onDeleteShot(id);
               setSelectedShotIds(new Set());
@@ -1157,9 +1358,19 @@ export function StoryboardCanvas({
           readOnly={readOnly}
           onClose={() => setSelectedSceneId(null)}
           onUpdateScene={async (id, updates) => {
+            if (!readOnly && selectedScene) {
+              const prev: Partial<StoryboardSceneUpdate> = {};
+              for (const k of Object.keys(updates) as (keyof StoryboardSceneUpdate)[]) {
+                (prev as Record<string, unknown>)[k] = ((selectedScene as unknown) as Record<string, unknown>)[k];
+              }
+              pushAction({ type: 'UPDATE_SCENE', sceneId: id, prev, next: updates });
+            }
             if (onUpdateScene) await onUpdateScene(id, updates);
           }}
           onDeleteScene={async (id) => {
+            if (!readOnly) {
+              pushAction({ type: 'DELETE_SCENE', sceneId: id });
+            }
             if (onDeleteScene) {
               await onDeleteScene(id);
               setSelectedSceneId(null);

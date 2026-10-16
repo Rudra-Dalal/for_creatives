@@ -825,12 +825,19 @@ export const storyboardService = {
   async restoreScene(id: string): Promise<void> {
     const supabase = createClient();
 
-    const { error } = await supabase
+    const { error: sceneError } = await supabase
       .from('storyboard_scenes')
       .update({ deleted_at: null })
       .eq('id', id);
 
-    if (error) throw error;
+    if (sceneError) throw sceneError;
+
+    const { error: shotsError } = await supabase
+      .from('storyboard_shots')
+      .update({ deleted_at: null })
+      .eq('scene_id', id);
+
+    if (shotsError) throw shotsError;
   },
 
   /**
@@ -951,6 +958,29 @@ export const storyboardService = {
 
     if (error) {
       throw new Error(`softDeleteStroke: ${error.message}`);
+    }
+
+    return data as StoryboardStroke;
+  },
+
+  /**
+   * Restore a soft-deleted canvas stroke by setting deleted_at to null.
+   */
+  async restoreStroke(id: string): Promise<StoryboardStroke> {
+    if (!id || typeof id !== 'string' || !id.trim()) {
+      throw new Error('restoreStroke: stroke id is required');
+    }
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('storyboard_strokes')
+      .update({ deleted_at: null })
+      .eq('id', id.trim())
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`restoreStroke: ${error.message}`);
     }
 
     return data as StoryboardStroke;

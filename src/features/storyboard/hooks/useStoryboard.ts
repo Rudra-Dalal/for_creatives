@@ -68,6 +68,9 @@ export interface UseStoryboardReturn {
   updateConnection: (id: string, updates: { fromAnchor?: AnchorPosition; toAnchor?: AnchorPosition; transitionLabel?: string }) => Promise<void>;
   deleteConnection: (id: string) => Promise<void>;
   restoreConnection: (id: string) => Promise<StoryboardShotConnection | null>;
+  restoreShot: (id: string) => Promise<void>;
+  restoreScene: (id: string) => Promise<void>;
+  restoreStroke: (id: string) => Promise<StoryboardStroke | null>;
   addStroke: (points: number[], strokeColor: string, strokeWidth: number) => Promise<StoryboardStroke | null>;
   eraseStroke: (id: string) => Promise<boolean>;
   selectScene: (id: string | null) => void;
@@ -493,6 +496,41 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     }
   };
 
+  const handleRestoreShot = async (id: string): Promise<void> => {
+    try {
+      await storyboardService.restoreShot(id);
+      await fetchStoryboard();
+    } catch (err) {
+      console.error('Failed to restore shot:', err);
+      setError(err instanceof Error ? err.message : 'Failed to restore shot');
+      throw err;
+    }
+  };
+
+  const handleRestoreScene = async (id: string): Promise<void> => {
+    try {
+      await storyboardService.restoreScene(id);
+      await fetchStoryboard();
+    } catch (err) {
+      console.error('Failed to restore scene:', err);
+      setError(err instanceof Error ? err.message : 'Failed to restore scene');
+      throw err;
+    }
+  };
+
+  const handleRestoreStroke = async (id: string): Promise<StoryboardStroke | null> => {
+    try {
+      const restored = await storyboardService.restoreStroke(id);
+      strokesRef.current = [...strokesRef.current.filter((s) => s.id !== restored.id), restored];
+      setStrokes((prev) => [...prev.filter((s) => s.id !== restored.id), restored]);
+      return restored;
+    } catch (err) {
+      console.error('Failed to restore stroke:', err);
+      setError(err instanceof Error ? err.message : 'Failed to restore stroke');
+      return null;
+    }
+  };
+
   return {
     scenes,
     connections,
@@ -523,9 +561,12 @@ export function useStoryboard(projectId: string): UseStoryboardReturn {
     updateConnection: handleUpdateConnection,
     deleteConnection: handleDeleteConnection,
     restoreConnection: handleRestoreConnection,
+    restoreShot: handleRestoreShot,
+    restoreScene: handleRestoreScene,
+    restoreStroke: handleRestoreStroke,
     addStroke: handleAddStroke,
     eraseStroke: handleEraseStroke,
     selectScene: setSelectedSceneId,
     selectShot: setSelectedShotId,
   };
-}
+};

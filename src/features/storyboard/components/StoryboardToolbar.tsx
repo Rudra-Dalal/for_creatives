@@ -11,6 +11,8 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { clampScale } from '../utils/storyboardCoordinates';
 import type { StoryboardTool, StoryboardViewport } from '../types';
@@ -22,6 +24,10 @@ interface StoryboardToolbarProps {
   onViewportChange: (viewport: StoryboardViewport) => void;
   onZoomToFit?: () => void;
   readOnly?: boolean;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 export function StoryboardToolbar({
@@ -31,6 +37,10 @@ export function StoryboardToolbar({
   onViewportChange,
   onZoomToFit,
   readOnly = false,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
 }: StoryboardToolbarProps) {
   const handleZoom = (delta: number) => {
     const newScale = clampScale(viewport.scale + delta);
@@ -128,6 +138,29 @@ export function StoryboardToolbar({
             title="Eraser (E)"
           >
             <Eraser className="h-4 w-4" />
+          </button>
+
+          <div className="h-4 w-px bg-border mx-1" />
+
+          {/* Undo / Redo */}
+          <button
+            type="button"
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="flex items-center justify-center h-8 w-8 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-muted-foreground hover:text-foreground hover:bg-surface-subtle border border-transparent"
+            title="Undo (Ctrl+Z)"
+          >
+            <Undo2 className="h-4 w-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="flex items-center justify-center h-8 w-8 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-muted-foreground hover:text-foreground hover:bg-surface-subtle border border-transparent"
+            title="Redo (Ctrl+Shift+Z)"
+          >
+            <Redo2 className="h-4 w-4" />
           </button>
 
           <div className="h-4 w-px bg-border mx-1" />

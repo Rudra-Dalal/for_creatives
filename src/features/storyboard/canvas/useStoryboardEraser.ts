@@ -13,6 +13,7 @@ export interface UseStoryboardEraserOptions {
   readOnly?: boolean;
   hitRadius?: number;
   onEraseStroke?: (id: string) => Promise<boolean>;
+  onEraseGestureComplete?: (erasedStrokeIds: string[]) => void;
   onClearSelection?: () => void;
 }
 
@@ -49,11 +50,13 @@ export function useStoryboardEraser({
   readOnly = false,
   hitRadius = DEFAULT_ERASER_HIT_RADIUS,
   onEraseStroke,
+  onEraseGestureComplete,
   onClearSelection,
 }: UseStoryboardEraserOptions): UseStoryboardEraserReturn {
   const isErasingRef = useRef<boolean>(false);
   const prevPointerPosRef = useRef<{ x: number; y: number } | null>(null);
   const erasedStrokeIdsRef = useRef<Set<string>>(new Set());
+  const gestureErasedIdsRef = useRef<string[]>([]);
 
   // Mutable refs for latest values without breaking memoization
   const viewportRef = useRef<StoryboardViewport>(viewport);
@@ -88,12 +91,18 @@ export function useStoryboardEraser({
     onEraseStrokeRef.current = onEraseStroke;
   }, [onEraseStroke]);
 
+  const onEraseGestureCompleteRef = useRef(onEraseGestureComplete);
+  useEffect(() => {
+    onEraseGestureCompleteRef.current = onEraseGestureComplete;
+  }, [onEraseGestureComplete]);
+
   /**
    * Safely cancels any active eraser gesture without deleting further strokes.
    */
   const cancelErasing = useCallback(() => {
     isErasingRef.current = false;
     prevPointerPosRef.current = null;
+    gestureErasedIdsRef.current = [];
   }, []);
 
   // Cancel eraser gesture on tool switch
@@ -154,6 +163,7 @@ export function useStoryboardEraser({
 
       isErasingRef.current = true;
       prevPointerPosRef.current = { x: worldPos.x, y: worldPos.y };
+      gestureErasedIdsRef.current = [];
 
       e.cancelBubble = true;
       return true;
@@ -205,15 +215,20 @@ export function useStoryboardEraser({
         if (isHit) {
           const strokeId = stroke.id;
           erasedStrokeIdsRef.current.add(strokeId);
+          if (!gestureErasedIdsRef.current.includes(strokeId)) {
+            gestureErasedIdsRef.current.push(strokeId);
+          }
           onEraseStrokeRef.current?.(strokeId)
             .then((success) => {
               if (success === false) {
                 erasedStrokeIdsRef.current.delete(strokeId);
+                gestureErasedIdsRef.current = gestureErasedIdsRef.current.filter((id) => id !== strokeId);
               }
             })
             .catch((err) => {
               console.error('Failed to erase stroke:', err);
               erasedStrokeIdsRef.current.delete(strokeId);
+              gestureErasedIdsRef.current = gestureErasedIdsRef.current.filter((id) => id !== strokeId);
             });
 
           break; // Stop after erasing one stroke per movement event
@@ -238,6 +253,12 @@ export function useStoryboardEraser({
       e.cancelBubble = true;
       isErasingRef.current = false;
       prevPointerPosRef.current = null;
+
+      if (gestureErasedIdsRef.current.length > 0) {
+        onEraseGestureCompleteRef.current?.([...gestureErasedIdsRef.current]);
+        gestureErasedIdsRef.current = [];
+      }
+
       return true;
     },
     []

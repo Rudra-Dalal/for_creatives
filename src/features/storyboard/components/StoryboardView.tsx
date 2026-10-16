@@ -48,6 +48,14 @@ export function StoryboardView({
     reassignShotScene,
     batchUpdateShotPositions,
     createConnection,
+    updateConnection,
+    deleteConnection,
+    restoreConnection,
+    restoreShot,
+    restoreScene,
+    restoreStroke,
+    reorderShots,
+    reorderScenes,
     addStroke,
     eraseStroke,
   } = useStoryboard(projectId);
@@ -93,15 +101,23 @@ export function StoryboardView({
         onCreateScene={createScene}
         onUpdateScene={updateScene}
         onDeleteScene={deleteScene}
+        onRestoreScene={restoreScene}
         onCreateShot={createShot}
         onUpdateShot={updateShot}
         onUpdateShotVisualFrame={updateShotVisualFrame}
         onDeleteShot={deleteShot}
+        onRestoreShot={restoreShot}
         onDuplicateShot={duplicateShot}
         onReassignShotScene={reassignShotScene}
         onBatchUpdateShotPositions={batchUpdateShotPositions}
+        onReorderShots={reorderShots}
+        onReorderScenes={reorderScenes}
         onCreateConnection={createConnection}
+        onUpdateConnection={updateConnection}
+        onDeleteConnection={deleteConnection}
+        onRestoreConnection={restoreConnection}
         onAddStroke={addStroke}
+        onRestoreStroke={restoreStroke}
         onEraseStroke={eraseStroke}
       />
 
