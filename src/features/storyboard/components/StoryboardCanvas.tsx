@@ -14,6 +14,7 @@ import { StoryboardShotAnchorHandles } from '../canvas/StoryboardShotAnchorHandl
 import { StoryboardConnectionsLayer } from '../canvas/StoryboardConnectionsLayer';
 import { useConnectionDrag, type ConnectionDragState } from '../canvas/useConnectionDrag';
 import { useStoryboardHistory } from '../canvas/useStoryboardHistory';
+import { useStoryboardMarquee } from '../canvas/useStoryboardMarquee';
 import { StoryboardShotInspector } from './StoryboardShotInspector';
 import { StoryboardSceneInspector } from './StoryboardSceneInspector';
 import {
@@ -160,11 +161,6 @@ export function StoryboardCanvas({
   const [selectedShotIds, setSelectedShotIds] = useState<Set<string>>(new Set());
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
 
-  // Marquee state
-  const isMarqueeActiveRef = useRef<boolean>(false);
-  const marqueeStartPointRef = useRef<StoryboardPoint | null>(null);
-  const [marqueeBounds, setMarqueeBounds] = useState<StoryboardBounds | null>(null);
-
   // Deliberate Scene Header Hover Target for Reparenting
   const [headerHoveredSceneId, setHeaderHoveredSceneId] = useState<string | null>(null);
 
@@ -302,6 +298,26 @@ export function StoryboardCanvas({
     onUpdateConnection,
     onEraseStroke,
     onRestoreStroke,
+  });
+
+  // --------------------------------------------------------------------------
+  // MARQUEE MULTI-SELECTION
+  // --------------------------------------------------------------------------
+
+  const {
+    marqueeBounds,
+    handleStageMouseDown: handleMarqueeMouseDown,
+    handleStageMouseMove: handleMarqueeMouseMove,
+    handleStageMouseUp: handleMarqueeMouseUp,
+    cancelMarquee,
+  } = useStoryboardMarquee({
+    allShots,
+    viewport,
+    activeTool,
+    readOnly,
+    selectedShotIds,
+    onSelectShots: setSelectedShotIds,
+    onClearSceneSelection: () => setSelectedSceneId(null),
   });
 
   // --------------------------------------------------------------------------
@@ -803,25 +819,14 @@ export function StoryboardCanvas({
       // If 'connect' tool: clicking on stage background does nothing (anchors are the entry point)
       if (activeTool === 'connect') return;
 
-      // If clicked on stage background, start marquee
+      // If clicked on stage background, delegate to marquee handler
       const isBackground =
         e.target === stage ||
         e.target.name() === 'storyboard-background-layer' ||
         e.target.name() === 'storyboard-objects-layer';
 
       if (isBackground && activeTool === 'select') {
-        isMarqueeActiveRef.current = true;
-        marqueeStartPointRef.current = worldPos;
-        setMarqueeBounds({
-          x: worldPos.x,
-          y: worldPos.y,
-          width: 0,
-          height: 0,
-        });
-
-        if (!e.evt.shiftKey && !e.evt.metaKey && !e.evt.ctrlKey) {
-          handleClearSelection();
-        }
+        handleMarqueeMouseDown(e);
       }
     },
     [
@@ -832,9 +837,9 @@ export function StoryboardCanvas({
       readOnly,
       scenes,
       selectedScene,
-      handleClearSelection,
       handlePenMouseDown,
       handleEraserMouseDown,
+      handleMarqueeMouseDown,
       pushAction,
     ]
   );
@@ -856,30 +861,15 @@ export function StoryboardCanvas({
       // Forward to connection drag handler first (it's a no-op if no drag active)
       handleConnectionMouseMove(e);
 
-      if (!isMarqueeActiveRef.current || !marqueeStartPointRef.current) return;
-
-      const stage = e.target.getStage();
-      if (!stage) return;
-
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
-
-      const worldPos = stagePointToCanvas(pointer, viewport);
-      const start = marqueeStartPointRef.current;
-
-      setMarqueeBounds({
-        x: start.x,
-        y: start.y,
-        width: worldPos.x - start.x,
-        height: worldPos.y - start.y,
-      });
+      // Forward to marquee multi-selection
+      handleMarqueeMouseMove(e);
     },
     [
-      viewport,
-      handleConnectionMouseMove,
       activeTool,
       handlePenMouseMove,
       handleEraserMouseMove,
+      handleConnectionMouseMove,
+      handleMarqueeMouseMove,
     ]
   );
 
@@ -900,32 +890,15 @@ export function StoryboardCanvas({
       // Forward to connection drag handler first (commits or cancels drag)
       void handleConnectionMouseUp(e);
 
-      if (isMarqueeActiveRef.current && marqueeBounds) {
-        isMarqueeActiveRef.current = false;
-        marqueeStartPointRef.current = null;
-
-        // Find intersecting shots
-        const intersectingIds = findIntersectingShots(allShots, marqueeBounds);
-
-        setSelectedShotIds((prev) => {
-          if (e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey) {
-            const next = new Set(prev);
-            for (const id of intersectingIds) next.add(id);
-            return next;
-          }
-          return new Set(intersectingIds);
-        });
-
-        setMarqueeBounds(null);
-      }
+      // Forward to marquee multi-selection
+      handleMarqueeMouseUp(e);
     },
     [
-      marqueeBounds,
-      allShots,
-      handleConnectionMouseUp,
       activeTool,
       handlePenMouseUp,
       handleEraserMouseUp,
+      handleConnectionMouseUp,
+      handleMarqueeMouseUp,
     ]
   );
 
@@ -939,7 +912,7 @@ export function StoryboardCanvas({
         e.target.name() === 'storyboard-background-layer' ||
         e.target.name() === 'storyboard-objects-layer';
 
-      if (isBackground) {
+      if (isBackground && !e.evt.shiftKey && !e.evt.metaKey && !e.evt.ctrlKey) {
         handleClearSelection();
       }
     },
@@ -963,8 +936,9 @@ export function StoryboardCanvas({
         return;
       }
 
-      // Escape -> Deselect + cancel any active connection drag, pen stroke, or eraser gesture + switch to select tool
+      // Escape -> Deselect + cancel any active connection drag, pen stroke, eraser gesture, or marquee + switch to select tool
       if (e.key === 'Escape') {
+        cancelMarquee();
         cancelPen();
         cancelErasing();
         cancelDrag();
@@ -1151,6 +1125,7 @@ export function StoryboardCanvas({
     cancelDrag,
     cancelPen,
     cancelErasing,
+    cancelMarquee,
     onDuplicateShot,
     onDeleteShot,
     onDeleteScene,

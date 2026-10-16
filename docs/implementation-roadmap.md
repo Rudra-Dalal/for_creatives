@@ -39,8 +39,14 @@ The repository is clean on `main`. TypeScript passes. 292/293 tests pass. The mo
 - Strict focus protection covering `<input>`, `<textarea>`, `<select>`, and `contentEditable`.
 - 28 unit tests in `storyboardKeyboardShortcuts.test.ts`. All 547 tests pass.
 
-### P1-2: Storyboard marquee multi-select
-Allow rubber-band selection of multiple shots on the storyboard canvas, consistent with the moodboard marquee implementation.
+### P1-2: Storyboard marquee multi-select [COMPLETE]
+**Status:** Completed and verified.
+- Dedicated `useStoryboardMarquee.ts` hook providing rubber-band multi-selection box on empty background.
+- 4px movement threshold (`CLICK_VS_DRAG_THRESHOLD_PX`) distinguishing clicks from drag gestures.
+- Real-time AABB intersection with all shots on the board, updating selections live during drag.
+- Shift/Cmd/Ctrl additive selection support.
+- Clean cancellation on Escape and mouseup.
+- 10 unit tests in `useStoryboardMarquee.test.ts`. Full test suite: 557 passing.
 
 ### P1-3: Storyboard export (PNG)
 Use `Konva.stage.toDataURL()` on the storyboard stage to export a PNG of the full canvas. Handle the same CORS-taint proxy requirement already solved in the moodboard.

@@ -14,6 +14,11 @@ export interface ContainerRect {
 }
 
 /**
+ * Authoritative drag activation threshold to distinguish clicks from marquee or drag operations.
+ */
+export const CLICK_VS_DRAG_THRESHOLD_PX = 4;
+
+/**
  * Clamps viewport scale within established bounds [0.15, 3.0].
  */
 export function clampScale(scale: number): number {

@@ -1,6 +1,6 @@
 # Agent Progress — for_creatives
-**Loop iteration:** 3  
-**Current milestone:** Ralph Loop — Task 2: Storyboard marquee multi-selection  
+**Loop iteration:** 4  
+**Current milestone:** Ralph Loop — Task 3: Storyboard PNG export  
 **Last updated:** 2026-10-16
 
 ---
@@ -35,38 +35,46 @@
   - Select All: `Cmd/Ctrl+A` selects all shots on the board.
   - Tool keys: `V` (select), `S` (shot), `C` (scene), `N`/`X` (connect), `P` (pen), `Shift+P`/`E` (eraser), `Z`/`Shift+1` (zoom-to-fit).
   - Focus protection: Added `<select>` tag guard alongside `<input>`, `<textarea>`, and `contentEditable`.
-  - 28 unit tests in `storyboardKeyboardShortcuts.test.ts`. Full test suite: 547 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success.
+  - 28 unit tests in `storyboardKeyboardShortcuts.test.ts`. Full test suite: 547 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success. (Commit `b94b0ef`)
+- [x] **Ralph Loop — Task 2 (Storyboard Marquee Multi-Selection):**
+  - Encapsulated rubber-band marquee selection into dedicated hook `useStoryboardMarquee.ts` with getters for immediate synchronous frame availability.
+  - Enforced `CLICK_VS_DRAG_THRESHOLD_PX` (4px) to guard against accidental activation on clicks.
+  - Guarded against middle-mouse (`button === 1`) and right-click to preserve pan and context menus.
+  - Real-time AABB intersection testing updating selected shot cards during drag.
+  - Bidirectional drag normalization (top-left, bottom-right, negative axes).
+  - Shift/Cmd/Ctrl additive multi-selection preserving existing selections.
+  - Clean cancellation on Escape and mouseup.
+  - 10 unit tests in `useStoryboardMarquee.test.ts`. Full test suite: 557 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success.
 
 ---
 
 ## Current Task
 
-**Ralph Loop — Task 2:** Storyboard marquee multi-selection.
+**Ralph Loop — Task 3:** Storyboard PNG export.
 
 **Acceptance criteria:**
-- Enable rubber-band / marquee multi-selection on the storyboard canvas (drag on empty background to draw selection box, select all enclosed or intersecting shot cards).
-- Support Shift modifier to toggle or add to existing selection.
-- Clear marquee cleanly on mouseup, cancel on Escape.
-- Avoid interfering with middle-click pan, spacebar pan, or drawing tools (pen/eraser/connect).
-- Unit/integration tests covering marquee math and selection state.
+- Forward `stageRef` from `StoryboardCanvas` to export full board bounds or content bounds.
+- Calculate bounding box covering all shots, scenes, connections, and strokes (with sensible padding).
+- Ensure image proxying / CORS-safe export via `stage.toDataURL()` without canvas tainting.
+- Wire export action button in `StoryboardToolbar` / header.
+- Unit/integration tests covering export bounding-box math and trigger flow.
 
 ---
 
 ## Known Baseline Failures
 
-*None* (all 547 tests pass).
+*None* (all 557 tests pass).
 
 ---
 
 ## Remaining Ralph Loop Tasks
 
-1. **Task 2:** Storyboard marquee multi-selection.
-2. **Task 3:** Storyboard PNG export.
-3. **Task 4:** Storyboard save-status feedback.
-4. **Task 5:** Dashboard search verification and fixes.
+1. **Task 3:** Storyboard PNG export.
+2. **Task 4:** Storyboard save-status feedback.
+3. **Task 5:** Dashboard search verification and fixes.
 
 ---
 
 ## Next Action
 
-Inspect moodboard marquee implementation (`src/features/moodboard/selection/useMarqueeSelection.ts` / `selectionMath.ts`) and adapt to storyboard canvas without cross-coupling.
+Inspect moodboard PNG export (`exportMoodboardAsPng` / stage serialization) and adapt for Storyboard stage bounds and CORS image proxying.
