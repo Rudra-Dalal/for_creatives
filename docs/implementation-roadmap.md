@@ -63,8 +63,14 @@ The repository is clean on `main`. TypeScript passes. 292/293 tests pass. The mo
 - Decoupled unmounting errors in `StoryboardView.tsx` (`error && scenes.length === 0`), preventing canvas teardown on non-fatal background mutation failures.
 - 6 unit tests in `src/features/storyboard/hooks/__tests__/useStoryboardSaveStatus.test.ts`. Full test suite: 576 passing.
 
-### P1-5: Dashboard search verification + fix
-Confirm search covers project name. Add reference-title and direction-note-title search if not present.
+### P1-5: Dashboard search verification + fix [COMPLETE]
+**Status:** Completed and verified.
+- Built pure utility `projectSearchUtils.ts` (`filterProjectsByQuery`, `getProjectSearchMatchReason`) handling case-insensitivity, whitespace trimming, and regex special characters.
+- Multi-field search coverage: project name, description, child reference titles (`references[].title`), and direction note titles (`direction_notes[].title`).
+- Query expansion in `projectService.getProjects()` with resilient fallback.
+- Added search input bar, clear button, match count indicator, and empty search state to `DashboardPage`.
+- Enhanced `ProjectCard` with contextual search match badges when matching references or direction notes.
+- 15 unit tests in `projectSearchUtils.test.ts` and 5 component tests in `ProjectCard.test.tsx`. Full test suite: 596 passing.
 
 ---
 

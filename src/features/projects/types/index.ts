@@ -7,9 +7,20 @@ export type Project = Database['public']['Tables']['projects']['Row'];
 export type ProjectInsert = Database['public']['Tables']['projects']['Insert'];
 export type ProjectUpdate = Database['public']['Tables']['projects']['Update'];
 
+export interface ProjectSearchItem {
+  id: string;
+  title: string;
+}
+
+export interface ProjectWithSearchMetadata extends Project {
+  references?: ProjectSearchItem[];
+  direction_notes?: ProjectSearchItem[];
+}
+
 export interface SharedProjectBundle {
   project: Project;
   references?: Reference[];
   moodboard_items?: MoodboardItem[];
   direction_notes?: DirectionNoteWithReferences[];
 }
+

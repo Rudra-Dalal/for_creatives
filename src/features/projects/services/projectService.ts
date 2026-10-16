@@ -1,5 +1,11 @@
 import { createClient } from '@/lib/supabase/client';
-import type { Project, ProjectInsert, ProjectUpdate, SharedProjectBundle } from '../types';
+import type {
+  Project,
+  ProjectInsert,
+  ProjectUpdate,
+  SharedProjectBundle,
+  ProjectWithSearchMetadata,
+} from '../types';
 
 export const projectService = {
   /**
@@ -27,18 +33,51 @@ export const projectService = {
   },
 
   /**
-   * Fetch all projects owned by current authenticated user.
+   * Fetch all projects owned by current authenticated user, including
+   * non-deleted reference and direction note titles for search matching.
    */
-  async getProjects(): Promise<Project[]> {
+  async getProjects(): Promise<ProjectWithSearchMetadata[]> {
     const supabase = createClient();
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .order('updated_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .select(`
+          *,
+          references(id, title, deleted_at),
+          direction_notes(id, title, deleted_at)
+        `)
+        .order('updated_at', { ascending: false });
 
-    if (error) throw error;
-    return data || [];
+      if (error) throw error;
+      return ((data || []) as unknown as Array<Record<string, unknown>>).map((project) => ({
+        ...(project as unknown as Project),
+        references: Array.isArray(project.references)
+          ? project.references
+              .filter((r: Record<string, unknown>) => !r.deleted_at && typeof r.title === 'string')
+              .map((r: Record<string, unknown>) => ({ id: String(r.id), title: String(r.title) }))
+          : [],
+        direction_notes: Array.isArray(project.direction_notes)
+          ? project.direction_notes
+              .filter((d: Record<string, unknown>) => !d.deleted_at && typeof d.title === 'string')
+              .map((d: Record<string, unknown>) => ({ id: String(d.id), title: String(d.title) }))
+          : [],
+      }));
+    } catch {
+      // Graceful fallback to flat project query if relational joins fail
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      return (data || []).map((p) => ({
+        ...p,
+        references: [],
+        direction_notes: [],
+      }));
+    }
   },
+
 
   /**
    * Fetch a single project by ID.

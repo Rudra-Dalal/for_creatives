@@ -60,35 +60,31 @@
   - Implemented automatic 2.5-second reset timer after successful saves and concurrent save operation tracking via `activeSavesRef`.
   - Added visual HUD indicator in `StoryboardCanvas.tsx`: top-right saving spinner / saved emerald indicator matching `MoodboardCanvas` design, plus an error banner with a `Dismiss` action.
   - Decoupled full-screen blocking error in `StoryboardView.tsx` (`error && scenes.length === 0`) so background mutation errors do not unmount the canvas or interrupt user editing.
-  - Added 6 unit tests in `src/features/storyboard/hooks/__tests__/useStoryboardSaveStatus.test.ts`. Full test suite: 576 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success.
+  - Added 6 unit tests in `src/features/storyboard/hooks/__tests__/useStoryboardSaveStatus.test.ts`. Full test suite: 576 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success. (Commit `27dc9b2`)
+- [x] **Ralph Loop — Task 5 (Dashboard Search Verification and Fixes):**
+  - Built pure utility `projectSearchUtils.ts` providing `filterProjectsByQuery` and `getProjectSearchMatchReason` with case-insensitivity, whitespace trimming, and regex special-character safety.
+  - Multi-field search coverage: project name, project description, child reference titles (`project.references[].title`), and child creative direction note titles (`project.direction_notes[].title`).
+  - Enhanced `projectService.getProjects()` to query child reference and direction note titles with graceful fallback to flat query if relational joins fail.
+  - Enhanced `useProjects` hook with `searchQuery`, `setSearchQuery`, and memoized `filteredProjects`.
+  - Integrated search bar into `DashboardPage` (`src/app/(dashboard)/dashboard/page.tsx`) with search icon, clear button, match count indicator ("X of Y"), and empty search state.
+  - Enhanced `ProjectCard` with contextual search match tags when matching child references or creative direction notes.
+  - Added 15 unit tests in `projectSearchUtils.test.ts` and 5 component tests in `ProjectCard.test.tsx`.
+  - Full test suite: 596 passing, 0 failing. TypeScript: 0 errors. Lint: 0 errors. Build: success.
 
 ---
 
-## Current Task
+## Bounded Ralph Loop Completion Summary
 
-**Ralph Loop — Task 5:** Dashboard search verification and fixes.
-
-**Acceptance criteria:**
-- Inspect dashboard search logic and UI.
-- Verify whether search covers project name, and extend to reference titles / direction note titles where appropriate.
-- Ensure case-insensitivity, whitespace trimming, and empty search robustness.
-- Add unit/integration tests for search filtering.
-- Full test suite, TypeScript, lint, and build pass.
+All 5 assigned tasks in the Ralph Loop iteration have been completed, verified, and tested:
+1. **Task 1: Storyboard Keyboard Shortcuts** (Delete, Duplicate, Nudge, Escape, Select All, Tool shortcuts) [Verified & Pushed]
+2. **Task 2: Storyboard Marquee Multi-Selection** (AABB drag intersection, Shift-toggle, 4px threshold) [Verified & Pushed]
+3. **Task 3: Storyboard PNG Export** (World bounds, crisp 2x scaling, dark background composite) [Verified & Pushed]
+4. **Task 4: Storyboard Save-Status Feedback** (HUD spinner/pill, non-blocking error banner, 20 mutation wrappers) [Verified & Pushed]
+5. **Task 5: Dashboard Search Verification and Fixes** (Multi-field search across name, desc, references, direction notes) [Verified]
 
 ---
 
 ## Known Baseline Failures
 
-*None* (all 576 tests pass).
+*None* (all 596 tests pass).
 
----
-
-## Remaining Ralph Loop Tasks
-
-1. **Task 5:** Dashboard search verification and fixes.
-
----
-
-## Next Action
-
-Inspect `src/features/projects/` and `src/app/dashboard/` search components and filtering logic.

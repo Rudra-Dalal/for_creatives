@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import Link from 'next/link';
-import type { Project } from '../types';
-import { MoreHorizontal, Trash2, ArrowUpRight, Folder } from 'lucide-react';
+import type { Project, ProjectWithSearchMetadata } from '../types';
+import { getProjectSearchMatchReason } from '../utils/projectSearchUtils';
+import { MoreHorizontal, Trash2, ArrowUpRight, Folder, Bookmark, Compass } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,11 +13,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 interface ProjectCardProps {
-  project: Project;
+  project: ProjectWithSearchMetadata;
+  searchQuery?: string;
   onDeleteRequest: (project: Project) => void;
 }
 
-export function ProjectCard({ project, onDeleteRequest }: ProjectCardProps) {
+export function ProjectCard({ project, searchQuery, onDeleteRequest }: ProjectCardProps) {
+  const matchReason = useMemo(() => {
+    return searchQuery ? getProjectSearchMatchReason(project, searchQuery) : null;
+  }, [project, searchQuery]);
+
   const formattedDate = new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
@@ -75,6 +81,19 @@ export function ProjectCard({ project, onDeleteRequest }: ProjectCardProps) {
             <p className="mt-1.5 text-xs text-muted-foreground/40 italic">
               No description
             </p>
+          )}
+
+          {matchReason?.matchedReference && (
+            <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-accent/90 bg-accent/10 px-2 py-0.5 rounded w-fit max-w-full">
+              <Bookmark className="h-3 w-3 shrink-0" />
+              <span className="truncate">Reference: &ldquo;{matchReason.matchedReference}&rdquo;</span>
+            </div>
+          )}
+          {matchReason?.matchedDirectionNote && (
+            <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-accent/90 bg-accent/10 px-2 py-0.5 rounded w-fit max-w-full">
+              <Compass className="h-3 w-3 shrink-0" />
+              <span className="truncate">Direction: &ldquo;{matchReason.matchedDirectionNote}&rdquo;</span>
+            </div>
           )}
         </Link>
       </div>
