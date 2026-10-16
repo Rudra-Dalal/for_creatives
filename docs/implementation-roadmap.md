@@ -32,9 +32,12 @@ The repository is clean on `main`. TypeScript passes. 292/293 tests pass. The mo
 
 ## P1 Tasks (after P0)
 
-### P1-1: Storyboard canvas keyboard shortcuts
-Complete keyboard handling: Delete/Backspace for selected shots/scenes, Ctrl+D duplicate, arrow-key nudge (1px; shift+arrow = 10px), Escape to deselect / cancel tool.  
-Guard: no shortcuts when inspector fields are focused.
+### P1-1: Storyboard canvas keyboard shortcuts [COMPLETE]
+**Status:** Completed and verified.
+- Complete keyboard handling: Delete/Backspace for selected shots/scenes (with single & batch history), Ctrl/Cmd+D duplicate (with auto-selection and history), arrow-key nudge (1px / 10px with Shift, tracking member shot deltas for scenes, pushed to history), Escape to deselect and reset tool to select.
+- Added Select All (`Cmd/Ctrl+A`) and tool keys (`V`, `S`, `C`, `N/X`, `P`, `Shift+P`, `E`).
+- Strict focus protection covering `<input>`, `<textarea>`, `<select>`, and `contentEditable`.
+- 28 unit tests in `storyboardKeyboardShortcuts.test.ts`. All 547 tests pass.
 
 ### P1-2: Storyboard marquee multi-select
 Allow rubber-band selection of multiple shots on the storyboard canvas, consistent with the moodboard marquee implementation.

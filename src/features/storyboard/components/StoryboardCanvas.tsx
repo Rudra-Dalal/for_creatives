@@ -957,17 +957,29 @@ export function StoryboardCanvas({
       if (
         activeTag === 'input' ||
         activeTag === 'textarea' ||
+        activeTag === 'select' ||
         (activeEl as HTMLElement)?.isContentEditable
       ) {
         return;
       }
 
-      // Escape -> Deselect + cancel any active connection drag, pen stroke, or eraser gesture
+      // Escape -> Deselect + cancel any active connection drag, pen stroke, or eraser gesture + switch to select tool
       if (e.key === 'Escape') {
         cancelPen();
         cancelErasing();
         cancelDrag();
         handleClearSelection();
+        setActiveTool('select');
+        return;
+      }
+
+      // Select All: Cmd/Ctrl + A
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        if (allShots.length > 0) {
+          setSelectedShotIds(new Set(allShots.map((s) => s.id)));
+          setSelectedSceneId(null);
+        }
         return;
       }
 
@@ -975,9 +987,23 @@ export function StoryboardCanvas({
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         if (selectedShotIds.size > 0 && onDuplicateShot && !readOnly) {
-          for (const id of selectedShotIds) {
-            onDuplicateShot(id);
-          }
+          const idsToDuplicate = Array.from(selectedShotIds);
+          void Promise.all(
+            idsToDuplicate.map(async (id) => {
+              const duplicated = await onDuplicateShot(id);
+              if (duplicated) {
+                pushAction({ type: 'CREATE_SHOT', shotId: duplicated.id });
+                return duplicated.id;
+              }
+              return null;
+            })
+          ).then((newIds) => {
+            const validNewIds = newIds.filter((id): id is string => Boolean(id));
+            if (validNewIds.length > 0) {
+              setSelectedShotIds(new Set(validNewIds));
+              setSelectedSceneId(null);
+            }
+          });
         }
         return;
       }
@@ -1017,35 +1043,53 @@ export function StoryboardCanvas({
         else if (e.key === 'ArrowDown') dy = step;
 
         if (selectedShotIds.size > 0 && onBatchUpdateShotPositions && !readOnly) {
-          const updates = Array.from(selectedShotIds)
-            .map((id) => {
-              const s = allShots.find((shot) => shot.id === id);
-              return s ? { id, x: s.x + dx, y: s.y + dy } : null;
-            })
-            .filter((u): u is { id: string; x: number; y: number } => !!u);
+          const shotMoves: Array<{ id: string; prevX: number; prevY: number; nextX: number; nextY: number }> = [];
+          const updates: Array<{ id: string; x: number; y: number }> = [];
+
+          for (const id of selectedShotIds) {
+            const s = allShots.find((shot) => shot.id === id);
+            if (s) {
+              shotMoves.push({ id, prevX: s.x, prevY: s.y, nextX: s.x + dx, nextY: s.y + dy });
+              updates.push({ id, x: s.x + dx, y: s.y + dy });
+            }
+          }
 
           if (updates.length > 0) {
+            pushAction({ type: 'MOVE_SHOTS', shots: shotMoves });
             onBatchUpdateShotPositions(updates);
           }
         } else if (selectedSceneId && onUpdateScene && !readOnly) {
           const scene = scenes.find((s) => s.id === selectedSceneId);
           if (scene) {
-            onUpdateScene(selectedSceneId, {
-              x: scene.x + dx,
-              y: scene.y + dy,
-            });
+            const prevPos = { x: scene.x, y: scene.y };
+            const nextPos = { x: scene.x + dx, y: scene.y + dy };
+            let memberShots: Array<{ id: string; prevX: number; prevY: number; nextX: number; nextY: number }> | undefined;
+
             if (onBatchUpdateShotPositions) {
-              const memberDeltas = calculateMemberShotsDelta(allShots, selectedSceneId, dx, dy);
-              if (memberDeltas.length > 0) {
-                onBatchUpdateShotPositions(memberDeltas);
+              const memberUpdates = calculateMemberShotsDelta(allShots, selectedSceneId, dx, dy);
+              if (memberUpdates.length > 0) {
+                memberShots = memberUpdates.map((u) => {
+                  const s = allShots.find((shot) => shot.id === u.id);
+                  return { id: u.id, prevX: s?.x ?? u.x - dx, prevY: s?.y ?? u.y - dy, nextX: u.x, nextY: u.y };
+                });
+                onBatchUpdateShotPositions(memberUpdates);
               }
             }
+
+            pushAction({
+              type: 'MOVE_SCENE',
+              sceneId: selectedSceneId,
+              prevPos,
+              nextPos,
+              memberShots,
+            });
+            onUpdateScene(selectedSceneId, nextPos);
           }
         }
         return;
       }
 
-      // Tool shortcuts (V, S, C, N/X, Z, P, E)
+      // Tool shortcuts (V, S, C, N/X, Z, P, E / Shift+P)
       if (!e.metaKey && !e.ctrlKey && !e.altKey) {
         const key = e.key.toLowerCase();
         if (key === 'v') { cancelDrag(); cancelPen(); cancelErasing(); setActiveTool('select'); }
@@ -1053,10 +1097,18 @@ export function StoryboardCanvas({
         else if (key === 'c') { cancelDrag(); cancelPen(); cancelErasing(); setActiveTool('scene'); }
         else if (key === 'n' || key === 'x') { cancelPen(); cancelErasing(); setActiveTool('connect'); }
         else if (key === 'p') {
-          if (activeTool !== 'pen') {
-            cancelDrag();
-            cancelErasing();
-            setActiveTool('pen');
+          if (e.shiftKey) {
+            if (activeTool !== 'eraser') {
+              cancelDrag();
+              cancelPen();
+              setActiveTool('eraser');
+            }
+          } else {
+            if (activeTool !== 'pen') {
+              cancelDrag();
+              cancelErasing();
+              setActiveTool('pen');
+            }
           }
         }
         else if (key === 'e') {
